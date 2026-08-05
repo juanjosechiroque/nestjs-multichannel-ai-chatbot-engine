@@ -27,6 +27,10 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   DATABASE_URL!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  BUSINESS_NAME!: string;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

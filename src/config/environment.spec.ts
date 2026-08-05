@@ -9,6 +9,7 @@ describe('validateEnvironment', () => {
       OPENAI_MODEL: 'gpt-5.6-luna',
       OPENAI_MAX_OUTPUT_TOKENS: '500',
       DATABASE_URL: 'postgresql://chatbot:chatbot@localhost:5432/chatbot_engine',
+      BUSINESS_NAME: 'Café Nube',
     });
 
     expect(environment.PORT).toBe(3000);
