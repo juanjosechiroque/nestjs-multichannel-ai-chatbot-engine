@@ -1,5 +1,5 @@
 import { ChatService } from './chat.service';
-import { OpenAiService } from './openai.service';
+import type { OpenAiService } from './openai.service';
 
 describe('ChatService', () => {
   it('sends the message and instructions to OpenAI', async () => {

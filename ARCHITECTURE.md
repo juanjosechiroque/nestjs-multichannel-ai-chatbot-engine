@@ -47,24 +47,24 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 
 ## Component responsibilities
 
-| Component | Responsibility | Must not |
-| --- | --- | --- |
-| `controller` | Handle transport input and output | Contain chatbot rules |
-| `DTO` | Validate the transport contract | Contain business logic |
-| `ChatService` | Define chatbot behavior and coordinate a reply | Depend on HTTP or a messaging channel |
-| `OpenAiService` | Encapsulate the OpenAI SDK and provider errors | Handle channel payloads |
-| `ConfigModule` | Load and validate environment variables | Expose secrets in logs or responses |
+| Component       | Responsibility                                 | Must not                              |
+| --------------- | ---------------------------------------------- | ------------------------------------- |
+| `controller`    | Handle transport input and output              | Contain chatbot rules                 |
+| `DTO`           | Validate the transport contract                | Contain business logic                |
+| `ChatService`   | Define chatbot behavior and coordinate a reply | Depend on HTTP or a messaging channel |
+| `OpenAiService` | Encapsulate the OpenAI SDK and provider errors | Handle channel payloads               |
+| `ConfigModule`  | Load and validate environment variables        | Expose secrets in logs or responses   |
 
 ## Decisions and trade-offs
 
-| Decision | Reason | Accepted cost |
-| --- | --- | --- |
-| NestJS + strict TypeScript | Provides modules, dependency injection, and explicit contracts | More framework structure than Express |
-| OpenAI Responses API | Current API for model responses and future tool use | Creates an external provider dependency |
-| `gpt-5.6-luna` | Fits a cost-sensitive conversational workload | Harder requests may require a stronger model |
-| HTTP endpoint first | Validates the core with minimal transport complexity | WebSocket streaming is not available yet |
-| No persistence yet | Keeps the first vertical slice easy to understand and test | Requests have no conversation memory |
-| Mocked OpenAI in unit tests | Tests remain fast and do not consume API credits | Provider integration still needs a real smoke test |
+| Decision                    | Reason                                                         | Accepted cost                                      |
+| --------------------------- | -------------------------------------------------------------- | -------------------------------------------------- |
+| NestJS + strict TypeScript  | Provides modules, dependency injection, and explicit contracts | More framework structure than Express              |
+| OpenAI Responses API        | Current API for model responses and future tool use            | Creates an external provider dependency            |
+| `gpt-5.6-luna`              | Fits a cost-sensitive conversational workload                  | Harder requests may require a stronger model       |
+| HTTP endpoint first         | Validates the core with minimal transport complexity           | WebSocket streaming is not available yet           |
+| No persistence yet          | Keeps the first vertical slice easy to understand and test     | Requests have no conversation memory               |
+| Mocked OpenAI in unit tests | Tests remain fast and do not consume API credits               | Provider integration still needs a real smoke test |
 
 ## Project structure
 

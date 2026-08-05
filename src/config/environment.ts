@@ -1,13 +1,5 @@
 import { plainToInstance, Type } from 'class-transformer';
-import {
-  IsIn,
-  IsInt,
-  IsNotEmpty,
-  IsString,
-  Max,
-  Min,
-  validateSync,
-} from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsString, Max, Min, validateSync } from 'class-validator';
 
 class EnvironmentVariables {
   @IsIn(['development', 'test', 'production'])
