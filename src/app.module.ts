@@ -4,6 +4,7 @@ import { validateEnvironment } from './config/environment';
 import { ChatModule } from './chat/chat.module';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './database/database.module';
+import { CatalogModule } from './catalog/catalog.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { DatabaseModule } from './database/database.module';
       validate: validateEnvironment,
     }),
     DatabaseModule,
+    CatalogModule,
     HealthModule,
     ChatModule,
   ],

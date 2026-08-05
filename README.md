@@ -16,6 +16,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - OpenAI Responses API integration using `gpt-5.6-luna`.
 - PostgreSQL catalog persistence with Prisma ORM.
 - Reproducible Café Nube demo seed with products, promotions, and FAQs.
+- Read-only catalog endpoints backed by PostgreSQL.
 - Controlled handling of provider errors.
 - Unit tests that do not make real OpenAI API calls.
 
@@ -120,6 +121,14 @@ Response:
 { "reply": "..." }
 ```
 
+### Catalog
+
+```bash
+curl http://localhost:3000/api/products
+curl http://localhost:3000/api/promotions
+curl http://localhost:3000/api/faqs
+```
+
 ## Verification
 
 ```bash
@@ -131,6 +140,10 @@ npm test
 
 ```text
 src/
+├── catalog/
+│   ├── catalog.controller.ts
+│   ├── catalog.module.ts
+│   └── catalog.service.ts
 ├── chat/
 │   ├── dto/
 │   ├── chat.controller.ts

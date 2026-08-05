@@ -62,6 +62,7 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 | `OpenAiService`  | Encapsulate the OpenAI SDK and provider errors | Handle channel payloads               |
 | `ConfigModule`   | Load and validate environment variables        | Expose secrets in logs or responses   |
 | `DatabaseModule` | Provide one shared Prisma database client      | Contain catalog or chatbot rules      |
+| `CatalogService` | Read structured business data through Prisma   | Depend on HTTP or a messaging channel |
 | Prisma seed      | Load reproducible public demonstration data    | Become a runtime dependency           |
 
 ## Decisions and trade-offs
@@ -81,6 +82,10 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 
 ```text
 src/
+├── catalog/
+│   ├── catalog.controller.ts
+│   ├── catalog.module.ts
+│   └── catalog.service.ts
 ├── chat/
 │   ├── dto/
 │   │   └── chat-message.dto.ts
