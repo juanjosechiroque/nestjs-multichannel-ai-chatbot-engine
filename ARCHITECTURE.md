@@ -29,8 +29,15 @@ flowchart LR
     provider -->|"Responses API"| openai
 ```
 
-The application is currently stateless. Each request is independent and no database, cache, or
-conversation history is used yet.
+Chat requests are still stateless and do not use conversation history yet. PostgreSQL currently
+stores the business catalog, but `ChatService` is not connected to that data until retrieval is
+implemented.
+
+The demo data path is separate from the chat request path:
+
+```text
+Café Nube seed → Prisma Client → PostgreSQL
+```
 
 ## Multichannel boundary
 
@@ -47,13 +54,15 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 
 ## Component responsibilities
 
-| Component       | Responsibility                                 | Must not                              |
-| --------------- | ---------------------------------------------- | ------------------------------------- |
-| `controller`    | Handle transport input and output              | Contain chatbot rules                 |
-| `DTO`           | Validate the transport contract                | Contain business logic                |
-| `ChatService`   | Define chatbot behavior and coordinate a reply | Depend on HTTP or a messaging channel |
-| `OpenAiService` | Encapsulate the OpenAI SDK and provider errors | Handle channel payloads               |
-| `ConfigModule`  | Load and validate environment variables        | Expose secrets in logs or responses   |
+| Component        | Responsibility                                 | Must not                              |
+| ---------------- | ---------------------------------------------- | ------------------------------------- |
+| `controller`     | Handle transport input and output              | Contain chatbot rules                 |
+| `DTO`            | Validate the transport contract                | Contain business logic                |
+| `ChatService`    | Define chatbot behavior and coordinate a reply | Depend on HTTP or a messaging channel |
+| `OpenAiService`  | Encapsulate the OpenAI SDK and provider errors | Handle channel payloads               |
+| `ConfigModule`   | Load and validate environment variables        | Expose secrets in logs or responses   |
+| `DatabaseModule` | Provide one shared Prisma database client      | Contain catalog or chatbot rules      |
+| Prisma seed      | Load reproducible public demonstration data    | Become a runtime dependency           |
 
 ## Decisions and trade-offs
 
@@ -63,7 +72,9 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 | OpenAI Responses API        | Current API for model responses and future tool use            | Creates an external provider dependency            |
 | `gpt-5.6-luna`              | Fits a cost-sensitive conversational workload                  | Harder requests may require a stronger model       |
 | HTTP endpoint first         | Validates the core with minimal transport complexity           | WebSocket streaming is not available yet           |
-| No persistence yet          | Keeps the first vertical slice easy to understand and test     | Requests have no conversation memory               |
+| PostgreSQL + Prisma         | Keeps catalog data structured, queryable, and type-safe        | Requires a local database and migrations           |
+| Demo seed in the repository | Makes the project reproducible for reviewers and contributors  | Demo content must stay separate from engine logic  |
+| No chat memory yet          | Keeps the current conversation flow simple                     | Requests still have no conversation history        |
 | Mocked OpenAI in unit tests | Tests remain fast and do not consume API credits               | Provider integration still needs a real smoke test |
 
 ## Project structure
@@ -81,10 +92,20 @@ src/
 ├── config/
 │   ├── environment.ts
 │   └── environment.spec.ts
+├── database/
+│   ├── database.module.ts
+│   └── prisma.service.ts
 ├── health/
 ├── app.module.ts
 └── main.ts
+
+prisma/
+├── migrations/
+├── seed-data/
+│   └── cafe-nube.ts
+├── schema.prisma
+└── seed.ts
 ```
 
-New channel, persistence, retrieval, and order modules will be added only when their
-functionality is implemented. Empty architectural layers are intentionally avoided.
+New channel, retrieval, memory, and order modules will be added only when their functionality is
+implemented. Empty architectural layers are intentionally avoided.

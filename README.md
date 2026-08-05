@@ -14,6 +14,8 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - `GET /api/health` health endpoint.
 - `POST /api/chat` chat endpoint.
 - OpenAI Responses API integration using `gpt-5.6-luna`.
+- PostgreSQL catalog persistence with Prisma ORM.
+- Reproducible Café Nube demo seed with products, promotions, and FAQs.
 - Controlled handling of provider errors.
 - Unit tests that do not make real OpenAI API calls.
 
@@ -44,6 +46,7 @@ For the current design and its boundaries, see [Architecture](ARCHITECTURE.md).
 
 - Node.js 24 or newer.
 - npm.
+- Docker Desktop or another Docker environment with Compose.
 - An OpenAI API key.
 
 ## Installation
@@ -60,10 +63,30 @@ Configure `.env` without committing it:
 ```env
 NODE_ENV=development
 PORT=3000
+DATABASE_URL=postgresql://chatbot:chatbot@localhost:5432/chatbot_engine?schema=public
 OPENAI_API_KEY=your_api_key
 OPENAI_MODEL=gpt-5.6-luna
 OPENAI_MAX_OUTPUT_TOKENS=500
 ```
+
+## Preparing the database
+
+Start the local PostgreSQL container:
+
+```bash
+npm run db:start
+```
+
+Generate the typed Prisma client, apply the committed migrations, and load the demo data:
+
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:seed
+```
+
+The seed is explicit and safe to run again. It uses stable slugs to update the 10 products, 3
+promotions, and 8 FAQs without creating duplicates.
 
 ## Running the application
 
@@ -115,9 +138,17 @@ src/
 │   ├── chat.service.ts
 │   └── openai.service.ts
 ├── config/
+├── database/
 ├── health/
 ├── app.module.ts
 └── main.ts
+
+prisma/
+├── migrations/
+├── seed-data/
+│   └── cafe-nube.ts
+├── schema.prisma
+└── seed.ts
 ```
 
 Initial implementations will remain simple while validating functionality. Refactors and

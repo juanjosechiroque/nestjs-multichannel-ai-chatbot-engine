@@ -23,6 +23,10 @@ class EnvironmentVariables {
   @IsInt()
   @Min(1)
   OPENAI_MAX_OUTPUT_TOKENS = 500;
+
+  @IsString()
+  @IsNotEmpty()
+  DATABASE_URL!: string;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

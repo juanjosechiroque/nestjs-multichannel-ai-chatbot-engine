@@ -1,0 +1,298 @@
+import { ProductCategory } from '../../src/generated/prisma/enums';
+
+export const cafeNubeProducts = [
+  {
+    slug: 'espresso-nube',
+    name: 'Espresso Nube',
+    description:
+      'Shot de espresso preparado con café peruano de temporada. El origen puede variar según el lote disponible.',
+    price: '8.00',
+    currency: 'PEN',
+    category: ProductCategory.HOT_DRINK,
+    active: true,
+    metadata: {
+      size: 'Único',
+      allergens: [],
+      notes: ['El origen del café cambia según la temporada'],
+    },
+  },
+  {
+    slug: 'americano',
+    name: 'Americano',
+    description: 'Espresso con agua caliente. Se puede pedir suave o intenso.',
+    price: '10.00',
+    currency: 'PEN',
+    category: ProductCategory.HOT_DRINK,
+    active: true,
+    metadata: {
+      size: 'Único',
+      allergens: [],
+      extras: [{ name: 'Shot adicional de espresso', price: '4.00' }],
+    },
+  },
+  {
+    slug: 'cappuccino',
+    name: 'Cappuccino',
+    description: 'Espresso con leche vaporizada y espuma cremosa.',
+    price: '12.00',
+    currency: 'PEN',
+    category: ProductCategory.HOT_DRINK,
+    active: true,
+    metadata: {
+      size: 'Único',
+      allergens: ['leche'],
+      alternativeMilks: ['avena', 'almendras'],
+      alternativeMilkPrice: '3.00',
+    },
+  },
+  {
+    slug: 'latte',
+    name: 'Latte',
+    description: 'Espresso con mayor proporción de leche vaporizada.',
+    price: '13.00',
+    currency: 'PEN',
+    category: ProductCategory.HOT_DRINK,
+    active: true,
+    metadata: {
+      size: 'Único',
+      allergens: ['leche'],
+      alternativeMilks: ['avena', 'almendras'],
+      alternativeMilkPrice: '3.00',
+    },
+  },
+  {
+    slug: 'moca-cacao-peruano',
+    name: 'Moca con cacao peruano',
+    description: 'Espresso, chocolate peruano y leche vaporizada.',
+    price: '15.00',
+    currency: 'PEN',
+    category: ProductCategory.HOT_DRINK,
+    active: true,
+    metadata: {
+      size: 'Único',
+      allergens: ['leche'],
+      alternativeMilks: ['avena', 'almendras'],
+      alternativeMilkPrice: '3.00',
+    },
+  },
+  {
+    slug: 'cold-brew-citrico',
+    name: 'Cold Brew cítrico',
+    description: 'Café extraído en frío durante 16 horas, servido con hielo y piel de naranja.',
+    price: '17.00',
+    currency: 'PEN',
+    category: ProductCategory.COLD_DRINK,
+    active: true,
+    metadata: {
+      size: 'Único',
+      allergens: [],
+      extractionHours: 16,
+    },
+  },
+  {
+    slug: 'frappe-nube',
+    name: 'Frappé Nube',
+    description: 'Café, leche y hielo licuados. Puede pedirse con o sin crema batida.',
+    price: '16.00',
+    currency: 'PEN',
+    category: ProductCategory.COLD_DRINK,
+    active: true,
+    metadata: {
+      size: 'Único',
+      allergens: ['leche'],
+      options: ['con crema batida', 'sin crema batida'],
+    },
+  },
+  {
+    slug: 'croissant-mantequilla',
+    name: 'Croissant de mantequilla',
+    description: 'Croissant horneado durante la mañana. Disponible hasta agotar stock.',
+    price: '9.00',
+    currency: 'PEN',
+    category: ProductCategory.FOOD,
+    active: true,
+    metadata: {
+      allergens: ['gluten', 'leche', 'huevo'],
+      availability: 'Hasta agotar stock',
+    },
+  },
+  {
+    slug: 'toston-palteado',
+    name: 'Tostón palteado',
+    description: 'Pan de masa madre, hummus, palta, tomate confitado y semillas.',
+    price: '22.00',
+    currency: 'PEN',
+    category: ProductCategory.FOOD,
+    active: true,
+    metadata: {
+      allergens: ['gluten', 'sésamo'],
+      dietaryTags: ['vegetariano'],
+    },
+  },
+  {
+    slug: 'carrot-cake',
+    name: 'Carrot cake',
+    description: 'Queque de zanahoria con pecanas y cobertura de queso crema.',
+    price: '15.00',
+    currency: 'PEN',
+    category: ProductCategory.FOOD,
+    active: true,
+    metadata: {
+      allergens: ['gluten', 'leche', 'huevo', 'frutos secos'],
+      availability: 'Hasta agotar stock',
+    },
+  },
+] as const;
+
+export const cafeNubePromotions = [
+  {
+    slug: 'frappe-dos-por-uno',
+    name: 'Frappé 2x1',
+    description:
+      'Compra dos Frappés Nube y paga solamente uno, de lunes a jueves entre las 3:00 p. m. y las 5:00 p. m.',
+    startsAt: new Date('2026-01-01T05:00:00.000Z'),
+    endsAt: null,
+    active: true,
+    metadata: {
+      days: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY'],
+      startTime: '15:00',
+      endTime: '17:00',
+      channels: ['STORE', 'PICKUP'],
+      excludedChannels: ['DELIVERY'],
+      stackable: false,
+      productSlugs: ['frappe-nube'],
+    },
+  },
+  {
+    slug: 'desayuno-nube',
+    name: 'Desayuno Nube',
+    description:
+      'Un cappuccino y un croissant de mantequilla por S/ 18, de lunes a viernes entre las 7:00 a. m. y las 10:00 a. m.',
+    startsAt: new Date('2026-01-01T05:00:00.000Z'),
+    endsAt: null,
+    active: true,
+    metadata: {
+      days: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'],
+      startTime: '07:00',
+      endTime: '10:00',
+      promotionalPrice: '18.00',
+      regularPrice: '21.00',
+      productSlugs: ['cappuccino', 'croissant-mantequilla'],
+      alternativeMilkPrice: '3.00',
+      restrictions: ['Sujeto a stock de croissants'],
+      stackable: false,
+    },
+  },
+  {
+    slug: 'viernes-frio',
+    name: 'Viernes frío',
+    description:
+      'Quince por ciento de descuento en el Cold Brew cítrico y el Frappé Nube durante todo el viernes.',
+    startsAt: new Date('2026-01-01T05:00:00.000Z'),
+    endsAt: null,
+    active: true,
+    metadata: {
+      days: ['FRIDAY'],
+      discountPercentage: 15,
+      channels: ['STORE', 'PICKUP', 'DELIVERY'],
+      productSlugs: ['cold-brew-citrico', 'frappe-nube'],
+      stackable: false,
+    },
+  },
+] as const;
+
+export const cafeNubeFaqs = [
+  {
+    slug: 'horario-atencion',
+    category: 'HOURS',
+    question: '¿Cuál es el horario de atención?',
+    answer:
+      'Atendemos de lunes a viernes de 7:00 a. m. a 9:00 p. m., los sábados de 8:00 a. m. a 9:00 p. m. y los domingos y feriados de 8:00 a. m. a 8:00 p. m. La cocina cierra 30 minutos antes, pero seguimos preparando bebidas hasta el cierre.',
+    active: true,
+  },
+  {
+    slug: 'ubicacion',
+    category: 'LOCATION',
+    question: '¿Dónde están ubicados?',
+    answer:
+      'Estamos en Av. José Larco 880, Miraflores, Lima, cerca del cruce con Av. 28 de Julio. Puedes consultar la ubicación de referencia en Google Maps: https://www.google.com/maps/search/?api=1&query=Av.%20Jos%C3%A9%20Larco%20880%2C%20Miraflores%2C%20Lima. No contamos con estacionamiento propio.',
+    active: true,
+    metadata: {
+      address: 'Av. José Larco 880',
+      district: 'Miraflores',
+      city: 'Lima',
+      country: 'Perú',
+      mapsUrl:
+        'https://www.google.com/maps/search/?api=1&query=Av.%20Jos%C3%A9%20Larco%20880%2C%20Miraflores%2C%20Lima',
+    },
+  },
+  {
+    slug: 'metodos-pago',
+    category: 'PAYMENTS',
+    question: '¿Qué métodos de pago aceptan?',
+    answer:
+      'Aceptamos efectivo, tarjetas Visa, Mastercard y American Express, además de pagos con Yape y Plin.',
+    active: true,
+  },
+  {
+    slug: 'delivery',
+    category: 'DELIVERY',
+    question: '¿Realizan delivery?',
+    answer:
+      'Sí. Realizamos delivery a todo Miraflores. Los pedidos se coordinan por WhatsApp. El costo depende de la dirección y el tiempo estimado es de 35 a 60 minutos. El servicio está sujeto a disponibilidad de repartidores y condiciones del tránsito.',
+    active: true,
+    metadata: {
+      coverage: ['Miraflores'],
+      estimatedMinutes: { min: 35, max: 60 },
+      orderChannel: 'WHATSAPP',
+    },
+  },
+  {
+    slug: 'recojo-local',
+    category: 'PICKUP',
+    question: '¿Puedo pedir para recoger?',
+    answer:
+      'Sí. Puedes realizar un pedido por WhatsApp y recogerlo en el local. El tiempo habitual de preparación es de 15 a 25 minutos, pero puede aumentar en horas de mayor demanda.',
+    active: true,
+    metadata: {
+      estimatedMinutes: { min: 15, max: 25 },
+      orderChannel: 'WHATSAPP',
+    },
+  },
+  {
+    slug: 'opciones-vegetarianas-leches-vegetales',
+    category: 'DIETARY_OPTIONS',
+    question: '¿Tienen opciones vegetarianas o leches vegetales?',
+    answer:
+      'Sí. El tostón palteado es vegetariano. Las bebidas con leche pueden prepararse con leche de avena o almendras por S/ 3 adicionales, sujeto a disponibilidad.',
+    active: true,
+    metadata: {
+      alternativeMilks: ['avena', 'almendras'],
+      alternativeMilkPrice: '3.00',
+    },
+  },
+  {
+    slug: 'alergenos',
+    category: 'ALLERGENS',
+    question: '¿Tienen productos sin gluten?',
+    answer:
+      'El Espresso Nube, el Americano y el Cold Brew cítrico no contienen gluten entre sus ingredientes. Sin embargo, todos los productos se preparan en espacios compartidos, por lo que no podemos garantizar que estén libres de contaminación cruzada.',
+    active: true,
+    metadata: {
+      allergens: ['leche', 'gluten', 'huevo', 'frutos secos', 'sésamo'],
+      crossContaminationPossible: true,
+    },
+  },
+  {
+    slug: 'wifi-mascotas',
+    category: 'AMENITIES',
+    question: '¿Tienen wifi y permiten mascotas?',
+    answer:
+      'Tenemos wifi gratuito para clientes. Las mascotas son bienvenidas en la terraza y deben permanecer acompañadas. El acceso al interior se reserva para animales de asistencia.',
+    active: true,
+    metadata: {
+      wifi: true,
+      petFriendlyArea: 'Terraza',
+    },
+  },
+] as const;
