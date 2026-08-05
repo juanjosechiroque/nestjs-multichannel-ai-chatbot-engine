@@ -8,7 +8,9 @@ to support multiple channels without duplicating conversational logic.
 The current request path is:
 
 ```text
-HTTP request → DTO validation → ChatController → ChatService → OpenAiService → OpenAI
+HTTP request → DTO validation → ChatController → ChatService
+                                               ├→ KnowledgeContextService → CatalogService → PostgreSQL
+                                               └→ OpenAiService → OpenAI
 ```
 
 ```mermaid
@@ -18,26 +20,25 @@ flowchart LR
     subgraph app["NestJS application"]
         controller["ChatController<br/>HTTP input and output"]
         chat["ChatService<br/>Chatbot behavior"]
+        knowledge["KnowledgeContextService<br/>Allowed business context"]
+        catalog["CatalogService<br/>Business data"]
         provider["OpenAiService<br/>OpenAI SDK"]
 
         controller --> chat --> provider
+        chat --> knowledge --> catalog
     end
 
     openai["OpenAI Responses API"]
+    postgres["PostgreSQL"]
 
     client -->|"HTTP / JSON"| controller
     provider -->|"Responses API"| openai
+    catalog -->|"Prisma"| postgres
 ```
 
-Chat requests are still stateless and do not use conversation history yet. PostgreSQL currently
-stores the business catalog, but `ChatService` is not connected to that data until retrieval is
-implemented.
-
-The demo data path is separate from the chat request path:
-
-```text
-Café Nube seed → Prisma Client → PostgreSQL
-```
+Chat requests are still stateless and do not use conversation history. For this first functional
+version, every request includes the small active catalog. Retrieval with embeddings will replace
+this approach when the knowledge base grows.
 
 ## Multichannel boundary
 
@@ -54,16 +55,17 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 
 ## Component responsibilities
 
-| Component        | Responsibility                                 | Must not                              |
-| ---------------- | ---------------------------------------------- | ------------------------------------- |
-| `controller`     | Handle transport input and output              | Contain chatbot rules                 |
-| `DTO`            | Validate the transport contract                | Contain business logic                |
-| `ChatService`    | Define chatbot behavior and coordinate a reply | Depend on HTTP or a messaging channel |
-| `OpenAiService`  | Encapsulate the OpenAI SDK and provider errors | Handle channel payloads               |
-| `ConfigModule`   | Load and validate environment variables        | Expose secrets in logs or responses   |
-| `DatabaseModule` | Provide one shared Prisma database client      | Contain catalog or chatbot rules      |
-| `CatalogService` | Read structured business data through Prisma   | Depend on HTTP or a messaging channel |
-| Prisma seed      | Load reproducible public demonstration data    | Become a runtime dependency           |
+| Component                 | Responsibility                                   | Must not                                |
+| ------------------------- | ------------------------------------------------ | --------------------------------------- |
+| `controller`              | Handle transport input and output                | Contain chatbot rules                   |
+| `DTO`                     | Validate the transport contract                  | Contain business logic                  |
+| `ChatService`             | Define chatbot behavior and coordinate a reply   | Depend on HTTP or a messaging channel   |
+| `OpenAiService`           | Encapsulate the OpenAI SDK and provider errors   | Handle channel payloads                 |
+| `ConfigModule`            | Load and validate environment variables          | Expose secrets in logs or responses     |
+| `DatabaseModule`          | Provide one shared Prisma database client        | Contain catalog or chatbot rules        |
+| `CatalogService`          | Read structured business data through Prisma     | Depend on HTTP or a messaging channel   |
+| `KnowledgeContextService` | Expose only approved catalog fields to the model | Pass database internals or instructions |
+| Prisma seed               | Load reproducible public demonstration data      | Become a runtime dependency             |
 
 ## Decisions and trade-offs
 
@@ -75,6 +77,7 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 | HTTP endpoint first         | Validates the core with minimal transport complexity           | WebSocket streaming is not available yet           |
 | PostgreSQL + Prisma         | Keeps catalog data structured, queryable, and type-safe        | Requires a local database and migrations           |
 | Demo seed in the repository | Makes the project reproducible for reviewers and contributors  | Demo content must stay separate from engine logic  |
+| Full catalog context first  | Makes grounded answers testable before adding vector retrieval | Does not scale to a large knowledge base           |
 | No chat memory yet          | Keeps the current conversation flow simple                     | Requests still have no conversation history        |
 | Mocked OpenAI in unit tests | Tests remain fast and do not consume API credits               | Provider integration still needs a real smoke test |
 
@@ -101,6 +104,10 @@ src/
 │   ├── database.module.ts
 │   └── prisma.service.ts
 ├── health/
+├── knowledge/
+│   ├── knowledge-context.service.ts
+│   ├── knowledge-context.service.spec.ts
+│   └── knowledge.module.ts
 ├── app.module.ts
 └── main.ts
 

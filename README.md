@@ -17,6 +17,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - PostgreSQL catalog persistence with Prisma ORM.
 - Reproducible Café Nube demo seed with products, promotions, and FAQs.
 - Read-only catalog endpoints backed by PostgreSQL.
+- Business-aware chat responses using the active catalog as controlled model context.
 - Controlled handling of provider errors.
 - Unit tests that do not make real OpenAI API calls.
 
@@ -30,6 +31,8 @@ ChatController        Receives and validates HTTP input
       │
       ▼
 ChatService           Defines chatbot behavior
+      │
+      ├──► KnowledgeContextService ──► CatalogService ──► PostgreSQL
       │
       ▼
 OpenAiService         Encapsulates the OpenAI SDK
@@ -112,7 +115,7 @@ Response:
 ```bash
 curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message":"Hello, who are you?"}'
+  -d '{"message":"¿Qué bebidas calientes tienen y cuánto cuestan?"}'
 ```
 
 Response:
@@ -153,6 +156,9 @@ src/
 ├── config/
 ├── database/
 ├── health/
+├── knowledge/
+│   ├── knowledge-context.service.ts
+│   └── knowledge.module.ts
 ├── app.module.ts
 └── main.ts
 

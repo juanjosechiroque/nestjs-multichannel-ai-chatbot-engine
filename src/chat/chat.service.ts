@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { KnowledgeContextService } from '../knowledge/knowledge-context.service';
 import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
 
@@ -11,6 +12,8 @@ export class ChatService {
     @Inject(OpenAiService)
     private readonly openAi: Pick<OpenAiService, 'generate'>,
     private readonly config: ConfigService,
+    @Inject(KnowledgeContextService)
+    private readonly knowledgeContext: Pick<KnowledgeContextService, 'getContext'>,
   ) {
     this.instructions = buildSystemPrompt({
       businessName: this.config.getOrThrow<string>('BUSINESS_NAME'),
@@ -18,6 +21,12 @@ export class ChatService {
   }
 
   async reply(message: string): Promise<string> {
-    return this.openAi.generate(message, this.instructions);
+    const businessContext = await this.knowledgeContext.getContext();
+
+    return this.openAi.generate({
+      message,
+      instructions: this.instructions,
+      businessContext,
+    });
   }
 }
