@@ -5,5 +5,6 @@ module.exports = {
   testRegex: '.*\\.spec\\.ts$',
   transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
+  setupFiles: ['reflect-metadata'],
   watchman: false,
 };

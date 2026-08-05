@@ -1,44 +1,124 @@
-# Chatbot Engine
+# NestJS Multichannel AI Chatbot Engine
 
-Motor de chatbot reutilizable construido con NestJS y TypeScript.
+A reusable chatbot engine built with NestJS, TypeScript, and OpenAI.
 
-## Paso 1: aplicación mínima
+The project is designed around a single conversational core that does not depend on a specific
+channel. Web, WhatsApp, and future channels will be thin adapters that call the same
+`ChatService` instead of duplicating chatbot rules.
 
-En este punto solo tenemos:
+## Current features
 
-- una aplicación NestJS;
-- variables de entorno validadas;
-- validación global para los futuros DTOs;
-- el endpoint `GET /api/health`;
-- un test unitario básico.
+- NestJS application with strict TypeScript.
+- Environment validation at startup.
+- Global DTO validation with `class-validator`.
+- `GET /api/health` health endpoint.
+- `POST /api/chat` chat endpoint.
+- OpenAI Responses API integration using `gpt-5.6-luna`.
+- Controlled handling of provider errors.
+- Unit tests that do not make real OpenAI API calls.
 
-Todavía no agregamos PostgreSQL, Redis, RAG, OpenAI ni WebSockets. Cada pieza se incorporará
-por separado y se probará antes de continuar.
+## Current request flow
 
-## Ejecutar
+```text
+POST /api/chat
+      │
+      ▼
+ChatController        Receives and validates HTTP input
+      │
+      ▼
+ChatService           Defines chatbot behavior
+      │
+      ▼
+OpenAiService         Encapsulates the OpenAI SDK
+      │
+      ▼
+OpenAI Responses API
+```
+
+`ChatService` does not depend on HTTP. WebSocket and WhatsApp adapters will eventually call the
+same service.
+
+For the current design and its boundaries, see [Architecture](ARCHITECTURE.md).
+
+## Requirements
+
+- Node.js 24 or newer.
+- npm.
+- An OpenAI API key.
+
+## Installation
 
 ```bash
-cp .env.example .env
+git clone https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine.git
+cd nestjs-multichannel-ai-chatbot-engine
 npm install
+cp .env.example .env
+```
+
+Configure `.env` without committing it:
+
+```env
+NODE_ENV=development
+PORT=3000
+OPENAI_API_KEY=your_api_key
+OPENAI_MODEL=gpt-5.6-luna
+OPENAI_MAX_OUTPUT_TOKENS=500
+```
+
+## Running the application
+
+```bash
 npm run start:dev
 ```
 
-Visita `http://localhost:3000/api/health`. La respuesta debe ser:
+### Health check
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+Response:
 
 ```json
 { "status": "ok" }
 ```
 
-## Verificar
+### Chat
+
+```bash
+curl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Hello, who are you?"}'
+```
+
+Response:
+
+```json
+{ "reply": "..." }
+```
+
+## Verification
 
 ```bash
 npm run build
 npm test
 ```
 
-## Decisiones que ya están fijadas
+## Current project structure
 
-- El núcleo no dependerá de WebSocket, WhatsApp ni otro canal.
-- Usaremos OpenAI Responses API con `gpt-5.6-luna`.
-- Usaremos `text-embedding-3-small` para embeddings.
-- Empezaremos con implementaciones simples; propondremos refactors después de validar el MVP.
+```text
+src/
+├── chat/
+│   ├── dto/
+│   ├── chat.controller.ts
+│   ├── chat.module.ts
+│   ├── chat.service.ts
+│   └── openai.service.ts
+├── config/
+├── health/
+├── app.module.ts
+└── main.ts
+```
+
+Initial implementations will remain simple while validating functionality. Refactors and
+optimizations will be proposed after the MVP can be tested end to end.

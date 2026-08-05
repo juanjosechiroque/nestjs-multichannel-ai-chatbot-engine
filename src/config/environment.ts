@@ -1,14 +1,36 @@
-import { plainToInstance } from 'class-transformer';
-import { IsIn, IsInt, Max, Min, validateSync } from 'class-validator';
+import { plainToInstance, Type } from 'class-transformer';
+import {
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsString,
+  Max,
+  Min,
+  validateSync,
+} from 'class-validator';
 
 class EnvironmentVariables {
   @IsIn(['development', 'test', 'production'])
   NODE_ENV = 'development';
 
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(65535)
   PORT = 3000;
+
+  @IsString()
+  @IsNotEmpty()
+  OPENAI_API_KEY!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  OPENAI_MODEL = 'gpt-5.6-luna';
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  OPENAI_MAX_OUTPUT_TOKENS = 500;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {
