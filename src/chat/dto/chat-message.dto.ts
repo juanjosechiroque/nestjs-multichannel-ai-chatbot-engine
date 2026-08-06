@@ -1,6 +1,9 @@
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class ChatMessageDto {
+  @IsUUID('4')
+  sessionId!: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(2_000)

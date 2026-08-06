@@ -1,4 +1,5 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, NotFoundException, Post } from '@nestjs/common';
+import { ConversationService } from '../conversation/conversation.service';
 import { ChatService } from './chat.service';
 import { ChatMessageDto } from './dto/chat-message.dto';
 
@@ -8,11 +9,26 @@ interface ChatResponse {
 
 @Controller('chat')
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly conversations: ConversationService,
+  ) {}
 
   @Post()
   async chat(@Body() input: ChatMessageDto): Promise<ChatResponse> {
-    const reply = await this.chatService.reply(input.message);
+    const conversation = await this.conversations.findBySession({
+      sessionId: input.sessionId,
+      channel: 'web',
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const reply = await this.chatService.reply({
+      conversationId: conversation.id,
+      message: input.message,
+    });
     return { reply };
   }
 }

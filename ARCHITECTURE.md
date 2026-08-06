@@ -8,9 +8,12 @@ to support multiple channels without duplicating conversational logic.
 The current request path is:
 
 ```text
-HTTP request → DTO validation → ChatController → ChatService
-                                               ├→ KnowledgeContextService → CatalogService → PostgreSQL
-                                               └→ OpenAiService → OpenAI
+HTTP request → DTO validation → ChatController
+                                   ├→ ConversationService → PostgreSQL
+                                   └→ ChatService
+                                       ├→ KnowledgeContextService → CatalogService → PostgreSQL
+                                       ├→ MemoryService → PostgreSQL
+                                       └→ OpenAiService → OpenAI
 ```
 
 ```mermaid
@@ -19,13 +22,17 @@ flowchart LR
 
     subgraph app["NestJS application"]
         controller["ChatController<br/>HTTP input and output"]
+        conversation["ConversationService<br/>Session lifecycle and resolution"]
         chat["ChatService<br/>Chatbot behavior"]
         knowledge["KnowledgeContextService<br/>Allowed business context"]
         catalog["CatalogService<br/>Business data"]
+        memory["MemoryService<br/>Recent conversation history"]
         provider["OpenAiService<br/>OpenAI SDK"]
 
+        controller --> conversation
         controller --> chat --> provider
         chat --> knowledge --> catalog
+        chat --> memory
     end
 
     openai["OpenAI Responses API"]
@@ -33,12 +40,16 @@ flowchart LR
 
     client -->|"HTTP / JSON"| controller
     provider -->|"Responses API"| openai
+    conversation -->|"Prisma"| postgres
     catalog -->|"Prisma"| postgres
+    memory -->|"Prisma"| postgres
 ```
 
-Chat requests are still stateless and do not use conversation history. For this first functional
-version, every request includes the small active catalog. Retrieval with embeddings will replace
-this approach when the knowledge base grows.
+The web adapter resolves a backend-created public session ID through `ConversationService` before
+calling `ChatService` with the internal conversation ID. `MemoryService` loads the latest 10
+messages and stores completed user/assistant exchanges using that internal ID. Every request also
+includes the small active catalog. Retrieval with embeddings will replace the full catalog context
+when the knowledge base grows.
 
 ## Multichannel boundary
 
@@ -55,31 +66,36 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 
 ## Component responsibilities
 
-| Component                 | Responsibility                                   | Must not                                |
-| ------------------------- | ------------------------------------------------ | --------------------------------------- |
-| `controller`              | Handle transport input and output                | Contain chatbot rules                   |
-| `DTO`                     | Validate the transport contract                  | Contain business logic                  |
-| `ChatService`             | Define chatbot behavior and coordinate a reply   | Depend on HTTP or a messaging channel   |
-| `OpenAiService`           | Encapsulate the OpenAI SDK and provider errors   | Handle channel payloads                 |
-| `ConfigModule`            | Load and validate environment variables          | Expose secrets in logs or responses     |
-| `DatabaseModule`          | Provide one shared Prisma database client        | Contain catalog or chatbot rules        |
-| `CatalogService`          | Read structured business data through Prisma     | Depend on HTTP or a messaging channel   |
-| `KnowledgeContextService` | Expose only approved catalog fields to the model | Pass database internals or instructions |
-| Prisma seed               | Load reproducible public demonstration data      | Become a runtime dependency             |
+| Component                 | Responsibility                                    | Must not                                |
+| ------------------------- | ------------------------------------------------- | --------------------------------------- |
+| `controller`              | Handle transport input and output                 | Contain chatbot rules                   |
+| `DTO`                     | Validate the transport contract                   | Contain business logic                  |
+| `ConversationService`     | Create and resolve backend-managed conversations  | Contain prompts or channel payloads     |
+| `ChatService`             | Define chatbot behavior and coordinate a reply    | Depend on HTTP or a messaging channel   |
+| `OpenAiService`           | Encapsulate the OpenAI SDK and provider errors    | Handle channel payloads                 |
+| `ConfigModule`            | Load and validate environment variables           | Expose secrets in logs or responses     |
+| `DatabaseModule`          | Provide one shared Prisma database client         | Contain catalog or chatbot rules        |
+| `CatalogService`          | Read structured business data through Prisma      | Depend on HTTP or a messaging channel   |
+| `KnowledgeContextService` | Expose only approved catalog fields to the model  | Pass database internals or instructions |
+| `MemoryService`           | Load and save history by internal conversation ID | Resolve public sessions or channels     |
+| Prisma seed               | Load reproducible public demonstration data       | Become a runtime dependency             |
 
 ## Decisions and trade-offs
 
-| Decision                    | Reason                                                         | Accepted cost                                      |
-| --------------------------- | -------------------------------------------------------------- | -------------------------------------------------- |
-| NestJS + strict TypeScript  | Provides modules, dependency injection, and explicit contracts | More framework structure than Express              |
-| OpenAI Responses API        | Current API for model responses and future tool use            | Creates an external provider dependency            |
-| `gpt-5.6-luna`              | Fits a cost-sensitive conversational workload                  | Harder requests may require a stronger model       |
-| HTTP endpoint first         | Validates the core with minimal transport complexity           | WebSocket streaming is not available yet           |
-| PostgreSQL + Prisma         | Keeps catalog data structured, queryable, and type-safe        | Requires a local database and migrations           |
-| Demo seed in the repository | Makes the project reproducible for reviewers and contributors  | Demo content must stay separate from engine logic  |
-| Full catalog context first  | Makes grounded answers testable before adding vector retrieval | Does not scale to a large knowledge base           |
-| No chat memory yet          | Keeps the current conversation flow simple                     | Requests still have no conversation history        |
-| Mocked OpenAI in unit tests | Tests remain fast and do not consume API credits               | Provider integration still needs a real smoke test |
+| Decision                        | Reason                                                         | Accepted cost                                       |
+| ------------------------------- | -------------------------------------------------------------- | --------------------------------------------------- |
+| NestJS + strict TypeScript      | Provides modules, dependency injection, and explicit contracts | More framework structure than Express               |
+| OpenAI Responses API            | Current API for model responses and future tool use            | Creates an external provider dependency             |
+| `gpt-5.6-luna`                  | Fits a cost-sensitive conversational workload                  | Harder requests may require a stronger model        |
+| HTTP endpoint first             | Validates the core with minimal transport complexity           | WebSocket streaming is not available yet            |
+| PostgreSQL + Prisma             | Keeps catalog data structured, queryable, and type-safe        | Requires a local database and migrations            |
+| Demo seed in the repository     | Makes the project reproducible for reviewers and contributors  | Demo content must stay separate from engine logic   |
+| Full catalog context first      | Makes grounded answers testable before adding vector retrieval | Does not scale to a large knowledge base            |
+| PostgreSQL conversation history | Reuses existing infrastructure and persists sessions           | Adds database reads and writes per chat request     |
+| Backend-created web sessions    | Gives the platform control over valid conversations            | Requires a session-creation request before chat     |
+| Last 10 messages as context     | Bounds the initial memory implementation                       | Older messages are not sent to the model            |
+| Application-managed history     | Keeps memory independent from the model provider               | Does not preserve provider-specific reasoning items |
+| Mocked OpenAI in unit tests     | Tests remain fast and do not consume API credits               | Provider integration still needs a real smoke test  |
 
 ## Project structure
 
@@ -100,6 +116,12 @@ src/
 ├── config/
 │   ├── environment.ts
 │   └── environment.spec.ts
+├── conversation/
+│   ├── conversation.controller.ts
+│   ├── conversation.module.ts
+│   ├── conversation.service.ts
+│   ├── conversation.service.spec.ts
+│   └── conversation.types.ts
 ├── database/
 │   ├── database.module.ts
 │   └── prisma.service.ts
@@ -108,6 +130,11 @@ src/
 │   ├── knowledge-context.service.ts
 │   ├── knowledge-context.service.spec.ts
 │   └── knowledge.module.ts
+├── memory/
+│   ├── memory.module.ts
+│   ├── memory.service.ts
+│   ├── memory.service.spec.ts
+│   └── memory.types.ts
 ├── app.module.ts
 └── main.ts
 
@@ -119,5 +146,5 @@ prisma/
 └── seed.ts
 ```
 
-New channel, retrieval, memory, and order modules will be added only when their functionality is
+New channel, retrieval, and order modules will be added only when their functionality is
 implemented. Empty architectural layers are intentionally avoided.
