@@ -363,6 +363,15 @@ describe('HTTP conversation flow', () => {
       .send({ sessionId, message: '¿Y cuál es la más barata?' })
       .expect(201, { reply: 'El americano.' });
 
+    expect(embed).toHaveBeenNthCalledWith(
+      2,
+      [
+        'Previous customer message:',
+        '¿Qué bebidas calientes tienen?',
+        'Current customer message:',
+        '¿Y cuál es la más barata?',
+      ].join('\n'),
+    );
     expect(generate).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({

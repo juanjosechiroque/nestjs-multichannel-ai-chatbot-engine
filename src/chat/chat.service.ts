@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MemoryService } from '../memory/memory.service';
 import { RagService } from '../rag/rag.service';
+import { buildRetrievalQuery } from '../rag/retrieval-query';
 import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
 import type { ChatRequest } from './chat.types';
@@ -27,10 +28,9 @@ export class ChatService {
   }
 
   async reply({ conversationId, message }: ChatRequest): Promise<string> {
-    const [businessContext, history] = await Promise.all([
-      this.rag.getContext(message, RAG_TOP_K),
-      this.memory.getRecentMessages(conversationId),
-    ]);
+    const history = await this.memory.getRecentMessages(conversationId);
+    const retrievalQuery = buildRetrievalQuery(message, history);
+    const businessContext = await this.rag.getContext(retrievalQuery, RAG_TOP_K);
 
     const reply = await this.openAi.generate({
       message,

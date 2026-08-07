@@ -21,6 +21,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Read-only catalog endpoints backed by PostgreSQL.
 - Semantic business knowledge retrieval with OpenAI embeddings and PostgreSQL/pgvector.
 - Backend-managed web sessions with persistent PostgreSQL conversation history.
+- Context-aware knowledge retrieval for conversational follow-up questions.
 - Structured OpenAI latency and token usage logging.
 - Controlled handling of provider errors.
 - Unit tests that do not make real OpenAI API calls.
