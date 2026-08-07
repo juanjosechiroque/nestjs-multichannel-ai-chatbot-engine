@@ -12,6 +12,16 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
     expectedSource: { sourceType: 'faq', sourceKey: 'ubicacion' },
   },
   {
+    name: 'branch in another city',
+    query: '¿Tienen una sede en Arequipa?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'sucursales' },
+  },
+  {
+    name: 'other locations',
+    query: '¿Hay otros locales fuera de Lima?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'sucursales' },
+  },
+  {
     name: 'payment methods',
     query: '¿Puedo pagar con Yape?',
     expectedSource: { sourceType: 'faq', sourceKey: 'metodos-pago' },

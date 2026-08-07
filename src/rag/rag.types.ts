@@ -20,6 +20,16 @@ export interface RagSearchResult {
   similarity: number;
 }
 
+export type RagRetrievalStatus = 'results_found' | 'no_results';
+
+export interface RagGenerationContext {
+  retrievalStatus: RagRetrievalStatus;
+  knowledge: Array<{
+    type: KnowledgeSourceType;
+    content: string;
+  }>;
+}
+
 export interface IngestionResult {
   total: number;
   embedded: number;

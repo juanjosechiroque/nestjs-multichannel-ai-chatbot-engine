@@ -227,6 +227,19 @@ export const cafeNubeFaqs = [
     },
   },
   {
+    slug: 'sucursales',
+    category: 'LOCATION',
+    question: '¿Tienen otros locales o sucursales?',
+    answer:
+      'Actualmente contamos con un único local, ubicado en Miraflores, Lima. No tenemos sucursales en otros distritos ni ciudades.',
+    active: true,
+    metadata: {
+      locationCount: 1,
+      onlyLocationDistrict: 'Miraflores',
+      otherBranches: false,
+    },
+  },
+  {
     slug: 'metodos-pago',
     category: 'PAYMENTS',
     question: '¿Qué métodos de pago aceptan?',
