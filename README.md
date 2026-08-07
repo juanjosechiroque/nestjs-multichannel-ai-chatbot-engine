@@ -1,5 +1,7 @@
 # NestJS Multichannel AI Chatbot Engine
 
+[![CI](https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine/actions/workflows/ci.yml)
+
 A reusable chatbot engine built with NestJS, TypeScript, and OpenAI.
 
 The project is designed around a single conversational core that does not depend on a specific
