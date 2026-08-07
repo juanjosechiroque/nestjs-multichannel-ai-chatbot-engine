@@ -18,6 +18,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Reproducible Café Nube demo seed with products, promotions, and FAQs.
 - Read-only catalog endpoints backed by PostgreSQL.
 - Business-aware chat responses using the active catalog as controlled model context.
+- Structured OpenAI latency and token usage logging.
 - Controlled handling of provider errors.
 - Unit tests that do not make real OpenAI API calls.
 

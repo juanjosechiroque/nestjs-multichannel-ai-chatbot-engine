@@ -53,14 +53,21 @@ export class OpenAiService {
         max_output_tokens: this.config.get<number>('OPENAI_MAX_OUTPUT_TOKENS', 500),
       });
 
-      this.logger.log({
-        event: 'openai.response.completed',
-        durationMs: Date.now() - startedAt,
-      });
-
       if (!response.output_text) {
         throw new Error('OpenAI returned an empty response');
       }
+
+      this.logger.log({
+        event: 'openai.response.completed',
+        model: response.model,
+        durationMs: Date.now() - startedAt,
+        inputTokens: response.usage?.input_tokens,
+        cachedInputTokens: response.usage?.input_tokens_details.cached_tokens,
+        cacheWriteTokens: response.usage?.input_tokens_details.cache_write_tokens,
+        outputTokens: response.usage?.output_tokens,
+        reasoningTokens: response.usage?.output_tokens_details.reasoning_tokens,
+        totalTokens: response.usage?.total_tokens,
+      });
 
       return response.output_text;
     } catch (error: unknown) {
