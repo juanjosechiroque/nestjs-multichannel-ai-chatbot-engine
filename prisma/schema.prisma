@@ -64,6 +64,21 @@ model Faq {
   @@map("faqs")
 }
 
+model KnowledgeChunk {
+  id         String                      @id @default(uuid()) @db.Uuid
+  sourceType String                      @map("source_type")
+  sourceId   String                      @map("source_id")
+  chunkIndex Int                         @default(0) @map("chunk_index")
+  content    String                      @db.Text
+  metadata   Json?                       @db.JsonB
+  embedding  Unsupported("vector(1536)")
+  createdAt  DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([sourceType, sourceId, chunkIndex])
+  @@map("knowledge_chunks")
+}
+
 model Conversation {
   id        String                @id @default(uuid()) @db.Uuid
   sessionId String                @map("session_id")
@@ -77,11 +92,11 @@ model Conversation {
 }
 
 model ConversationMessage {
-  id             Int         @id @default(autoincrement())
-  conversationId String      @map("conversation_id") @db.Uuid
+  id             Int          @id @default(autoincrement())
+  conversationId String       @map("conversation_id") @db.Uuid
   role           MessageRole
-  content        String      @db.Text
-  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  content        String       @db.Text
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, id])

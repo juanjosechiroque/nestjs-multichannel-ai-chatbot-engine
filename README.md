@@ -17,7 +17,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - PostgreSQL catalog persistence with Prisma ORM.
 - Reproducible Café Nube demo seed with products, promotions, and FAQs.
 - Read-only catalog endpoints backed by PostgreSQL.
-- Business-aware chat responses using the active catalog as controlled model context.
+- Semantic business knowledge retrieval with OpenAI embeddings and PostgreSQL/pgvector.
 - Backend-managed web sessions with persistent PostgreSQL conversation history.
 - Structured OpenAI latency and token usage logging.
 - Controlled handling of provider errors.
@@ -36,7 +36,8 @@ ChatController        Receives and validates HTTP input
       ▼
 ChatService           Defines chatbot behavior
       │
-      ├──► KnowledgeContextService ──► CatalogService ──► PostgreSQL
+      ├──► RagService ──► EmbeddingService ─────────────► OpenAI Embeddings API
+      │         └───────────────────────────────────────► PostgreSQL + pgvector
       ├──► MemoryService ───────────────────────────────► PostgreSQL
       │
       ▼
@@ -75,8 +76,14 @@ PORT=3000
 DATABASE_URL=postgresql://chatbot:chatbot@localhost:5432/chatbot_engine?schema=public
 OPENAI_API_KEY=your_api_key
 OPENAI_MODEL=gpt-5.6-luna
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_MAX_OUTPUT_TOKENS=500
+RAG_MIN_SIMILARITY=0.5
 ```
+
+`RAG_MIN_SIMILARITY` accepts a value from `0` to `1`. Retrieved knowledge below this threshold is
+discarded, and the accepted source IDs and similarity scores are written to structured application
+logs without being exposed in the HTTP response.
 
 ## Preparing the database
 
@@ -92,10 +99,13 @@ Generate the typed Prisma client, apply the committed migrations, and load the d
 npm run db:generate
 npm run db:migrate
 npm run db:seed
+npm run knowledge:ingest
 ```
 
 The seed is explicit and safe to run again. It uses stable slugs to update the 10 products, 3
-promotions, and 8 FAQs without creating duplicates.
+promotions, and 8 FAQs without creating duplicates. Run `knowledge:ingest` after changing this
+business data. The command creates or updates the pgvector knowledge index and skips unchanged
+documents.
 
 ## Running the application
 
@@ -182,13 +192,16 @@ src/
 │   └── conversation.service.ts
 ├── database/
 ├── health/
-├── knowledge/
-│   ├── knowledge-context.service.ts
-│   └── knowledge.module.ts
 ├── memory/
 │   ├── memory.service.ts
 │   ├── memory.types.ts
 │   └── memory.module.ts
+├── rag/
+│   ├── embedding.service.ts
+│   ├── knowledge-document.factory.ts
+│   ├── knowledge-ingestion.service.ts
+│   ├── rag.module.ts
+│   └── rag.service.ts
 ├── app.module.ts
 └── main.ts
 

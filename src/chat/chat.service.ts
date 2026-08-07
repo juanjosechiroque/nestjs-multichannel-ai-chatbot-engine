@@ -1,10 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { KnowledgeContextService } from '../knowledge/knowledge-context.service';
 import { MemoryService } from '../memory/memory.service';
+import { RagService } from '../rag/rag.service';
 import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
 import type { ChatRequest } from './chat.types';
+
+const RAG_TOP_K = 5;
 
 @Injectable()
 export class ChatService {
@@ -14,8 +16,8 @@ export class ChatService {
     @Inject(OpenAiService)
     private readonly openAi: Pick<OpenAiService, 'generate'>,
     private readonly config: ConfigService,
-    @Inject(KnowledgeContextService)
-    private readonly knowledgeContext: Pick<KnowledgeContextService, 'getContext'>,
+    @Inject(RagService)
+    private readonly rag: Pick<RagService, 'getContext'>,
     @Inject(MemoryService)
     private readonly memory: Pick<MemoryService, 'getRecentMessages' | 'saveExchange'>,
   ) {
@@ -26,7 +28,7 @@ export class ChatService {
 
   async reply({ conversationId, message }: ChatRequest): Promise<string> {
     const [businessContext, history] = await Promise.all([
-      this.knowledgeContext.getContext(),
+      this.rag.getContext(message, RAG_TOP_K),
       this.memory.getRecentMessages(conversationId),
     ]);
 

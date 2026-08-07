@@ -1,5 +1,14 @@
 import { plainToInstance, Type } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsString, Max, Min, validateSync } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+  Max,
+  Min,
+  validateSync,
+} from 'class-validator';
 
 class EnvironmentVariables {
   @IsIn(['development', 'test', 'production'])
@@ -18,6 +27,16 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   OPENAI_MODEL = 'gpt-5.6-luna';
+
+  @IsString()
+  @IsNotEmpty()
+  OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  RAG_MIN_SIMILARITY = 0.5;
 
   @Type(() => Number)
   @IsInt()
