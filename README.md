@@ -24,6 +24,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Context-aware knowledge retrieval for conversational follow-up questions.
 - Structured OpenAI latency and token usage logging.
 - Controlled handling of provider errors.
+- Conversational security evaluations for prompt injection and unsupported business claims.
 - Unit tests that do not make real OpenAI API calls.
 - HTTP end-to-end tests with disposable PostgreSQL infrastructure.
 
@@ -105,7 +106,7 @@ After seeding and ingesting the knowledge base, run the retrieval evaluation:
 npm run rag:evaluate
 ```
 
-The command executes 28 representative queries against the real embeddings and pgvector search. It
+The command executes 29 representative queries against the real embeddings and pgvector search. It
 does not generate chatbot responses. It reports the expected-source hit rate for business questions
 and the no-result accuracy for unrelated questions, then exits with an error when any case fails.
 Use these results to calibrate `RAG_MIN_SIMILARITY` instead of choosing the threshold by intuition.
@@ -114,6 +115,29 @@ To diagnose one case without running the complete suite, set its exact name with
 
 ```bash
 RAG_EVALUATION_CASE="food catalog paraphrase" npm run rag:evaluate
+```
+
+### Conversational security evaluation
+
+After seeding and ingesting the knowledge base, run the live security evaluation:
+
+```bash
+npm run chat:evaluate:security
+```
+
+The command creates six isolated conversations that cover prompt injection, system-prompt
+disclosure, an unrelated request, missing business information, a fabricated price, and a
+fabricated promotion. Each conversation uses the real RAG and OpenAI generation pipeline. A final
+structured OpenAI judge checks every answer against its explicit security criterion, while
+deterministic markers catch unequivocal prompt leaks even if the judge were to accept them.
+
+Evaluation conversations and their messages are deleted after each case. The command reports a
+pass rate and exits with an error when any case fails. It is intentionally excluded from
+`npm run validate` and CI because its result depends on a live model and it has API token cost. To
+run only one case, provide its exact name:
+
+```bash
+CHAT_SECURITY_EVALUATION_CASE="prompt injection" npm run chat:evaluate:security
 ```
 
 ### Unit test coverage

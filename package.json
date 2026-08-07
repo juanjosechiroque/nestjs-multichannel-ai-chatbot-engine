@@ -19,6 +19,7 @@
     "db:seed": "prisma db seed",
     "knowledge:ingest": "nest start --entryFile rag/ingest-knowledge",
     "rag:evaluate": "nest start --entryFile rag/evaluate-rag",
+    "chat:evaluate:security": "nest start --entryFile chat/evaluate-conversation-security",
     "format": "eslint . --fix && prettier --write .",
     "validate": "eslint . --max-warnings=0 && prettier --check . && tsc --noEmit && jest --coverage --runInBand && nest build",
     "test": "jest",
