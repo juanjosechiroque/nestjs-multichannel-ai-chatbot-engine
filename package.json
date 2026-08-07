@@ -18,6 +18,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "knowledge:ingest": "nest start --entryFile rag/ingest-knowledge",
+    "rag:evaluate": "nest start --entryFile rag/evaluate-rag",
     "format": "eslint . --fix && prettier --write .",
     "validate": "eslint . --max-warnings=0 && prettier --check . && tsc --noEmit && jest --runInBand && nest build",
     "test": "jest",
