@@ -11,9 +11,16 @@ async function evaluateRag(): Promise<void> {
   const logger = new Logger('RagEvaluation');
 
   try {
-    const report = await application
-      .get(RagEvaluationService)
-      .evaluate(RAG_EVALUATION_CASES, TOP_K);
+    const requestedCaseName = process.env.RAG_EVALUATION_CASE;
+    const evaluationCases = requestedCaseName
+      ? RAG_EVALUATION_CASES.filter((evaluationCase) => evaluationCase.name === requestedCaseName)
+      : RAG_EVALUATION_CASES;
+
+    if (evaluationCases.length === 0) {
+      throw new Error(`Unknown RAG evaluation case: ${requestedCaseName}`);
+    }
+
+    const report = await application.get(RagEvaluationService).evaluate(evaluationCases, TOP_K);
 
     for (const result of report.results) {
       logger.log({

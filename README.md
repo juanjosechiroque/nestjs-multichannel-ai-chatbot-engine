@@ -93,10 +93,16 @@ After seeding and ingesting the knowledge base, run the retrieval evaluation:
 npm run rag:evaluate
 ```
 
-The command executes 22 representative queries against the real embeddings and pgvector search. It
+The command executes 26 representative queries against the real embeddings and pgvector search. It
 does not generate chatbot responses. It reports the expected-source hit rate for business questions
 and the no-result accuracy for unrelated questions, then exits with an error when any case fails.
 Use these results to calibrate `RAG_MIN_SIMILARITY` instead of choosing the threshold by intuition.
+To diagnose one case without running the complete suite, set its exact name with
+`RAG_EVALUATION_CASE`, for example:
+
+```bash
+RAG_EVALUATION_CASE="food catalog paraphrase" npm run rag:evaluate
+```
 
 ## Preparing the database
 
