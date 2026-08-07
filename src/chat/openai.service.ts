@@ -64,6 +64,7 @@ export class OpenAiService {
         instructions,
         input,
         store: false,
+        prompt_cache_options: { mode: 'explicit' },
         reasoning: { effort: 'low' },
         max_output_tokens: this.config.get<number>('OPENAI_MAX_OUTPUT_TOKENS', 500),
       });
