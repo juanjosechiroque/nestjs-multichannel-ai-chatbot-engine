@@ -1,7 +1,12 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
-import { cafeNubeFaqs, cafeNubeProducts, cafeNubePromotions } from './seed-data/cafe-nube';
+import {
+  cafeNubeFaqs,
+  cafeNubeProducts,
+  cafeNubePromotions,
+  obsoleteCafeNubeFaqSlugs,
+} from './seed-data/cafe-nube';
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -36,6 +41,10 @@ async function seed(): Promise<void> {
       create: faq,
     });
   }
+
+  await prisma.faq.deleteMany({
+    where: { slug: { in: [...obsoleteCafeNubeFaqSlugs] } },
+  });
 
   console.log(
     `Seed completed: ${cafeNubeProducts.length} products, ${cafeNubePromotions.length} promotions and ${cafeNubeFaqs.length} FAQs.`,

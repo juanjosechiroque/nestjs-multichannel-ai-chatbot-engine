@@ -27,6 +27,7 @@ export class KnowledgeDocumentFactory {
       }
 
       const categoryLabel = this.getProductCategoryLabel(category);
+      const searchPhrases = this.getProductCategorySearchPhrases(category);
       const productList = categoryProducts
         .map(
           (product) =>
@@ -42,6 +43,7 @@ export class KnowledgeDocumentFactory {
           content: [
             'Tipo: catálogo de productos.',
             `Categoría: ${categoryLabel}.`,
+            `Consultas relacionadas: ${searchPhrases.join('; ')}.`,
             `Productos disponibles en esta categoría: ${productList}`,
           ].join(' '),
           metadata: { category },
@@ -111,6 +113,25 @@ export class KnowledgeDocumentFactory {
         return 'bebida fría';
       case ProductCategory.FOOD:
         return 'comida';
+    }
+  }
+
+  private getProductCategorySearchPhrases(category: ProductCategory): string[] {
+    switch (category) {
+      case ProductCategory.HOT_DRINK:
+        return [
+          'qué bebidas calientes tienen',
+          'menú de bebidas calientes',
+          'opciones de café caliente',
+        ];
+      case ProductCategory.COLD_DRINK:
+        return [
+          'qué bebidas frías tienen',
+          'menú de bebidas frías',
+          'opciones de bebidas con hielo',
+        ];
+      case ProductCategory.FOOD:
+        return ['qué opciones de comida tienen', 'menú de comida', 'qué puedo comer'];
     }
   }
 }

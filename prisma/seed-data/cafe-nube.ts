@@ -284,15 +284,28 @@ export const cafeNubeFaqs = [
     },
   },
   {
-    slug: 'wifi-mascotas',
+    slug: 'wifi',
     category: 'AMENITIES',
-    question: '¿Tienen wifi y permiten mascotas?',
+    question: '¿Tienen wifi?',
     answer:
-      'Tenemos wifi gratuito para clientes. Las mascotas son bienvenidas en la terraza y deben permanecer acompañadas. El acceso al interior se reserva para animales de asistencia.',
+      'Sí. Tenemos wifi gratuito para clientes durante su visita. Puedes solicitar la clave al personal.',
     active: true,
     metadata: {
       wifi: true,
+    },
+  },
+  {
+    slug: 'mascotas',
+    category: 'AMENITIES',
+    question: '¿Son pet friendly?',
+    answer:
+      'Sí, somos pet friendly. Los perros, gatos y otras mascotas son bienvenidos en la terraza y deben permanecer acompañados. El acceso al interior se reserva para animales de asistencia.',
+    active: true,
+    metadata: {
       petFriendlyArea: 'Terraza',
+      indoorAccess: 'ASSISTANCE_ANIMALS_ONLY',
     },
   },
 ] as const;
+
+export const obsoleteCafeNubeFaqSlugs = ['wifi-mascotas'] as const;
