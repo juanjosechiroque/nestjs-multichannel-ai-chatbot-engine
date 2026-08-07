@@ -22,6 +22,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Structured OpenAI latency and token usage logging.
 - Controlled handling of provider errors.
 - Unit tests that do not make real OpenAI API calls.
+- HTTP end-to-end tests with disposable PostgreSQL infrastructure.
 
 ## Current request flow
 
@@ -126,6 +127,20 @@ It stops and removes the container after the test. The test does not call OpenAI
 kept separate from `npm run validate`, so the unit-test workflow remains fast and does not require
 Docker.
 
+### HTTP end-to-end test
+
+With Docker Desktop running, execute the complete HTTP conversation flow:
+
+```bash
+npm run test:e2e
+```
+
+Testcontainers starts a disposable PostgreSQL 17 database with pgvector and applies the committed
+migrations. The suite exercises the real NestJS application, global DTO validation, controllers,
+conversation memory, RAG query, Prisma persistence, and controlled HTTP errors. OpenAI generation
+and embeddings are replaced with deterministic test doubles, so it needs no API key, makes no
+external requests, and has no token cost.
+
 ## Preparing the database
 
 Start the local PostgreSQL container:
@@ -210,6 +225,7 @@ curl http://localhost:3000/api/faqs
 ```bash
 npm run build
 npm test
+npm run test:e2e
 ```
 
 ## Current project structure
