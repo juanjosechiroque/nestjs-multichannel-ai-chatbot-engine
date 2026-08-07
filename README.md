@@ -18,6 +18,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Reproducible Café Nube demo seed with products, promotions, and FAQs.
 - Read-only catalog endpoints backed by PostgreSQL.
 - Business-aware chat responses using the active catalog as controlled model context.
+- Backend-managed web sessions with persistent PostgreSQL conversation history.
 - Structured OpenAI latency and token usage logging.
 - Controlled handling of provider errors.
 - Unit tests that do not make real OpenAI API calls.
@@ -30,10 +31,13 @@ POST /api/chat
       ▼
 ChatController        Receives and validates HTTP input
       │
+      ├──► ConversationService ─────────────────────────► PostgreSQL
+      │
       ▼
 ChatService           Defines chatbot behavior
       │
       ├──► KnowledgeContextService ──► CatalogService ──► PostgreSQL
+      ├──► MemoryService ───────────────────────────────► PostgreSQL
       │
       ▼
 OpenAiService         Encapsulates the OpenAI SDK
@@ -113,10 +117,24 @@ Response:
 
 ### Chat
 
+Create a web conversation first:
+
+```bash
+curl -X POST http://localhost:3000/api/conversations
+```
+
+Response:
+
+```json
+{ "sessionId": "a51f973c-4f93-4cc5-832d-63ae2ff86d65" }
+```
+
+Use the returned session ID when sending messages:
+
 ```bash
 curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message":"¿Qué bebidas calientes tienen y cuánto cuestan?"}'
+  -d '{"sessionId":"a51f973c-4f93-4cc5-832d-63ae2ff86d65","message":"¿Qué bebidas calientes tienen y cuánto cuestan?"}'
 ```
 
 Response:
@@ -124,6 +142,9 @@ Response:
 ```json
 { "reply": "..." }
 ```
+
+Reuse the same `sessionId` in later requests to preserve conversational context. The backend
+creates valid sessions; an unknown UUID is rejected instead of creating a conversation implicitly.
 
 ### Catalog
 
@@ -155,11 +176,19 @@ src/
 │   ├── chat.service.ts
 │   └── openai.service.ts
 ├── config/
+├── conversation/
+│   ├── conversation.controller.ts
+│   ├── conversation.module.ts
+│   └── conversation.service.ts
 ├── database/
 ├── health/
 ├── knowledge/
 │   ├── knowledge-context.service.ts
 │   └── knowledge.module.ts
+├── memory/
+│   ├── memory.service.ts
+│   ├── memory.types.ts
+│   └── memory.module.ts
 ├── app.module.ts
 └── main.ts
 

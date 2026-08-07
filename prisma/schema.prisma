@@ -14,6 +14,11 @@ enum ProductCategory {
   FOOD
 }
 
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
 model Product {
   id          String          @id @default(uuid()) @db.Uuid
   slug        String          @unique
@@ -57,4 +62,28 @@ model Faq {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("faqs")
+}
+
+model Conversation {
+  id        String                @id @default(uuid()) @db.Uuid
+  sessionId String                @map("session_id")
+  channel   String
+  messages  ConversationMessage[]
+  createdAt DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([channel, sessionId])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             Int         @id @default(autoincrement())
+  conversationId String      @map("conversation_id") @db.Uuid
+  role           MessageRole
+  content        String      @db.Text
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, id])
+  @@map("conversation_messages")
 }
