@@ -104,6 +104,20 @@ To diagnose one case without running the complete suite, set its exact name with
 RAG_EVALUATION_CASE="food catalog paraphrase" npm run rag:evaluate
 ```
 
+### PostgreSQL integration test
+
+With Docker Desktop running, execute the deterministic RAG integration test:
+
+```bash
+npm run test:integration
+```
+
+Testcontainers starts a disposable PostgreSQL 17 container with pgvector, verifies that the vector
+extension is available, and checks similarity ordering and threshold filtering with fixed vectors.
+It stops and removes the container after the test. The test does not call OpenAI and is intentionally
+kept separate from `npm run validate`, so the unit-test workflow remains fast and does not require
+Docker.
+
 ## Preparing the database
 
 Start the local PostgreSQL container:

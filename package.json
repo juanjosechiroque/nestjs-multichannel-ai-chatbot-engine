@@ -22,6 +22,7 @@
     "format": "eslint . --fix && prettier --write .",
     "validate": "eslint . --max-warnings=0 && prettier --check . && tsc --noEmit && jest --runInBand && nest build",
     "test": "jest",
+    "test:integration": "jest --config jest.integration.config.cjs --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },
@@ -43,6 +44,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@nestjs/cli": "^11.0.24",
+    "@testcontainers/postgresql": "^12.1.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^26.1.2",
     "@types/pg": "^8.20.4",
