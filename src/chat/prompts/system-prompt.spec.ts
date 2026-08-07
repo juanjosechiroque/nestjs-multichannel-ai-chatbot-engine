@@ -16,4 +16,12 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('automatic transfer is not available');
     expect(prompt).not.toContain('offer to refer the question to a person');
   });
+
+  it('requires attribution only to retrieved knowledge sources', () => {
+    const prompt = buildSystemPrompt({ businessName: 'Café Nube' });
+
+    expect(prompt).toContain('Include in usedSourceIds only sourceId values');
+    expect(prompt).toContain('Use an empty usedSourceIds array');
+    expect(prompt).toContain('Never invent, transform, or copy a source identifier');
+  });
 });

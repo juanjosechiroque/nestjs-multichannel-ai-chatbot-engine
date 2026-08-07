@@ -2,10 +2,13 @@ import { NotFoundException } from '@nestjs/common';
 import type { ConversationService } from '../conversation/conversation.service';
 import { ChatController } from './chat.controller';
 import type { ChatService } from './chat.service';
+import type { ChatRequest } from './chat.types';
 
 describe('ChatController', () => {
   it('resolves the public web session before calling the chatbot core', async () => {
-    const reply = jest.fn().mockResolvedValue('Respuesta con memoria');
+    const reply = jest
+      .fn<Promise<string>, [ChatRequest]>()
+      .mockResolvedValue('Respuesta con memoria');
     const findBySession = jest.fn().mockResolvedValue({
       id: 'internal-conversation-id',
       sessionId: '59ad97ee-f9c0-44d7-8fb8-881b87d21e19',
@@ -24,10 +27,15 @@ describe('ChatController', () => {
       sessionId: '59ad97ee-f9c0-44d7-8fb8-881b87d21e19',
       channel: 'web',
     });
-    expect(reply).toHaveBeenCalledWith({
+    const chatRequest = reply.mock.calls[0]?.[0];
+    expect(chatRequest).toMatchObject({
       conversationId: 'internal-conversation-id',
+      channel: 'web',
       message: 'Hola',
     });
+    expect(chatRequest?.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
     expect(response).toEqual({ reply: 'Respuesta con memoria' });
   });
 

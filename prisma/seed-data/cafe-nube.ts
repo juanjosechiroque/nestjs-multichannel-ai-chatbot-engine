@@ -224,6 +224,14 @@ export const cafeNubeFaqs = [
       country: 'Perú',
       mapsUrl:
         'https://www.google.com/maps/search/?api=1&query=Av.%20Jos%C3%A9%20Larco%20880%2C%20Miraflores%2C%20Lima',
+      searchPhrases: [
+        'cómo llego al local',
+        'cómo llegar a la cafetería',
+        'dónde queda el local',
+        'cuál es la dirección',
+        'envíame la ubicación',
+        'ubicación en Google Maps',
+      ],
     },
   },
   {

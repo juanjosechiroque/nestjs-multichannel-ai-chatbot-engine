@@ -63,7 +63,7 @@ describe('KnowledgeDocumentFactory', () => {
         answer: 'Atendemos todos los días.',
         category: 'HOURS',
       },
-    ] as Faq[];
+    ] as unknown as Faq[];
     const factory = new KnowledgeDocumentFactory();
 
     const documents = factory.createCatalogDocuments(products, promotions, faqs);
@@ -155,5 +155,43 @@ describe('KnowledgeDocumentFactory', () => {
     expect(hotDrinks?.content).toContain('Espresso — PEN 8.00');
     expect(hotDrinks?.content).toContain('Cappuccino — PEN 12.00');
     expect(hotDrinks?.content).not.toContain('Concentrated coffee.');
+  });
+
+  it('adds business-owned search phrases to a FAQ document', () => {
+    const faqs = [
+      {
+        id: 'faq-location-id',
+        slug: 'ubicacion',
+        question: '¿Dónde están ubicados?',
+        answer: 'Estamos en Miraflores.',
+        category: 'LOCATION',
+        metadata: {
+          searchPhrases: ['cómo llego al local', 'cuál es la dirección'],
+        },
+      },
+    ] as unknown as Faq[];
+    const factory = new KnowledgeDocumentFactory();
+
+    const documents = factory.createCatalogDocuments([], [], faqs);
+
+    expect(documents).toHaveLength(2);
+    expect(documents[0]).toMatchObject({
+      sourceId: 'faq-location-id',
+      chunkIndex: 0,
+    });
+    expect(documents[0]?.content).not.toContain('Consultas relacionadas');
+    expect(documents[1]).toMatchObject({
+      sourceId: 'faq-location-id',
+      chunkIndex: 1,
+      metadata: {
+        slug: 'ubicacion',
+        category: 'LOCATION',
+        purpose: 'search_aliases',
+      },
+    });
+    expect(documents[1]?.content).toContain(
+      'Consultas relacionadas: cómo llego al local; cuál es la dirección.',
+    );
+    expect(documents[1]?.content).toContain('Respuesta: Estamos en Miraflores.');
   });
 });

@@ -20,11 +20,19 @@ export interface RagSearchResult {
   similarity: number;
 }
 
+export interface RagSourceReference {
+  sourceId: string;
+  sourceKey: string;
+  sourceType: KnowledgeSourceType;
+}
+
 export type RagRetrievalStatus = 'results_found' | 'no_results';
 
 export interface RagGenerationContext {
   retrievalStatus: RagRetrievalStatus;
   knowledge: Array<{
+    sourceId: string;
+    sourceKey: string;
     type: KnowledgeSourceType;
     content: string;
   }>;

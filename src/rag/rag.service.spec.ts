@@ -27,9 +27,9 @@ describe('RagService', () => {
       config,
     );
 
-    const results = await service.search('¿A qué hora abren?', 3);
+    const results = await service.search('¿A qué hora abren?', 3, { requestId: 'request-1' });
 
-    expect(embed).toHaveBeenCalledWith('¿A qué hora abren?');
+    expect(embed).toHaveBeenCalledWith('¿A qué hora abren?', { requestId: 'request-1' });
     expect(queryRaw).toHaveBeenCalledTimes(1);
     expect(results).toEqual([
       {
@@ -88,10 +88,13 @@ describe('RagService', () => {
       config,
     );
 
-    await expect(service.search('¿Tienen una sucursal en Cusco?', 5)).resolves.toEqual([]);
+    await expect(
+      service.search('¿Tienen una sucursal en Cusco?', 5, { requestId: 'request-2' }),
+    ).resolves.toEqual([]);
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'rag.search.no_results',
+        requestId: 'request-2',
         topK: 5,
         minSimilarity: 0.5,
         results: 0,
@@ -112,6 +115,13 @@ describe('RagService', () => {
         content: 'Producto: Espresso Nube. Precio: PEN 8.00.',
         similarity: 0.94,
       },
+      {
+        sourceId: 'product-espresso',
+        sourceKey: 'espresso-nube',
+        sourceType: 'product',
+        content: 'Contenido duplicado de menor relevancia.',
+        similarity: 0.82,
+      },
     ]);
 
     const context = await service.getContext('espresso', 5);
@@ -120,12 +130,15 @@ describe('RagService', () => {
       retrievalStatus: 'results_found',
       knowledge: [
         {
+          sourceId: 'product-espresso',
+          sourceKey: 'espresso-nube',
           type: 'product',
           content: 'Producto: Espresso Nube. Precio: PEN 8.00.',
         },
       ],
     });
     expect(context).not.toContain('0.94');
+    expect(context).not.toContain('Contenido duplicado');
   });
 
   it('identifies an empty retrieval context explicitly', async () => {
