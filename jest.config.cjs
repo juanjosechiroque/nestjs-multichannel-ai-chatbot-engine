@@ -6,5 +6,25 @@ module.exports = {
   transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
   setupFiles: ['reflect-metadata'],
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/*.spec.ts',
+    '!src/generated/**',
+    '!src/**/*.module.ts',
+    '!src/**/*.types.ts',
+    '!src/main.ts',
+    '!src/rag/ingest-knowledge.ts',
+    '!src/rag/evaluate-rag.ts',
+    '!src/rag/evaluation/rag-evaluation.cases.ts',
+  ],
+  coveragePathIgnorePatterns: ['/node_modules/', '/src/generated/'],
+  coverageThreshold: {
+    global: {
+      statements: 85,
+      branches: 75,
+      functions: 80,
+      lines: 85,
+    },
+  },
   watchman: false,
 };

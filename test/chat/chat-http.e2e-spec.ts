@@ -14,8 +14,10 @@ import { configureApplication } from '../../src/app.setup';
 import type { GenerateResponseInput } from '../../src/chat/openai.service';
 import { OpenAiService } from '../../src/chat/openai.service';
 import { PrismaService } from '../../src/database/prisma.service';
+import { ProductCategory } from '../../src/generated/prisma/enums';
 import { EmbeddingService } from '../../src/rag/embedding.service';
 import { EMBEDDING_DIMENSIONS } from '../../src/rag/rag.types';
+import { toVectorLiteral } from '../../src/rag/vector.util';
 
 const TEST_ENVIRONMENT = {
   NODE_ENV: 'test',
@@ -36,6 +38,11 @@ interface ConversationResponse {
 
 interface ChatResponse {
   reply: string;
+}
+
+interface CatalogItemResponse {
+  slug: string;
+  active: boolean;
 }
 
 function deterministicEmbedding(): number[] {
@@ -106,7 +113,13 @@ describe('HTTP conversation flow', () => {
     generate.mockReset().mockResolvedValue('Respuesta de prueba');
     embed.mockReset().mockResolvedValue(deterministicEmbedding());
     await prisma.conversationMessage.deleteMany();
-    await prisma.conversation.deleteMany();
+    await Promise.all([
+      prisma.conversation.deleteMany(),
+      prisma.knowledgeChunk.deleteMany(),
+      prisma.product.deleteMany(),
+      prisma.promotion.deleteMany(),
+      prisma.faq.deleteMany(),
+    ]);
   });
 
   afterAll(async () => {
@@ -141,6 +154,120 @@ describe('HTTP conversation flow', () => {
     ).resolves.not.toBeNull();
   });
 
+  it('returns only active products ordered by name', async () => {
+    await prisma.product.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          slug: 'zeta-activo',
+          name: 'Zeta Latte',
+          description: 'Producto activo que debe aparecer segundo.',
+          price: '12.00',
+          category: ProductCategory.HOT_DRINK,
+          active: true,
+        },
+        {
+          id: randomUUID(),
+          slug: 'alpha-activo',
+          name: 'Alpha Espresso',
+          description: 'Producto activo que debe aparecer primero.',
+          price: '8.00',
+          category: ProductCategory.HOT_DRINK,
+          active: true,
+        },
+        {
+          id: randomUUID(),
+          slug: 'producto-inactivo',
+          name: 'Producto oculto',
+          description: 'Este producto no debe exponerse.',
+          price: '9.00',
+          category: ProductCategory.FOOD,
+          active: false,
+        },
+      ],
+    });
+
+    const response = await request(server).get('/api/products').expect(200);
+    const products = response.body as CatalogItemResponse[];
+
+    expect(products.map((product) => product.slug)).toEqual(['alpha-activo', 'zeta-activo']);
+    expect(products.every((product) => product.active)).toBe(true);
+  });
+
+  it('returns only active promotions ordered by name', async () => {
+    await prisma.promotion.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          slug: 'zeta-promocion',
+          name: 'Zeta promoción',
+          description: 'Promoción activa que debe aparecer segunda.',
+          active: true,
+        },
+        {
+          id: randomUUID(),
+          slug: 'alpha-promocion',
+          name: 'Alpha promoción',
+          description: 'Promoción activa que debe aparecer primera.',
+          active: true,
+        },
+        {
+          id: randomUUID(),
+          slug: 'promocion-inactiva',
+          name: 'Promoción oculta',
+          description: 'Esta promoción no debe exponerse.',
+          active: false,
+        },
+      ],
+    });
+
+    const response = await request(server).get('/api/promotions').expect(200);
+    const promotions = response.body as CatalogItemResponse[];
+
+    expect(promotions.map((promotion) => promotion.slug)).toEqual([
+      'alpha-promocion',
+      'zeta-promocion',
+    ]);
+    expect(promotions.every((promotion) => promotion.active)).toBe(true);
+  });
+
+  it('returns only active FAQs ordered by question', async () => {
+    await prisma.faq.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          slug: 'zeta-faq',
+          question: '¿Zonas de delivery?',
+          answer: 'Atendemos todo Miraflores.',
+          category: 'DELIVERY',
+          active: true,
+        },
+        {
+          id: randomUUID(),
+          slug: 'alpha-faq',
+          question: '¿Aceptan tarjetas?',
+          answer: 'Sí, aceptamos tarjetas.',
+          category: 'PAYMENTS',
+          active: true,
+        },
+        {
+          id: randomUUID(),
+          slug: 'faq-inactiva',
+          question: '¿Pregunta oculta?',
+          answer: 'Esta respuesta no debe exponerse.',
+          category: 'INACTIVE',
+          active: false,
+        },
+      ],
+    });
+
+    const response = await request(server).get('/api/faqs').expect(200);
+    const faqs = response.body as CatalogItemResponse[];
+
+    expect(faqs.map((faq) => faq.slug)).toEqual(['alpha-faq', 'zeta-faq']);
+    expect(faqs.every((faq) => faq.active)).toBe(true);
+  });
+
   it('persists a complete HTTP chat exchange in PostgreSQL', async () => {
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
@@ -169,6 +296,55 @@ describe('HTTP conversation flow', () => {
       expect.objectContaining({ role: 'USER', content: '¿Cuál es su horario?' }),
       expect.objectContaining({ role: 'ASSISTANT', content: 'Respuesta de prueba' }),
     ]);
+  });
+
+  it('retrieves matching pgvector knowledge before generating and persisting a reply', async () => {
+    const vectorLiteral = toVectorLiteral(deterministicEmbedding());
+    const sourceId = 'faq-hours-e2e';
+    const content =
+      'Tipo: pregunta frecuente. Pregunta: ¿Cuál es el horario? Respuesta: Atendemos todos los días de 7:00 a. m. a 9:00 p. m.';
+    await prisma.$executeRaw`
+      INSERT INTO "knowledge_chunks" (
+        "id",
+        "source_type",
+        "source_id",
+        "chunk_index",
+        "content",
+        "metadata",
+        "embedding",
+        "created_at",
+        "updated_at"
+      )
+      VALUES (
+        ${randomUUID()}::uuid,
+        'faq',
+        ${sourceId},
+        0,
+        ${content},
+        '{"slug":"horario-atencion"}'::jsonb,
+        ${vectorLiteral}::vector,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    `;
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    generate.mockResolvedValueOnce('Atendemos todos los días de 7:00 a. m. a 9:00 p. m.');
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: '¿A qué hora atienden?' })
+      .expect(201, { reply: 'Atendemos todos los días de 7:00 a. m. a 9:00 p. m.' });
+
+    const generationInput = generate.mock.calls[0]?.[0];
+    expect(generationInput).toBeDefined();
+    expect(JSON.parse(generationInput?.businessContext ?? '')).toEqual({
+      retrievalStatus: 'results_found',
+      knowledge: [{ type: 'faq', content }],
+    });
+    expect(generationInput?.businessContext).not.toContain(sourceId);
+    expect(generationInput?.businessContext).not.toContain('similarity');
+    await expect(prisma.conversationMessage.count()).resolves.toBe(2);
   });
 
   it('passes the persisted first exchange as history on the second message', async () => {
