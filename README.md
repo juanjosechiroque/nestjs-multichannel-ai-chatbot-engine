@@ -83,8 +83,17 @@ OPENAI_API_KEY=your_api_key
 OPENAI_MODEL=gpt-5.6-luna
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_MAX_OUTPUT_TOKENS=500
+OPENAI_GENERATION_TIMEOUT_MS=20000
+OPENAI_GENERATION_MAX_RETRIES=1
+OPENAI_EMBEDDING_TIMEOUT_MS=8000
+OPENAI_EMBEDDING_MAX_RETRIES=1
 RAG_MIN_SIMILARITY=0.5
 ```
+
+Generation and embedding requests have separate timeout and retry limits because they have
+different latency profiles. A retry count of `1` means one initial request and at most one retry for
+a transient OpenAI failure. Empty or structurally invalid responses are not retried by application
+code.
 
 `RAG_MIN_SIMILARITY` accepts a value from `0` to `1`. Retrieved knowledge below this threshold is
 discarded, and the accepted source IDs and similarity scores are written to structured application
@@ -97,6 +106,25 @@ exposing internal similarity scores. Until a human-handoff workflow is implement
 states that the information is not confirmed and does not claim that it can transfer or escalate the
 conversation. It also avoids suggesting unverified related services or contact methods that were not
 present in the retrieved context.
+
+### Failure handling
+
+Infrastructure failures are converted into controlled `503 Service Unavailable` responses. The
+customer never receives raw OpenAI, Prisma, or PostgreSQL error details. Structured logs retain an
+internal result or failure code so operators can distinguish:
+
+| Code                      | Meaning                                                        |
+| ------------------------- | -------------------------------------------------------------- |
+| `OPENAI_REQUEST_FAILED`   | Generation failed after the configured SDK retry policy.       |
+| `OPENAI_EMPTY_RESPONSE`   | OpenAI completed the request without a usable answer.          |
+| `OPENAI_EMBEDDING_FAILED` | Knowledge embedding failed after the configured retry policy.  |
+| `DATABASE_UNAVAILABLE`    | A required PostgreSQL operation failed.                        |
+| `RAG_NO_RESULTS`          | Search completed successfully but found no relevant knowledge. |
+
+`RAG_NO_RESULTS` is a normal result, not an infrastructure error. The chatbot receives empty
+knowledge and responds that the requested business information is not confirmed. If PostgreSQL is
+unavailable, generation is stopped instead of asking the model to answer without trusted business
+data.
 
 ### RAG retrieval evaluation
 

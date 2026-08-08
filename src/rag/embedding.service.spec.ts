@@ -1,5 +1,6 @@
-import { Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { OpenAiEmbeddingFailedException } from '../common/application-error';
 import { EmbeddingService } from './embedding.service';
 import { EMBEDDING_DIMENSIONS } from './rag.types';
 
@@ -18,6 +19,8 @@ function createService(): { service: EmbeddingService; create: jest.Mock } {
     new ConfigService({
       OPENAI_API_KEY: 'test-api-key',
       OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
+      OPENAI_EMBEDDING_TIMEOUT_MS: 8_000,
+      OPENAI_EMBEDDING_MAX_RETRIES: 1,
     }),
   );
   const client = service as unknown as { client: EmbeddingsClientStub };
@@ -56,6 +59,11 @@ describe('EmbeddingService', () => {
     const result = await service.embedMany(['first', 'second'], { requestId: 'request-1' });
 
     expect(result).toEqual([firstEmbedding, secondEmbedding]);
+    const configuredClient = service as unknown as {
+      client: { timeout: number; maxRetries: number };
+    };
+    expect(configuredClient.client.timeout).toBe(8_000);
+    expect(configuredClient.client.maxRetries).toBe(1);
     expect(create).toHaveBeenCalledWith({
       model: 'text-embedding-3-small',
       input: ['first', 'second'],
@@ -98,9 +106,7 @@ describe('EmbeddingService', () => {
     configure(create);
 
     await expect(service.embedMany(['espresso'])).rejects.toEqual(
-      new ServiceUnavailableException(
-        'La búsqueda de conocimiento no está disponible en este momento.',
-      ),
+      new OpenAiEmbeddingFailedException(),
     );
   });
 
@@ -108,8 +114,6 @@ describe('EmbeddingService', () => {
     const { service } = createService();
     jest.spyOn(service, 'embedMany').mockResolvedValue([]);
 
-    await expect(service.embed('espresso')).rejects.toEqual(
-      new ServiceUnavailableException('OpenAI returned an empty embedding'),
-    );
+    await expect(service.embed('espresso')).rejects.toEqual(new OpenAiEmbeddingFailedException());
   });
 });

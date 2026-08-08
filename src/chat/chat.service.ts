@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { getApplicationFailureCode } from '../common/application-error';
 import { MemoryService } from '../memory/memory.service';
 import { RagService } from '../rag/rag.service';
 import { buildRetrievalQuery } from '../rag/retrieval-query';
@@ -68,6 +69,7 @@ export class ChatService {
         conversationId,
         channel,
         totalDurationMs: Date.now() - startedAt,
+        failureCode: getApplicationFailureCode(error),
         message,
       });
       throw error;

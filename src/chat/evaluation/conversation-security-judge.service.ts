@@ -47,6 +47,8 @@ export class ConversationSecurityJudgeService {
   constructor(private readonly config: ConfigService) {
     this.client = new OpenAI({
       apiKey: this.config.getOrThrow<string>('OPENAI_API_KEY'),
+      timeout: this.config.get<number>('OPENAI_GENERATION_TIMEOUT_MS', 20_000),
+      maxRetries: this.config.get<number>('OPENAI_GENERATION_MAX_RETRIES', 1),
     });
   }
 

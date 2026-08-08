@@ -1,6 +1,7 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import { OpenAiEmbeddingFailedException } from '../common/application-error';
 import type { RequestContext } from '../common/request-context';
 import { EMBEDDING_DIMENSIONS } from './rag.types';
 
@@ -13,6 +14,8 @@ export class EmbeddingService {
   constructor(config: ConfigService) {
     this.client = new OpenAI({
       apiKey: config.getOrThrow<string>('OPENAI_API_KEY'),
+      timeout: config.get<number>('OPENAI_EMBEDDING_TIMEOUT_MS', 8_000),
+      maxRetries: config.get<number>('OPENAI_EMBEDDING_MAX_RETRIES', 1),
     });
     this.model = config.get<string>('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small');
   }
@@ -22,7 +25,7 @@ export class EmbeddingService {
     const embedding = embeddings[0];
 
     if (!embedding) {
-      throw new ServiceUnavailableException('OpenAI returned an empty embedding');
+      throw new OpenAiEmbeddingFailedException();
     }
 
     return embedding;
@@ -71,11 +74,10 @@ export class EmbeddingService {
         ...context,
         model: this.model,
         durationMs: Date.now() - startedAt,
+        failureCode: 'OPENAI_EMBEDDING_FAILED',
         message,
       });
-      throw new ServiceUnavailableException(
-        'La búsqueda de conocimiento no está disponible en este momento.',
-      );
+      throw new OpenAiEmbeddingFailedException();
     }
   }
 }

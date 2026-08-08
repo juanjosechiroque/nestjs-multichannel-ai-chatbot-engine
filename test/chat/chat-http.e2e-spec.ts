@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { join } from 'node:path';
-import { ServiceUnavailableException, type INestApplication } from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client } from 'pg';
@@ -11,6 +11,12 @@ import { Client } from 'pg';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import { configureApplication } from '../../src/app.setup';
+import {
+  DatabaseUnavailableException,
+  OpenAiEmptyResponseException,
+  OpenAiRequestFailedException,
+} from '../../src/common/application-error';
+import { ConversationService } from '../../src/conversation/conversation.service';
 import type { GenerateResponseInput, GenerateResponseResult } from '../../src/chat/openai.service';
 import { OpenAiService } from '../../src/chat/openai.service';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -26,6 +32,10 @@ const TEST_ENVIRONMENT = {
   OPENAI_MODEL: 'e2e-model',
   OPENAI_EMBEDDING_MODEL: 'e2e-embedding-model',
   OPENAI_MAX_OUTPUT_TOKENS: '500',
+  OPENAI_GENERATION_TIMEOUT_MS: '20000',
+  OPENAI_GENERATION_MAX_RETRIES: '1',
+  OPENAI_EMBEDDING_TIMEOUT_MS: '8000',
+  OPENAI_EMBEDDING_MAX_RETRIES: '1',
   RAG_MIN_SIMILARITY: '0.5',
   BUSINESS_NAME: 'Café Nube',
 } as const;
@@ -417,14 +427,13 @@ describe('HTTP conversation flow', () => {
     await request(server).post('/api/chat').send(payload).expect(400);
   });
 
-  it('returns a controlled 503 when the generation provider fails', async () => {
+  it.each([
+    ['the generation request fails', new OpenAiRequestFailedException()],
+    ['OpenAI returns an empty response', new OpenAiEmptyResponseException()],
+  ])('returns a controlled 503 when %s', async (_scenario, providerError) => {
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
-    generate.mockRejectedValueOnce(
-      new ServiceUnavailableException(
-        'El asistente no está disponible en este momento. Inténtalo nuevamente.',
-      ),
-    );
+    generate.mockRejectedValueOnce(providerError);
 
     await request(server)
       .post('/api/chat')
@@ -436,8 +445,36 @@ describe('HTTP conversation flow', () => {
             message: 'El asistente no está disponible en este momento. Inténtalo nuevamente.',
           }),
         );
+        expect(body).not.toHaveProperty('failureCode');
       });
 
     await expect(prisma.conversationMessage.count()).resolves.toBe(0);
+  });
+
+  it('returns a controlled 503 when PostgreSQL is unavailable', async () => {
+    const conversations = app.get(ConversationService);
+    const findBySession = jest
+      .spyOn(conversations, 'findBySession')
+      .mockRejectedValueOnce(new DatabaseUnavailableException());
+
+    try {
+      await request(server)
+        .post('/api/chat')
+        .send({ sessionId: randomUUID(), message: 'Hola' })
+        .expect(503)
+        .expect(({ body }: { body: unknown }) => {
+          expect(body).toEqual(
+            expect.objectContaining({
+              message:
+                'No puedo consultar la información del negocio en este momento. Inténtalo nuevamente.',
+            }),
+          );
+          expect(body).not.toHaveProperty('failureCode');
+        });
+
+      expect(generate).not.toHaveBeenCalled();
+    } finally {
+      findBySession.mockRestore();
+    }
   });
 });

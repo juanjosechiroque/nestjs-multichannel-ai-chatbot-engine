@@ -1,4 +1,5 @@
 import type { PrismaService } from '../database/prisma.service';
+import { DatabaseUnavailableException } from '../common/application-error';
 import { CatalogService } from './catalog.service';
 
 describe('CatalogService', () => {
@@ -39,5 +40,15 @@ describe('CatalogService', () => {
       where: { active: true },
       orderBy: { question: 'asc' },
     });
+  });
+
+  it('returns a controlled database error when reading the catalog fails', async () => {
+    const service = new CatalogService({
+      product: {
+        findMany: jest.fn().mockRejectedValue(new Error('connection failed')),
+      },
+    } as unknown as PrismaService);
+
+    await expect(service.getProducts()).rejects.toEqual(new DatabaseUnavailableException());
   });
 });

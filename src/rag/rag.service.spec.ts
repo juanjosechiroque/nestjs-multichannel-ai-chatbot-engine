@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { DatabaseUnavailableException } from '../common/application-error';
 import type { PrismaService } from '../database/prisma.service';
 import { RagService } from './rag.service';
 import { EMBEDDING_DIMENSIONS } from './rag.types';
@@ -97,12 +98,36 @@ describe('RagService', () => {
         requestId: 'request-2',
         topK: 5,
         minSimilarity: 0.5,
+        resultCode: 'RAG_NO_RESULTS',
         results: 0,
         sources: [],
       }),
     );
 
     log.mockRestore();
+  });
+
+  it('distinguishes a PostgreSQL vector search failure from empty results', async () => {
+    const embedding = Array<number>(EMBEDDING_DIMENSIONS).fill(0.01);
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const service = new RagService(
+      { embed: jest.fn().mockResolvedValue(embedding) },
+      {
+        $queryRaw: jest.fn().mockRejectedValue(new Error('database unavailable')),
+      } as unknown as PrismaService,
+      config,
+    );
+
+    await expect(
+      service.search('¿Cuál es el horario?', 5, { requestId: 'request-db' }),
+    ).rejects.toEqual(new DatabaseUnavailableException());
+    expect(error).toHaveBeenCalledWith({
+      event: 'database.operation.failed',
+      requestId: 'request-db',
+      operation: 'rag.vector_search',
+      failureCode: 'DATABASE_UNAVAILABLE',
+      message: 'database unavailable',
+    });
   });
 
   it('exposes only safe context fields to the generation model', async () => {
