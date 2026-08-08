@@ -1,5 +1,6 @@
-import type { PrismaService } from '../database/prisma.service';
+import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import type { PrismaService } from '../database/prisma.service';
 import { RagService } from './rag.service';
 import { EMBEDDING_DIMENSIONS } from './rag.types';
 
@@ -78,6 +79,29 @@ describe('RagService', () => {
     ]);
   });
 
+  it('logs a dedicated event when no result reaches the similarity threshold', async () => {
+    const embedding = Array<number>(EMBEDDING_DIMENSIONS).fill(0.01);
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const service = new RagService(
+      { embed: jest.fn().mockResolvedValue(embedding) },
+      { $queryRaw: jest.fn().mockResolvedValue([]) } as unknown as PrismaService,
+      config,
+    );
+
+    await expect(service.search('¿Tienen una sucursal en Cusco?', 5)).resolves.toEqual([]);
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'rag.search.no_results',
+        topK: 5,
+        minSimilarity: 0.5,
+        results: 0,
+        sources: [],
+      }),
+    );
+
+    log.mockRestore();
+  });
+
   it('exposes only safe context fields to the generation model', async () => {
     const service = new RagService({ embed: jest.fn() }, {} as PrismaService, config);
     jest.spyOn(service, 'search').mockResolvedValue([
@@ -93,6 +117,7 @@ describe('RagService', () => {
     const context = await service.getContext('espresso', 5);
 
     expect(JSON.parse(context)).toEqual({
+      retrievalStatus: 'results_found',
       knowledge: [
         {
           type: 'product',
@@ -101,5 +126,17 @@ describe('RagService', () => {
       ],
     });
     expect(context).not.toContain('0.94');
+  });
+
+  it('identifies an empty retrieval context explicitly', async () => {
+    const service = new RagService({ embed: jest.fn() }, {} as PrismaService, config);
+    jest.spyOn(service, 'search').mockResolvedValue([]);
+
+    const context = await service.getContext('información no disponible', 5);
+
+    expect(JSON.parse(context)).toEqual({
+      retrievalStatus: 'no_results',
+      knowledge: [],
+    });
   });
 });

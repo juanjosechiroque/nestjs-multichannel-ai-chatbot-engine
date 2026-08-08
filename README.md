@@ -85,6 +85,14 @@ RAG_MIN_SIMILARITY=0.5
 discarded, and the accepted source IDs and similarity scores are written to structured application
 logs without being exposed in the HTTP response.
 
+When no source reaches the threshold, the RAG layer logs `rag.search.no_results` and sends an
+explicit `{"retrievalStatus":"no_results","knowledge":[]}` context to the generation model. This
+lets the assistant distinguish missing business knowledge from a successful retrieval without
+exposing internal similarity scores. Until a human-handoff workflow is implemented, the assistant
+states that the information is not confirmed and does not claim that it can transfer or escalate the
+conversation. It also avoids suggesting unverified related services or contact methods that were not
+present in the retrieved context.
+
 ### RAG retrieval evaluation
 
 After seeding and ingesting the knowledge base, run the retrieval evaluation:
@@ -93,7 +101,7 @@ After seeding and ingesting the knowledge base, run the retrieval evaluation:
 npm run rag:evaluate
 ```
 
-The command executes 26 representative queries against the real embeddings and pgvector search. It
+The command executes 28 representative queries against the real embeddings and pgvector search. It
 does not generate chatbot responses. It reports the expected-source hit rate for business questions
 and the no-result accuracy for unrelated questions, then exits with an error when any case fails.
 Use these results to calibrate `RAG_MIN_SIMILARITY` instead of choosing the threshold by intuition.
@@ -136,7 +144,7 @@ npm run knowledge:ingest
 ```
 
 The seed is explicit and safe to run again. It uses stable slugs to update the 10 products, 3
-promotions, and 9 active FAQs without creating duplicates. Run `knowledge:ingest` after changing this
+promotions, and 10 active FAQs without creating duplicates. Run `knowledge:ingest` after changing this
 business data. The command creates or updates the pgvector knowledge index and skips unchanged
 documents.
 

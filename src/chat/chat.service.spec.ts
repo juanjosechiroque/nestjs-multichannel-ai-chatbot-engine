@@ -13,7 +13,7 @@ describe('ChatService', () => {
     });
     const openAi: Pick<OpenAiService, 'generate'> = { generate };
     const rag: Pick<RagService, 'getContext'> = {
-      getContext: jest.fn().mockResolvedValue('{"knowledge":[]}'),
+      getContext: jest.fn().mockResolvedValue('{"retrievalStatus":"no_results","knowledge":[]}'),
     };
     const memory: Pick<MemoryService, 'getRecentMessages' | 'saveExchange'> = {
       getRecentMessages: jest.fn().mockResolvedValue([
@@ -39,7 +39,7 @@ describe('ChatService', () => {
     expect(receivedInput?.instructions).toContain(
       'virtual customer service assistant for Café Nube',
     );
-    expect(receivedInput?.businessContext).toBe('{"knowledge":[]}');
+    expect(receivedInput?.businessContext).toBe('{"retrievalStatus":"no_results","knowledge":[]}');
     expect(receivedInput?.history).toEqual([
       { role: 'user', content: '¿Qué bebidas calientes tienen?' },
       { role: 'assistant', content: 'Tenemos espresso y cappuccino.' },
@@ -59,7 +59,7 @@ describe('ChatService', () => {
     });
     const openAi: Pick<OpenAiService, 'generate'> = { generate };
     const rag: Pick<RagService, 'getContext'> = {
-      getContext: jest.fn().mockResolvedValue('{"knowledge":[]}'),
+      getContext: jest.fn().mockResolvedValue('{"retrievalStatus":"no_results","knowledge":[]}'),
     };
     const memory: Pick<MemoryService, 'getRecentMessages' | 'saveExchange'> = {
       getRecentMessages: jest.fn().mockResolvedValue([]),
@@ -86,7 +86,7 @@ describe('ChatService', () => {
     });
     const openAi: Pick<OpenAiService, 'generate'> = { generate };
     const rag: Pick<RagService, 'getContext'> = {
-      getContext: jest.fn().mockResolvedValue('{"knowledge":[]}'),
+      getContext: jest.fn().mockResolvedValue('{"retrievalStatus":"no_results","knowledge":[]}'),
     };
     const memory: Pick<MemoryService, 'getRecentMessages' | 'saveExchange'> = {
       getRecentMessages: jest.fn().mockResolvedValue([]),
@@ -104,6 +104,13 @@ describe('ChatService', () => {
     expect(receivedInput?.message).toBe(unrelatedMessage);
     expect(receivedInput?.instructions).toContain(
       'Do not answer unrelated requests such as recipes',
+    );
+    expect(receivedInput?.instructions).toContain('retrievalStatus is "no_results"');
+    expect(receivedInput?.instructions).toContain(
+      'Do not offer or claim to transfer, escalate, notify, or contact a person',
+    );
+    expect(receivedInput?.instructions).toContain(
+      'do not suggest unverified related products or services',
     );
   });
 });

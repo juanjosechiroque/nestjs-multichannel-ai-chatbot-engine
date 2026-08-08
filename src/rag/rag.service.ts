@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { EmbeddingService } from './embedding.service';
-import type { RagSearchResult } from './rag.types';
+import type { RagGenerationContext, RagSearchResult } from './rag.types';
 import { toVectorLiteral } from './vector.util';
 
 @Injectable()
@@ -43,7 +43,7 @@ export class RagService {
     const relevantResults = results.filter((result) => result.similarity >= this.minSimilarity);
 
     this.logger.log({
-      event: 'rag.search.completed',
+      event: relevantResults.length === 0 ? 'rag.search.no_results' : 'rag.search.completed',
       durationMs: Date.now() - startedAt,
       topK,
       minSimilarity: this.minSimilarity,
@@ -61,12 +61,14 @@ export class RagService {
 
   async getContext(query: string, topK: number): Promise<string> {
     const results = await this.search(query, topK);
-
-    return JSON.stringify({
+    const context: RagGenerationContext = {
+      retrievalStatus: results.length === 0 ? 'no_results' : 'results_found',
       knowledge: results.map((result) => ({
         type: result.sourceType,
         content: result.content,
       })),
-    });
+    };
+
+    return JSON.stringify(context);
   }
 }
