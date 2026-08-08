@@ -12,6 +12,10 @@ interface ResponsesClientStub {
   };
 }
 
+function requestContext(requestId: string) {
+  return { requestId, conversationId: 'conversation-1', channel: 'web' };
+}
+
 function createService(): { service: OpenAiService; create: jest.Mock } {
   const service = new OpenAiService(
     new ConfigService({
@@ -53,7 +57,7 @@ describe('OpenAiService', () => {
     });
 
     const result = await service.generate({
-      requestId: 'request-1',
+      context: requestContext('request-1'),
       message: '¿Cuál es el horario?',
       instructions: 'Only answer questions about Café Nube.',
       businessContext:
@@ -136,9 +140,12 @@ describe('OpenAiService', () => {
       expect.objectContaining({
         event: 'openai.response.completed',
         requestId: 'request-1',
+        conversationId: 'conversation-1',
+        channel: 'web',
         reportedSourceIds: ['faq-hours'],
       }),
     );
+    expect(JSON.stringify(log.mock.calls)).not.toContain('¿Cuál es el horario?');
   });
 
   it('discards source identifiers that were not included in the retrieved context', async () => {
@@ -154,7 +161,7 @@ describe('OpenAiService', () => {
 
     await expect(
       service.generate({
-        requestId: 'request-2',
+        context: requestContext('request-2'),
         message: '¿Cuál es el horario?',
         instructions: 'Business instructions.',
         businessContext:
@@ -174,6 +181,8 @@ describe('OpenAiService', () => {
     expect(warn).toHaveBeenCalledWith({
       event: 'openai.response.invalid_source_ids',
       requestId: 'request-2',
+      conversationId: 'conversation-1',
+      channel: 'web',
       invalidSourceIds: ['invented-source'],
     });
 
@@ -199,7 +208,7 @@ describe('OpenAiService', () => {
 
     await expect(
       service.generate({
-        requestId: 'request-error',
+        context: requestContext('request-error'),
         message: 'Hola',
         instructions: 'Business instructions.',
         businessContext: '{"retrievalStatus":"no_results","knowledge":[]}',
@@ -224,7 +233,7 @@ describe('OpenAiService', () => {
 
     await expect(
       service.generate({
-        requestId: 'request-empty',
+        context: requestContext('request-empty'),
         message: 'Hola',
         instructions: 'Business instructions.',
         businessContext: '{"retrievalStatus":"no_results","knowledge":[]}',
@@ -235,6 +244,8 @@ describe('OpenAiService', () => {
       expect.objectContaining({
         event: 'openai.response.empty',
         requestId: 'request-empty',
+        conversationId: 'conversation-1',
+        channel: 'web',
         failureCode: 'OPENAI_EMPTY_RESPONSE',
       }),
     );

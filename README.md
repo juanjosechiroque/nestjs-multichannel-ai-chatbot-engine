@@ -23,6 +23,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Backend-managed web sessions with persistent PostgreSQL conversation history.
 - Context-aware knowledge retrieval for conversational follow-up questions.
 - Structured OpenAI latency and token usage logging.
+- Correlated logs across conversation memory, RAG, and OpenAI calls.
 - Controlled handling of provider errors.
 - Conversational security evaluations for prompt injection and unsupported business claims.
 - Unit tests that do not make real OpenAI API calls.
@@ -125,6 +126,29 @@ internal result or failure code so operators can distinguish:
 knowledge and responds that the requested business information is not confirmed. If PostgreSQL is
 unavailable, generation is stopped instead of asking the model to answer without trusted business
 data.
+
+### Correlated logging
+
+Every chat request receives a unique `requestId`, while `conversationId` remains the same for all
+messages in one conversation. Both identifiers and the channel are propagated through memory,
+embeddings, RAG, OpenAI generation, and the final chat event. This makes one request traceable across
+layers without recording customer content.
+
+A successful request emits events such as:
+
+```text
+memory.history.loaded
+openai.embeddings.completed
+rag.search.completed
+openai.response.completed
+memory.exchange.saved
+chat.response.completed
+```
+
+These events share the same `requestId`, `conversationId`, and `channel`. An initial conversation
+lookup can only include `requestId` and `channel`, because the backend has not resolved the
+conversation yet. Production logs intentionally omit the customer message, generated answer,
+system prompt, conversation history, embeddings, and public session ID.
 
 ### RAG retrieval evaluation
 

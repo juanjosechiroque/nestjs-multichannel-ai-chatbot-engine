@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Controller, Post } from '@nestjs/common';
 import { ConversationService } from './conversation.service';
 
@@ -11,7 +12,10 @@ export class ConversationController {
 
   @Post()
   async create(): Promise<CreateConversationResponse> {
-    const conversation = await this.conversations.create('web');
+    const conversation = await this.conversations.create('web', {
+      requestId: randomUUID(),
+      channel: 'web',
+    });
 
     return { sessionId: conversation.sessionId };
   }

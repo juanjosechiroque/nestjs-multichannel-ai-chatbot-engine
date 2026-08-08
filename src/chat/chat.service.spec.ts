@@ -62,13 +62,25 @@ describe('ChatService', () => {
         '¿Cuál es la más barata?',
       ].join('\n'),
       5,
-      { requestId: 'request-1' },
+      {
+        requestId: 'request-1',
+        conversationId: 'conversation-1',
+        channel: 'web',
+      },
     );
-    expect(memory.getRecentMessages).toHaveBeenCalledWith('conversation-1');
+    expect(memory.getRecentMessages).toHaveBeenCalledWith('conversation-1', {
+      requestId: 'request-1',
+      conversationId: 'conversation-1',
+      channel: 'web',
+    });
     expect(generate).toHaveBeenCalledTimes(1);
 
     expect(receivedInput?.message).toBe('¿Cuál es la más barata?');
-    expect(receivedInput?.requestId).toBe('request-1');
+    expect(receivedInput?.context).toEqual({
+      requestId: 'request-1',
+      conversationId: 'conversation-1',
+      channel: 'web',
+    });
     expect(receivedInput?.instructions).toContain(
       'virtual customer service assistant for Café Nube',
     );
@@ -77,11 +89,18 @@ describe('ChatService', () => {
       { role: 'user', content: '¿Qué bebidas calientes tienen?' },
       { role: 'assistant', content: 'Tenemos espresso y cappuccino.' },
     ]);
-    expect(memory.saveExchange).toHaveBeenCalledWith({
-      conversationId: 'conversation-1',
-      userMessage: '¿Cuál es la más barata?',
-      assistantMessage: '¡Hola! ¿Cómo puedo ayudarte?',
-    });
+    expect(memory.saveExchange).toHaveBeenCalledWith(
+      {
+        conversationId: 'conversation-1',
+        userMessage: '¿Cuál es la más barata?',
+        assistantMessage: '¡Hola! ¿Cómo puedo ayudarte?',
+      },
+      {
+        requestId: 'request-1',
+        conversationId: 'conversation-1',
+        channel: 'web',
+      },
+    );
     expect(log).toHaveBeenCalledWith({
       event: 'chat.response.completed',
       requestId: 'request-1',
