@@ -45,6 +45,11 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
     expectedSource: { sourceType: 'faq', sourceKey: 'wifi' },
   },
   {
+    name: 'wifi availability paraphrase',
+    query: '¿Hay conexión a internet para clientes?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'wifi' },
+  },
+  {
     name: 'pet policy',
     query: '¿Puedo ir con mi perro?',
     expectedSource: { sourceType: 'faq', sourceKey: 'mascotas' },
@@ -52,6 +57,11 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
   {
     name: 'pet policy with a cat',
     query: '¿Puedo ir con mi gato?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'mascotas' },
+  },
+  {
+    name: 'pet policy paraphrase',
+    query: '¿Aceptan animales de compañía?',
     expectedSource: { sourceType: 'faq', sourceKey: 'mascotas' },
   },
   {
@@ -75,6 +85,11 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
     expectedSource: { sourceType: 'product_category', sourceKey: 'HOT_DRINK' },
   },
   {
+    name: 'hot drinks catalog paraphrase',
+    query: '¿Qué tienen para tomar si quiero algo caliente?',
+    expectedSource: { sourceType: 'product_category', sourceKey: 'HOT_DRINK' },
+  },
+  {
     name: 'cold drinks catalog',
     query: 'Muéstrame todas las bebidas frías',
     expectedSource: { sourceType: 'product_category', sourceKey: 'COLD_DRINK' },
@@ -82,6 +97,11 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
   {
     name: 'food catalog',
     query: '¿Qué opciones de comida venden?',
+    expectedSource: { sourceType: 'product_category', sourceKey: 'FOOD' },
+  },
+  {
+    name: 'food catalog paraphrase',
+    query: '¿Puedo ver la carta para comer?',
     expectedSource: { sourceType: 'product_category', sourceKey: 'FOOD' },
   },
   {

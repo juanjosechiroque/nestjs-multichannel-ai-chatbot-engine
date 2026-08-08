@@ -44,15 +44,17 @@ describe('KnowledgeDocumentFactory', () => {
       metadata: { slug: 'espresso-nube', category: ProductCategory.HOT_DRINK },
     });
     expect(documents[0]?.content).toContain('Categoría: bebida caliente');
+    expect(documents[0]?.content).toContain('Espresso doble con notas de cacao.');
     expect(documents[0]?.content).toContain('Precio: PEN 8.00');
     expect(documents[0]?.content).not.toContain('product-id');
     expect(documents[1]).toMatchObject({
       sourceType: 'product_category',
       sourceId: ProductCategory.HOT_DRINK,
     });
-    expect(documents[1]?.content).toContain('Productos disponibles en esta categoría');
+    expect(documents[1]?.content).toContain('Productos y precios disponibles');
     expect(documents[1]?.content).toContain('qué bebidas calientes tienen');
     expect(documents[1]?.content).toContain('Espresso Nube');
+    expect(documents[1]?.content).not.toContain('Espresso doble con notas de cacao.');
     expect(documents[2]?.content).toContain('Tipo: promoción');
     expect(documents[3]?.content).toContain('Pregunta: ¿Cuál es el horario?');
   });
