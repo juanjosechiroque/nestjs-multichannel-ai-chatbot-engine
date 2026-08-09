@@ -30,6 +30,7 @@ export class RagService {
     const results = await this.prisma.$queryRaw<RagSearchResult[]>`
       SELECT
         "source_id" AS "sourceId",
+        COALESCE("metadata"->>'slug', "source_id") AS "sourceKey",
         "source_type" AS "sourceType",
         "content",
         1 - ("embedding" <=> ${vectorLiteral}::vector) AS "similarity"
@@ -49,6 +50,7 @@ export class RagService {
       results: relevantResults.length,
       sources: relevantResults.map((result) => ({
         sourceId: result.sourceId,
+        sourceKey: result.sourceKey,
         sourceType: result.sourceType,
         similarity: Number(result.similarity.toFixed(4)),
       })),

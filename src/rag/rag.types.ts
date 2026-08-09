@@ -14,7 +14,8 @@ export interface KnowledgeDocument {
 
 export interface RagSearchResult {
   sourceId: string;
-  sourceType: string;
+  sourceKey: string;
+  sourceType: KnowledgeSourceType;
   content: string;
   similarity: number;
 }

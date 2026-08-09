@@ -85,6 +85,19 @@ RAG_MIN_SIMILARITY=0.5
 discarded, and the accepted source IDs and similarity scores are written to structured application
 logs without being exposed in the HTTP response.
 
+### RAG retrieval evaluation
+
+After seeding and ingesting the knowledge base, run the retrieval evaluation:
+
+```bash
+npm run rag:evaluate
+```
+
+The command executes 20 representative queries against the real embeddings and pgvector search. It
+does not generate chatbot responses. It reports the expected-source hit rate for business questions
+and the no-result accuracy for unrelated questions, then exits with an error when any case fails.
+Use these results to calibrate `RAG_MIN_SIMILARITY` instead of choosing the threshold by intuition.
+
 ## Preparing the database
 
 Start the local PostgreSQL container:
@@ -197,6 +210,7 @@ src/
 │   ├── memory.types.ts
 │   └── memory.module.ts
 ├── rag/
+│   ├── evaluation/
 │   ├── embedding.service.ts
 │   ├── knowledge-document.factory.ts
 │   ├── knowledge-ingestion.service.ts

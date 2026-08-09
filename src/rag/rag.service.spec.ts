@@ -14,6 +14,7 @@ describe('RagService', () => {
     const queryRaw = jest.fn().mockResolvedValue([
       {
         sourceId: 'faq-hours',
+        sourceKey: 'horario-atencion',
         sourceType: 'faq',
         content: 'Pregunta: ¿Cuál es el horario? Respuesta: Atendemos todos los días.',
         similarity: 0.91,
@@ -32,6 +33,7 @@ describe('RagService', () => {
     expect(results).toEqual([
       {
         sourceId: 'faq-hours',
+        sourceKey: 'horario-atencion',
         sourceType: 'faq',
         content: 'Pregunta: ¿Cuál es el horario? Respuesta: Atendemos todos los días.',
         similarity: 0.91,
@@ -44,12 +46,14 @@ describe('RagService', () => {
     const queryRaw = jest.fn().mockResolvedValue([
       {
         sourceId: 'faq-location',
+        sourceKey: 'ubicacion',
         sourceType: 'faq',
         content: 'Dirección: Av. José Larco 880.',
         similarity: 0.84,
       },
       {
         sourceId: 'product-espresso',
+        sourceKey: 'espresso-nube',
         sourceType: 'product',
         content: 'Producto: Espresso Nube.',
         similarity: 0.31,
@@ -66,6 +70,7 @@ describe('RagService', () => {
     expect(results).toEqual([
       {
         sourceId: 'faq-location',
+        sourceKey: 'ubicacion',
         sourceType: 'faq',
         content: 'Dirección: Av. José Larco 880.',
         similarity: 0.84,
@@ -78,6 +83,7 @@ describe('RagService', () => {
     jest.spyOn(service, 'search').mockResolvedValue([
       {
         sourceId: 'product-espresso',
+        sourceKey: 'espresso-nube',
         sourceType: 'product',
         content: 'Producto: Espresso Nube. Precio: PEN 8.00.',
         similarity: 0.94,
