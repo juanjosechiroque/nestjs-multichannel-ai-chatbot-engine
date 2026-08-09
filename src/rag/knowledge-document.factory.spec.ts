@@ -51,6 +51,7 @@ describe('KnowledgeDocumentFactory', () => {
       sourceId: ProductCategory.HOT_DRINK,
     });
     expect(documents[1]?.content).toContain('Productos disponibles en esta categoría');
+    expect(documents[1]?.content).toContain('qué bebidas calientes tienen');
     expect(documents[1]?.content).toContain('Espresso Nube');
     expect(documents[2]?.content).toContain('Tipo: promoción');
     expect(documents[3]?.content).toContain('Pregunta: ¿Cuál es el horario?');

@@ -40,9 +40,19 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
     expectedSource: { sourceType: 'faq', sourceKey: 'alergenos' },
   },
   {
+    name: 'wifi availability',
+    query: '¿Tienen wifi para clientes?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'wifi' },
+  },
+  {
     name: 'pet policy',
     query: '¿Puedo ir con mi perro?',
-    expectedSource: { sourceType: 'faq', sourceKey: 'wifi-mascotas' },
+    expectedSource: { sourceType: 'faq', sourceKey: 'mascotas' },
+  },
+  {
+    name: 'pet policy with a cat',
+    query: '¿Puedo ir con mi gato?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'mascotas' },
   },
   {
     name: 'espresso price',

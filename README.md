@@ -93,7 +93,7 @@ After seeding and ingesting the knowledge base, run the retrieval evaluation:
 npm run rag:evaluate
 ```
 
-The command executes 20 representative queries against the real embeddings and pgvector search. It
+The command executes 22 representative queries against the real embeddings and pgvector search. It
 does not generate chatbot responses. It reports the expected-source hit rate for business questions
 and the no-result accuracy for unrelated questions, then exits with an error when any case fails.
 Use these results to calibrate `RAG_MIN_SIMILARITY` instead of choosing the threshold by intuition.
@@ -116,7 +116,7 @@ npm run knowledge:ingest
 ```
 
 The seed is explicit and safe to run again. It uses stable slugs to update the 10 products, 3
-promotions, and 8 FAQs without creating duplicates. Run `knowledge:ingest` after changing this
+promotions, and 9 active FAQs without creating duplicates. Run `knowledge:ingest` after changing this
 business data. The command creates or updates the pgvector knowledge index and skips unchanged
 documents.
 
