@@ -11,7 +11,9 @@ The current request path is:
 HTTP request → DTO validation → ChatController
                                    ├→ ConversationService → PostgreSQL
                                    └→ ChatService
-                                       ├→ KnowledgeContextService → CatalogService → PostgreSQL
+                                       ├→ RagService
+                                       │   ├→ EmbeddingService → OpenAI
+                                       │   └→ PostgreSQL + pgvector
                                        ├→ MemoryService → PostgreSQL
                                        └→ OpenAiService → OpenAI
 ```
@@ -24,32 +26,34 @@ flowchart LR
         controller["ChatController<br/>HTTP input and output"]
         conversation["ConversationService<br/>Session lifecycle and resolution"]
         chat["ChatService<br/>Chatbot behavior"]
-        knowledge["KnowledgeContextService<br/>Allowed business context"]
-        catalog["CatalogService<br/>Business data"]
+        rag["RagService<br/>Relevant business context"]
+        embedding["EmbeddingService<br/>OpenAI embeddings"]
         memory["MemoryService<br/>Recent conversation history"]
         provider["OpenAiService<br/>OpenAI SDK"]
 
         controller --> conversation
         controller --> chat --> provider
-        chat --> knowledge --> catalog
+        chat --> rag --> embedding
         chat --> memory
     end
 
-    openai["OpenAI Responses API"]
+    openai["OpenAI APIs"]
     postgres["PostgreSQL"]
 
     client -->|"HTTP / JSON"| controller
     provider -->|"Responses API"| openai
+    embedding -->|"Embeddings API"| openai
     conversation -->|"Prisma"| postgres
-    catalog -->|"Prisma"| postgres
+    rag -->|"pgvector"| postgres
     memory -->|"Prisma"| postgres
 ```
 
 The web adapter resolves a backend-created public session ID through `ConversationService` before
 calling `ChatService` with the internal conversation ID. `MemoryService` loads the latest 10
-messages and stores completed user/assistant exchanges using that internal ID. Every request also
-includes the small active catalog. Retrieval with embeddings will replace the full catalog context
-when the knowledge base grows.
+messages and stores completed user/assistant exchanges using that internal ID. `RagService`
+embeds each query and retrieves up to five knowledge chunks above the configured similarity
+threshold instead of sending the complete catalog to the generation model. Retrieved source IDs,
+types, and scores are logged for observability without exposing them through the channel response.
 
 ## Multichannel boundary
 
@@ -66,19 +70,21 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 
 ## Component responsibilities
 
-| Component                 | Responsibility                                    | Must not                                |
-| ------------------------- | ------------------------------------------------- | --------------------------------------- |
-| `controller`              | Handle transport input and output                 | Contain chatbot rules                   |
-| `DTO`                     | Validate the transport contract                   | Contain business logic                  |
-| `ConversationService`     | Create and resolve backend-managed conversations  | Contain prompts or channel payloads     |
-| `ChatService`             | Define chatbot behavior and coordinate a reply    | Depend on HTTP or a messaging channel   |
-| `OpenAiService`           | Encapsulate the OpenAI SDK and provider errors    | Handle channel payloads                 |
-| `ConfigModule`            | Load and validate environment variables           | Expose secrets in logs or responses     |
-| `DatabaseModule`          | Provide one shared Prisma database client         | Contain catalog or chatbot rules        |
-| `CatalogService`          | Read structured business data through Prisma      | Depend on HTTP or a messaging channel   |
-| `KnowledgeContextService` | Expose only approved catalog fields to the model  | Pass database internals or instructions |
-| `MemoryService`           | Load and save history by internal conversation ID | Resolve public sessions or channels     |
-| Prisma seed               | Load reproducible public demonstration data       | Become a runtime dependency             |
+| Component                   | Responsibility                                    | Must not                              |
+| --------------------------- | ------------------------------------------------- | ------------------------------------- |
+| `controller`                | Handle transport input and output                 | Contain chatbot rules                 |
+| `DTO`                       | Validate the transport contract                   | Contain business logic                |
+| `ConversationService`       | Create and resolve backend-managed conversations  | Contain prompts or channel payloads   |
+| `ChatService`               | Define chatbot behavior and coordinate a reply    | Depend on HTTP or a messaging channel |
+| `OpenAiService`             | Encapsulate the OpenAI SDK and provider errors    | Handle channel payloads               |
+| `ConfigModule`              | Load and validate environment variables           | Expose secrets in logs or responses   |
+| `DatabaseModule`            | Provide one shared Prisma database client         | Contain catalog or chatbot rules      |
+| `CatalogService`            | Read structured business data through Prisma      | Depend on HTTP or a messaging channel |
+| `EmbeddingService`          | Generate fixed-size vectors through OpenAI        | Build prompts or handle channels      |
+| `RagService`                | Retrieve relevant knowledge through pgvector      | Own structured catalog data           |
+| `KnowledgeIngestionService` | Build the derived vector index from active data   | Become the source of truth            |
+| `MemoryService`             | Load and save history by internal conversation ID | Resolve public sessions or channels   |
+| Prisma seed                 | Load reproducible public demonstration data       | Become a runtime dependency           |
 
 ## Decisions and trade-offs
 
@@ -90,7 +96,9 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 | HTTP endpoint first             | Validates the core with minimal transport complexity           | WebSocket streaming is not available yet            |
 | PostgreSQL + Prisma             | Keeps catalog data structured, queryable, and type-safe        | Requires a local database and migrations            |
 | Demo seed in the repository     | Makes the project reproducible for reviewers and contributors  | Demo content must stay separate from engine logic   |
-| Full catalog context first      | Makes grounded answers testable before adding vector retrieval | Does not scale to a large knowledge base            |
+| OpenAI `text-embedding-3-small` | Reuses the existing provider and SDK                           | Adds one small embedding request per search         |
+| Exact pgvector search           | Is simple and accurate for the current 24 chunks               | Needs a vector index when the dataset becomes large |
+| Five retrieved chunks           | Reduces generation input while keeping useful context          | Exhaustive lists need aggregate catalog chunks      |
 | PostgreSQL conversation history | Reuses existing infrastructure and persists sessions           | Adds database reads and writes per chat request     |
 | Backend-created web sessions    | Gives the platform control over valid conversations            | Requires a session-creation request before chat     |
 | Last 10 messages as context     | Bounds the initial memory implementation                       | Older messages are not sent to the model            |
@@ -126,15 +134,19 @@ src/
 │   ├── database.module.ts
 │   └── prisma.service.ts
 ├── health/
-├── knowledge/
-│   ├── knowledge-context.service.ts
-│   ├── knowledge-context.service.spec.ts
-│   └── knowledge.module.ts
 ├── memory/
 │   ├── memory.module.ts
 │   ├── memory.service.ts
 │   ├── memory.service.spec.ts
 │   └── memory.types.ts
+├── rag/
+│   ├── embedding.service.ts
+│   ├── ingest-knowledge.ts
+│   ├── knowledge-document.factory.ts
+│   ├── knowledge-ingestion.service.ts
+│   ├── rag.module.ts
+│   ├── rag.service.ts
+│   └── rag.types.ts
 ├── app.module.ts
 └── main.ts
 
