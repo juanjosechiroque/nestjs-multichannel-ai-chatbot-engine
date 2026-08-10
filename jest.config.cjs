@@ -16,6 +16,8 @@ module.exports = {
     '!src/rag/ingest-knowledge.ts',
     '!src/rag/evaluate-rag.ts',
     '!src/rag/evaluation/rag-evaluation.cases.ts',
+    '!src/chat/evaluate-conversation-security.ts',
+    '!src/chat/evaluation/conversation-security-evaluation.cases.ts',
   ],
   coveragePathIgnorePatterns: ['/node_modules/', '/src/generated/'],
   coverageThreshold: {

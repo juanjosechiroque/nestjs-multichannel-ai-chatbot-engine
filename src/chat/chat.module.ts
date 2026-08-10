@@ -4,11 +4,18 @@ import { MemoryModule } from '../memory/memory.module';
 import { RagModule } from '../rag/rag.module';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
+import { ConversationSecurityEvaluationService } from './evaluation/conversation-security-evaluation.service';
+import { ConversationSecurityJudgeService } from './evaluation/conversation-security-judge.service';
 import { OpenAiService } from './openai.service';
 
 @Module({
   imports: [ConversationModule, MemoryModule, RagModule],
   controllers: [ChatController],
-  providers: [ChatService, OpenAiService],
+  providers: [
+    ChatService,
+    ConversationSecurityEvaluationService,
+    ConversationSecurityJudgeService,
+    OpenAiService,
+  ],
 })
 export class ChatModule {}
