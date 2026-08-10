@@ -210,6 +210,18 @@ export const cafeNubeFaqs = [
     answer:
       'Atendemos de lunes a viernes de 7:00 a. m. a 9:00 p. m., los sábados de 8:00 a. m. a 9:00 p. m. y los domingos y feriados de 8:00 a. m. a 8:00 p. m. La cocina cierra 30 minutos antes, pero seguimos preparando bebidas hasta el cierre.',
     active: true,
+    metadata: {
+      searchPhrases: [
+        'a qué hora abren',
+        'a qué hora cierran',
+        'hasta qué hora atienden',
+        'cuál es el horario del local',
+        'atienden los domingos',
+        'abren los feriados',
+        'horario de atención de hoy',
+        'a qué hora cierra la cocina',
+      ],
+    },
   },
   {
     slug: 'ubicacion',
