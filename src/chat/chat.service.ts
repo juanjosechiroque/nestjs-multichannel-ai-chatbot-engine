@@ -3,13 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { getApplicationFailureCode } from '../common/application-error';
 import type { RequestContext } from '../common/request-context';
 import { MemoryService } from '../memory/memory.service';
-import { RagService } from '../rag/rag.service';
-import { buildRetrievalQuery } from '../rag/retrieval-query';
 import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
+import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 import type { ChatRequest } from './chat.types';
-
-const RAG_TOP_K = 5;
 
 @Injectable()
 export class ChatService {
@@ -20,8 +17,8 @@ export class ChatService {
     @Inject(OpenAiService)
     private readonly openAi: Pick<OpenAiService, 'generate'>,
     private readonly config: ConfigService,
-    @Inject(RagService)
-    private readonly rag: Pick<RagService, 'getContext'>,
+    @Inject(KnowledgeSearchTool)
+    private readonly knowledgeSearch: Pick<KnowledgeSearchTool, 'execute'>,
     @Inject(MemoryService)
     private readonly memory: Pick<MemoryService, 'getRecentMessages' | 'saveExchange'>,
   ) {
@@ -36,15 +33,13 @@ export class ChatService {
 
     try {
       const history = await this.memory.getRecentMessages(conversationId, context);
-      const retrievalQuery = buildRetrievalQuery(message, history);
-      const businessContext = await this.rag.getContext(retrievalQuery, RAG_TOP_K, context);
 
       const generation = await this.openAi.generate({
         context,
         message,
         instructions: this.instructions,
-        businessContext,
         history,
+        searchKnowledge: (query) => this.knowledgeSearch.execute({ query, history, context }),
       });
 
       await this.memory.saveExchange(
@@ -62,6 +57,8 @@ export class ChatService {
         conversationId,
         channel,
         totalDurationMs: Date.now() - startedAt,
+        llmCalls: generation.llmCalls,
+        usedTools: generation.usedTools,
         usedSources: generation.usedSources,
       });
 
