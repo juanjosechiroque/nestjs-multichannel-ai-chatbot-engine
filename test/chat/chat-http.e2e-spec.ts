@@ -3,13 +3,13 @@ import { readFile, readdir } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client } from 'pg';
 // Supertest uses a CommonJS `export =`, so an import assignment matches its runtime shape.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
-import { AppModule } from '../../src/app.module';
 import { configureApplication } from '../../src/app.setup';
 import {
   DatabaseUnavailableException,
@@ -24,6 +24,7 @@ import { ProductCategory } from '../../src/generated/prisma/enums';
 import { EmbeddingService } from '../../src/rag/embedding.service';
 import { EMBEDDING_DIMENSIONS } from '../../src/rag/rag.types';
 import { toVectorLiteral } from '../../src/rag/vector.util';
+import { assertDisposableTestDatabase } from '../support/test-database';
 
 const TEST_ENVIRONMENT = {
   NODE_ENV: 'test',
@@ -96,14 +97,17 @@ describe('HTTP conversation flow', () => {
 
     Object.assign(process.env, TEST_ENVIRONMENT);
 
+    const databaseName = `chatbot_engine_e2e_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
     container = await new PostgreSqlContainer('pgvector/pgvector:pg17')
-      .withDatabase('chatbot_e2e')
+      .withDatabase(databaseName)
       .withUsername('chatbot')
       .withPassword('chatbot')
       .start();
 
     process.env.DATABASE_URL = container.getConnectionUri();
     await applyMigrations(container.getConnectionUri());
+
+    const { AppModule } = await import('../../src/app.module');
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(OpenAiService)
@@ -116,6 +120,14 @@ describe('HTTP conversation flow', () => {
     configureApplication(app);
     await app.init();
     prisma = app.get(PrismaService);
+    const configuredDatabaseUrl = app.get(ConfigService).getOrThrow<string>('DATABASE_URL');
+
+    if (configuredDatabaseUrl !== container.getConnectionUri()) {
+      throw new Error('NestJS is not configured with the disposable E2E database URL');
+    }
+
+    await assertDisposableTestDatabase(prisma, databaseName);
+
     server = app.getHttpServer() as Server;
   });
 

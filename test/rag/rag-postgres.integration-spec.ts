@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { PrismaService } from '../../src/database/prisma.service';
 import { RagService } from '../../src/rag/rag.service';
 import { EMBEDDING_DIMENSIONS } from '../../src/rag/rag.types';
 import { toVectorLiteral } from '../../src/rag/vector.util';
+import { assertDisposableTestDatabase } from '../support/test-database';
 
 function createEmbedding(firstValue: number, secondValue: number): number[] {
   const embedding = Array<number>(EMBEDDING_DIMENSIONS).fill(0);
@@ -23,8 +25,11 @@ describe('RagService with PostgreSQL and pgvector', () => {
   const embed = jest.fn().mockResolvedValue(EXACT_EMBEDDING);
 
   beforeAll(async () => {
+    const databaseName = `chatbot_engine_integration_test_${randomUUID()
+      .replaceAll('-', '')
+      .slice(0, 16)}`;
     container = await new PostgreSqlContainer('pgvector/pgvector:pg17')
-      .withDatabase('rag_integration')
+      .withDatabase(databaseName)
       .withUsername('chatbot')
       .withPassword('chatbot')
       .start();
@@ -35,6 +40,7 @@ describe('RagService with PostgreSQL and pgvector', () => {
     });
     prisma = new PrismaService(config);
     await prisma.$connect();
+    await assertDisposableTestDatabase(prisma, databaseName);
 
     await prisma.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector');
     await prisma.$executeRawUnsafe(`
@@ -98,7 +104,7 @@ describe('RagService with PostgreSQL and pgvector', () => {
   it('orders results by cosine similarity and removes matches below the threshold', async () => {
     const results = await rag.search('deterministic test query', 5);
 
-    expect(embed).toHaveBeenCalledWith('deterministic test query');
+    expect(embed).toHaveBeenCalledWith('deterministic test query', undefined);
     expect(results.map((result) => result.sourceKey)).toEqual(['exact-match', 'near-match']);
     expect(results[0]?.similarity).toBeCloseTo(1);
     expect(results[1]?.similarity).toBeCloseTo(0.8);
