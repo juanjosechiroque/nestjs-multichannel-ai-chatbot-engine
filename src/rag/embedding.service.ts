@@ -1,6 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import type { RequestContext } from '../common/request-context';
 import { EMBEDDING_DIMENSIONS } from './rag.types';
 
 @Injectable()
@@ -16,8 +17,8 @@ export class EmbeddingService {
     this.model = config.get<string>('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small');
   }
 
-  async embed(input: string): Promise<number[]> {
-    const embeddings = await this.embedMany([input]);
+  async embed(input: string, context?: RequestContext): Promise<number[]> {
+    const embeddings = await this.embedMany([input], context);
     const embedding = embeddings[0];
 
     if (!embedding) {
@@ -27,7 +28,7 @@ export class EmbeddingService {
     return embedding;
   }
 
-  async embedMany(inputs: string[]): Promise<number[][]> {
+  async embedMany(inputs: string[], context?: RequestContext): Promise<number[][]> {
     if (inputs.length === 0) {
       return [];
     }
@@ -54,6 +55,7 @@ export class EmbeddingService {
 
       this.logger.log({
         event: 'openai.embeddings.completed',
+        ...context,
         model: response.model,
         durationMs: Date.now() - startedAt,
         inputs: inputs.length,
@@ -66,6 +68,7 @@ export class EmbeddingService {
       const message = error instanceof Error ? error.message : 'Unknown OpenAI error';
       this.logger.error({
         event: 'openai.embeddings.failed',
+        ...context,
         model: this.model,
         durationMs: Date.now() - startedAt,
         message,

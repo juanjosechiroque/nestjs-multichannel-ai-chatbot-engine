@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EmbeddingService } from './embedding.service';
 import { EMBEDDING_DIMENSIONS } from './rag.types';
@@ -28,6 +28,10 @@ function createService(): { service: EmbeddingService; create: jest.Mock } {
 }
 
 describe('EmbeddingService', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('returns no embeddings without calling OpenAI when the input is empty', async () => {
     const { service, create } = createService();
 
@@ -39,6 +43,7 @@ describe('EmbeddingService', () => {
     const firstEmbedding = createEmbedding(0.1);
     const secondEmbedding = createEmbedding(0.2);
     const { service, create } = createService();
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     create.mockResolvedValue({
       model: 'text-embedding-3-small',
       data: [
@@ -48,7 +53,7 @@ describe('EmbeddingService', () => {
       usage: { prompt_tokens: 4, total_tokens: 4 },
     });
 
-    const result = await service.embedMany(['first', 'second']);
+    const result = await service.embedMany(['first', 'second'], { requestId: 'request-1' });
 
     expect(result).toEqual([firstEmbedding, secondEmbedding]);
     expect(create).toHaveBeenCalledWith({
@@ -57,6 +62,12 @@ describe('EmbeddingService', () => {
       encoding_format: 'float',
       dimensions: EMBEDDING_DIMENSIONS,
     });
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'openai.embeddings.completed',
+        requestId: 'request-1',
+      }),
+    );
   });
 
   it('returns the first embedding for a single input', async () => {
@@ -65,7 +76,7 @@ describe('EmbeddingService', () => {
     const embedMany = jest.spyOn(service, 'embedMany').mockResolvedValue([embedding]);
 
     await expect(service.embed('espresso')).resolves.toEqual(embedding);
-    expect(embedMany).toHaveBeenCalledWith(['espresso']);
+    expect(embedMany).toHaveBeenCalledWith(['espresso'], undefined);
   });
 
   it.each([

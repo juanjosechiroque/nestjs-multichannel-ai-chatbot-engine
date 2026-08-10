@@ -14,7 +14,7 @@ export class KnowledgeDocumentFactory {
       ...products.map((product) => this.createProductDocument(product)),
       ...this.createProductCategoryDocuments(products),
       ...promotions.map((promotion) => this.createPromotionDocument(promotion)),
-      ...faqs.map((faq) => this.createFaqDocument(faq)),
+      ...faqs.flatMap((faq) => this.createFaqDocuments(faq)),
     ];
   }
 
@@ -84,8 +84,13 @@ export class KnowledgeDocumentFactory {
     };
   }
 
-  private createFaqDocument(faq: Faq): KnowledgeDocument {
-    return {
+  private createFaqDocuments(faq: Faq): KnowledgeDocument[] {
+    const searchPhrases = this.getSearchPhrases(faq.metadata);
+    const metadata = {
+      slug: faq.slug,
+      category: faq.category,
+    };
+    const canonicalDocument: KnowledgeDocument = {
       sourceType: 'faq',
       sourceId: faq.id,
       chunkIndex: 0,
@@ -95,11 +100,47 @@ export class KnowledgeDocumentFactory {
         `Respuesta: ${faq.answer}`,
         `Categoría: ${faq.category}.`,
       ].join(' '),
-      metadata: {
-        slug: faq.slug,
-        category: faq.category,
-      },
+      metadata,
     };
+
+    if (searchPhrases.length === 0) {
+      return [canonicalDocument];
+    }
+
+    return [
+      canonicalDocument,
+      {
+        sourceType: 'faq',
+        sourceId: faq.id,
+        chunkIndex: 1,
+        content: [
+          `Consultas relacionadas: ${searchPhrases.join('; ')}.`,
+          `Respuesta: ${faq.answer}`,
+        ].join(' '),
+        metadata: {
+          ...metadata,
+          purpose: 'search_aliases',
+        },
+      },
+    ];
+  }
+
+  private getSearchPhrases(metadata: unknown): string[] {
+    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
+      return [];
+    }
+
+    const searchPhrases: unknown = (metadata as Record<string, unknown>).searchPhrases;
+
+    if (!Array.isArray(searchPhrases)) {
+      return [];
+    }
+
+    const values: unknown[] = searchPhrases;
+    return values.filter(
+      (searchPhrase): searchPhrase is string =>
+        typeof searchPhrase === 'string' && searchPhrase.trim().length > 0,
+    );
   }
 
   private getProductCategoryLabel(category: ProductCategory): string {

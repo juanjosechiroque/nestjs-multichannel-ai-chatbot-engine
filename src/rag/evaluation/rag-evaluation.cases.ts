@@ -12,6 +12,11 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
     expectedSource: { sourceType: 'faq', sourceKey: 'ubicacion' },
   },
   {
+    name: 'location short paraphrase',
+    query: '¿Cómo llego al local?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'ubicacion' },
+  },
+  {
     name: 'branch in another city',
     query: '¿Tienen una sede en Arequipa?',
     expectedSource: { sourceType: 'faq', sourceKey: 'sucursales' },

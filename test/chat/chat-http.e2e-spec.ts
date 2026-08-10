@@ -11,7 +11,7 @@ import { Client } from 'pg';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import { configureApplication } from '../../src/app.setup';
-import type { GenerateResponseInput } from '../../src/chat/openai.service';
+import type { GenerateResponseInput, GenerateResponseResult } from '../../src/chat/openai.service';
 import { OpenAiService } from '../../src/chat/openai.service';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ProductCategory } from '../../src/generated/prisma/enums';
@@ -76,7 +76,7 @@ describe('HTTP conversation flow', () => {
   let prisma: PrismaService;
   let server: Server;
   const originalEnvironment = new Map<EnvironmentKey, string | undefined>();
-  const generate = jest.fn<Promise<string>, [GenerateResponseInput]>();
+  const generate = jest.fn<Promise<GenerateResponseResult>, [GenerateResponseInput]>();
   const embed = jest.fn<Promise<number[]>, [string]>();
 
   beforeAll(async () => {
@@ -110,7 +110,7 @@ describe('HTTP conversation flow', () => {
   });
 
   beforeEach(async () => {
-    generate.mockReset().mockResolvedValue('Respuesta de prueba');
+    generate.mockReset().mockResolvedValue({ answer: 'Respuesta de prueba', usedSources: [] });
     embed.mockReset().mockResolvedValue(deterministicEmbedding());
     await prisma.conversationMessage.deleteMany();
     await Promise.all([
@@ -278,7 +278,11 @@ describe('HTTP conversation flow', () => {
       .expect(201);
 
     expect(chatResponse.body as ChatResponse).toEqual({ reply: 'Respuesta de prueba' });
-    expect(embed).toHaveBeenCalledWith('¿Cuál es su horario?');
+    const generationInput = generate.mock.calls[0]?.[0];
+    expect(generationInput?.requestId).toEqual(expect.any(String));
+    expect(embed).toHaveBeenCalledWith('¿Cuál es su horario?', {
+      requestId: generationInput?.requestId,
+    });
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
         message: '¿Cuál es su horario?',
@@ -329,7 +333,16 @@ describe('HTTP conversation flow', () => {
     `;
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
-    generate.mockResolvedValueOnce('Atendemos todos los días de 7:00 a. m. a 9:00 p. m.');
+    generate.mockResolvedValueOnce({
+      answer: 'Atendemos todos los días de 7:00 a. m. a 9:00 p. m.',
+      usedSources: [
+        {
+          sourceId,
+          sourceKey: 'horario-atencion',
+          sourceType: 'faq',
+        },
+      ],
+    });
 
     await request(server)
       .post('/api/chat')
@@ -340,9 +353,9 @@ describe('HTTP conversation flow', () => {
     expect(generationInput).toBeDefined();
     expect(JSON.parse(generationInput?.businessContext ?? '')).toEqual({
       retrievalStatus: 'results_found',
-      knowledge: [{ type: 'faq', content }],
+      knowledge: [{ sourceId, sourceKey: 'horario-atencion', type: 'faq', content }],
     });
-    expect(generationInput?.businessContext).not.toContain(sourceId);
+    expect(generationInput?.businessContext).toContain(sourceId);
     expect(generationInput?.businessContext).not.toContain('similarity');
     await expect(prisma.conversationMessage.count()).resolves.toBe(2);
   });
@@ -351,8 +364,8 @@ describe('HTTP conversation flow', () => {
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
     generate
-      .mockResolvedValueOnce('Tenemos bebidas calientes.')
-      .mockResolvedValueOnce('El americano.');
+      .mockResolvedValueOnce({ answer: 'Tenemos bebidas calientes.', usedSources: [] })
+      .mockResolvedValueOnce({ answer: 'El americano.', usedSources: [] });
 
     await request(server)
       .post('/api/chat')
@@ -363,6 +376,7 @@ describe('HTTP conversation flow', () => {
       .send({ sessionId, message: '¿Y cuál es la más barata?' })
       .expect(201, { reply: 'El americano.' });
 
+    const secondGenerationInput = generate.mock.calls[1]?.[0];
     expect(embed).toHaveBeenNthCalledWith(
       2,
       [
@@ -371,6 +385,7 @@ describe('HTTP conversation flow', () => {
         'Current customer message:',
         '¿Y cuál es la más barata?',
       ].join('\n'),
+      { requestId: secondGenerationInput?.requestId },
     );
     expect(generate).toHaveBeenNthCalledWith(
       2,

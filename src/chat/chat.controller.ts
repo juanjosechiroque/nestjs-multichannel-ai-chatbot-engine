@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Body, Controller, NotFoundException, Post } from '@nestjs/common';
 import { ConversationService } from '../conversation/conversation.service';
 import { ChatService } from './chat.service';
@@ -26,7 +27,9 @@ export class ChatController {
     }
 
     const reply = await this.chatService.reply({
+      requestId: randomUUID(),
       conversationId: conversation.id,
+      channel: 'web',
       message: input.message,
     });
     return { reply };
