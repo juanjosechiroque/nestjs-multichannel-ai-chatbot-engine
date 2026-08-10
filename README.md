@@ -113,6 +113,19 @@ To diagnose one case without running the complete suite, set its exact name with
 RAG_EVALUATION_CASE="food catalog paraphrase" npm run rag:evaluate
 ```
 
+### Unit test coverage
+
+Run the deterministic unit-test suite with coverage:
+
+```bash
+npm run test:cov
+```
+
+Jest measures the application code explicitly while excluding generated Prisma code, declarative
+NestJS modules, type-only files, and command-line entry points. The quality gate requires at least
+85% statements, 75% branches, 80% functions, and 85% lines. `npm run validate` applies the same
+thresholds together with linting, formatting, strict TypeScript checking, and the production build.
+
 ### PostgreSQL integration test
 
 With Docker Desktop running, execute the deterministic RAG integration test:
@@ -223,8 +236,8 @@ curl http://localhost:3000/api/faqs
 ## Verification
 
 ```bash
-npm run build
-npm test
+npm run validate
+npm run test:integration
 npm run test:e2e
 ```
 

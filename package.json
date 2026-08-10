@@ -20,12 +20,12 @@
     "knowledge:ingest": "nest start --entryFile rag/ingest-knowledge",
     "rag:evaluate": "nest start --entryFile rag/evaluate-rag",
     "format": "eslint . --fix && prettier --write .",
-    "validate": "eslint . --max-warnings=0 && prettier --check . && tsc --noEmit && jest --runInBand && nest build",
+    "validate": "eslint . --max-warnings=0 && prettier --check . && tsc --noEmit && jest --coverage --runInBand && nest build",
     "test": "jest",
     "test:e2e": "jest --config jest.e2e.config.cjs --runInBand",
     "test:integration": "jest --config jest.integration.config.cjs --runInBand",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage"
+    "test:cov": "jest --coverage --runInBand"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
