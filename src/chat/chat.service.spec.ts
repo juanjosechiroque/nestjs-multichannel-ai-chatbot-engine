@@ -31,7 +31,15 @@ describe('ChatService', () => {
     });
 
     expect(reply).toBe('¡Hola! ¿Cómo puedo ayudarte?');
-    expect(rag.getContext).toHaveBeenCalledWith('¿Cuál es la más barata?', 5);
+    expect(rag.getContext).toHaveBeenCalledWith(
+      [
+        'Previous customer message:',
+        '¿Qué bebidas calientes tienen?',
+        'Current customer message:',
+        '¿Cuál es la más barata?',
+      ].join('\n'),
+      5,
+    );
     expect(memory.getRecentMessages).toHaveBeenCalledWith('conversation-1');
     expect(generate).toHaveBeenCalledTimes(1);
 
