@@ -62,14 +62,14 @@ describe('ChatService', () => {
       memory,
     );
 
-    const reply = await service.reply({
+    const result = await service.reply({
       requestId: 'request-1',
       conversationId: 'conversation-1',
       channel: 'web',
       message: '¿Cuál es la más barata?',
     });
 
-    expect(reply).toBe('El americano es la bebida caliente más barata.');
+    expect(result).toEqual({ reply: 'El americano es la bebida caliente más barata.' });
     expect(execute).toHaveBeenCalledWith({
       query: 'la bebida caliente más barata',
       history: [
@@ -153,7 +153,7 @@ describe('ChatService', () => {
         channel: 'web',
         message: 'Hola',
       }),
-    ).resolves.toBe('¡Hola! ¿En qué puedo ayudarte?');
+    ).resolves.toEqual({ reply: '¡Hola! ¿En qué puedo ayudarte?' });
 
     expect(execute).not.toHaveBeenCalled();
     expect(generate).toHaveBeenCalledWith(

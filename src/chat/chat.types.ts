@@ -6,3 +6,7 @@ export interface ChatRequest {
   channel: ChatChannel;
   message: string;
 }
+
+export interface ChatResult {
+  reply: string;
+}

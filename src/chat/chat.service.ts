@@ -7,7 +7,7 @@ import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
 import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
-import type { ChatRequest } from './chat.types';
+import type { ChatRequest, ChatResult } from './chat.types';
 
 @Injectable()
 export class ChatService {
@@ -30,7 +30,7 @@ export class ChatService {
     });
   }
 
-  async reply({ requestId, conversationId, channel, message }: ChatRequest): Promise<string> {
+  async reply({ requestId, conversationId, channel, message }: ChatRequest): Promise<ChatResult> {
     const startedAt = Date.now();
     const context: RequestContext = { requestId, conversationId, channel };
 
@@ -66,7 +66,7 @@ export class ChatService {
         usedSources: generation.usedSources,
       });
 
-      return generation.answer;
+      return { reply: generation.answer };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown chat error';
       this.logger.error({
