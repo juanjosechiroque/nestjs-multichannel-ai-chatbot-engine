@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { RequestContext } from '../common/request-context';
 import { executeDatabaseOperation } from '../database/database-operation';
 import { PrismaService } from '../database/prisma.service';
+import type { ProductSearchFilters } from './catalog.types';
 
 @Injectable()
 export class CatalogService {
@@ -15,6 +17,28 @@ export class CatalogService {
         this.prisma.product.findMany({
           where: { active: true },
           orderBy: { name: 'asc' },
+        }),
+    );
+  }
+
+  searchProducts(
+    { productName, category, maxPrice, limit }: ProductSearchFilters,
+    context?: RequestContext,
+  ) {
+    return executeDatabaseOperation(
+      { logger: this.logger, operation: 'catalog.products.search', context },
+      () =>
+        this.prisma.product.findMany({
+          where: {
+            active: true,
+            ...(productName
+              ? { name: { contains: productName, mode: 'insensitive' as const } }
+              : {}),
+            ...(category ? { category } : {}),
+            ...(maxPrice !== undefined ? { price: { lte: maxPrice } } : {}),
+          },
+          orderBy: { name: 'asc' },
+          take: limit,
         }),
     );
   }

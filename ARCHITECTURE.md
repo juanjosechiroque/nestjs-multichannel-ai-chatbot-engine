@@ -11,11 +11,14 @@ The current request path is:
 HTTP request → DTO validation → ChatController
                                    ├→ ConversationService → PostgreSQL
                                    └→ ChatService
-                                       ├→ RagService
-                                       │   ├→ EmbeddingService → OpenAI
-                                       │   └→ PostgreSQL + pgvector
                                        ├→ MemoryService → PostgreSQL
                                        └→ OpenAiService → OpenAI
+                                           ├→ CatalogSearchTool
+                                           │   └→ CatalogService → PostgreSQL
+                                           └→ KnowledgeSearchTool
+                                               └→ RagService
+                                                   ├→ EmbeddingService → OpenAI
+                                                   └→ PostgreSQL + pgvector
 ```
 
 ```mermaid
@@ -26,6 +29,9 @@ flowchart LR
         controller["ChatController<br/>HTTP input and output"]
         conversation["ConversationService<br/>Session lifecycle and resolution"]
         chat["ChatService<br/>Chatbot behavior"]
+        catalogTool["CatalogSearchTool<br/>Exact active products"]
+        knowledgeTool["KnowledgeSearchTool<br/>Semantic business knowledge"]
+        catalog["CatalogService<br/>Structured catalog queries"]
         rag["RagService<br/>Relevant business context"]
         embedding["EmbeddingService<br/>OpenAI embeddings"]
         memory["MemoryService<br/>Recent conversation history"]
@@ -33,7 +39,8 @@ flowchart LR
 
         controller --> conversation
         controller --> chat --> provider
-        chat --> rag --> embedding
+        provider --> catalogTool --> catalog
+        provider --> knowledgeTool --> rag --> embedding
         chat --> memory
     end
 
@@ -43,6 +50,7 @@ flowchart LR
     client -->|"HTTP / JSON"| controller
     provider -->|"Responses API"| openai
     embedding -->|"Embeddings API"| openai
+    catalog -->|"Prisma"| postgres
     conversation -->|"Prisma"| postgres
     rag -->|"pgvector"| postgres
     memory -->|"Prisma"| postgres
@@ -50,10 +58,11 @@ flowchart LR
 
 The web adapter resolves a backend-created public session ID through `ConversationService` before
 calling `ChatService` with the internal conversation ID. `MemoryService` loads the latest 10
-messages and stores completed user/assistant exchanges using that internal ID. `RagService`
-embeds each query and retrieves up to five knowledge chunks above the configured similarity
-threshold instead of sending the complete catalog to the generation model. Retrieved source IDs,
-types, and scores are logged for observability without exposing them through the channel response.
+messages and stores completed user/assistant exchanges using that internal ID. The model may select
+one read-only tool: `CatalogSearchTool` queries exact active product data directly from PostgreSQL,
+while `KnowledgeSearchTool` delegates semantic FAQ, policy, location, schedule, promotion, and
+service questions to `RagService`. Retrieved source IDs are validated and logged without being
+exposed through the channel response.
 
 ## Multichannel boundary
 
@@ -80,6 +89,8 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 | `ConfigModule`              | Load and validate environment variables           | Expose secrets in logs or responses   |
 | `DatabaseModule`            | Provide one shared Prisma database client         | Contain catalog or chatbot rules      |
 | `CatalogService`            | Read structured business data through Prisma      | Depend on HTTP or a messaging channel |
+| `CatalogSearchTool`         | Expose exact active product filters to the model  | Calculate orders or claim live stock  |
+| `KnowledgeSearchTool`       | Adapt semantic model queries to the RAG service   | Query structured transactional data   |
 | `EmbeddingService`          | Generate fixed-size vectors through OpenAI        | Build prompts or handle channels      |
 | `RagService`                | Retrieve relevant knowledge through pgvector      | Own structured catalog data           |
 | `KnowledgeIngestionService` | Build the derived vector index from active data   | Become the source of truth            |

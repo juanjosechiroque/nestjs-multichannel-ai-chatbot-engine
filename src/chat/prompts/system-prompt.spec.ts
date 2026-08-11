@@ -26,17 +26,17 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Never invent, transform, or copy a source identifier');
   });
 
-  it('lets the model decide when confirmed business knowledge must be searched', () => {
+  it('routes structured catalog facts separately from semantic business knowledge', () => {
     const prompt = buildSystemPrompt({ businessName: 'Café Nube' });
 
     expect(prompt).toContain(
-      'Before answering factual questions about Café Nube, use search_knowledge',
+      'Use search_catalog for current product names, descriptions, categories, exact prices',
     );
-    expect(prompt).toContain(
-      'Do not use search_knowledge for greetings, thanks, brief conversational messages',
-    );
-    expect(prompt).toContain('Use at most one knowledge search');
-    expect(prompt).toContain('Use only search_knowledge results');
+    expect(prompt).toContain('Use search_knowledge for other factual questions about Café Nube');
+    expect(prompt).toContain('Do not use business tools for greetings');
+    expect(prompt).toContain('Use at most one business tool');
+    expect(prompt).toContain('Use only business-tool results');
+    expect(prompt).toContain('does not confirm real-time stock availability');
   });
 
   it('treats customer and retrieved content as untrusted data', () => {

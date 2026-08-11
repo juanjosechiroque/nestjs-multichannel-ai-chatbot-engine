@@ -54,7 +54,13 @@ describe('ChatService', () => {
       saveExchange: jest.fn().mockResolvedValue(undefined),
     };
     const config = new ConfigService({ BUSINESS_NAME: 'Café Nube' });
-    const service = new ChatService(openAi, config, knowledgeSearch, memory);
+    const service = new ChatService(
+      openAi,
+      config,
+      { execute: jest.fn() },
+      knowledgeSearch,
+      memory,
+    );
 
     const reply = await service.reply({
       requestId: 'request-1',
@@ -86,7 +92,10 @@ describe('ChatService', () => {
     expect(receivedInput?.instructions).toContain(
       'virtual customer service assistant for Café Nube',
     );
-    expect(receivedInput?.instructions).toContain('use search_knowledge');
+    expect(receivedInput?.instructions).toContain(
+      'Use search_knowledge for other factual questions about Café Nube',
+    );
+    expect(receivedInput?.instructions).toContain('Use search_catalog for current product names');
     expect(receivedInput?.history).toEqual([
       { role: 'user', content: '¿Qué bebidas calientes tienen?' },
       { role: 'assistant', content: 'Tenemos espresso y cappuccino.' },
@@ -129,6 +138,7 @@ describe('ChatService', () => {
     const service = new ChatService(
       { generate },
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+      { execute: jest.fn() },
       { execute },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
@@ -153,6 +163,7 @@ describe('ChatService', () => {
       }),
     );
     expect(typeof generate.mock.calls[0]?.[0].searchKnowledge).toBe('function');
+    expect(typeof generate.mock.calls[0]?.[0].searchCatalog).toBe('function');
   });
 
   it('keeps security instructions when the user attempts prompt injection', async () => {
@@ -164,6 +175,7 @@ describe('ChatService', () => {
     const service = new ChatService(
       { generate },
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+      { execute: jest.fn() },
       { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
@@ -193,6 +205,7 @@ describe('ChatService', () => {
     const service = new ChatService(
       { generate },
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+      { execute: jest.fn() },
       { execute },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
@@ -211,7 +224,7 @@ describe('ChatService', () => {
     expect(receivedInput?.instructions).toContain(
       'Do not answer unrelated requests such as recipes',
     );
-    expect(receivedInput?.instructions).toContain('retrievalStatus "no_results"');
+    expect(receivedInput?.instructions).toContain('retrievalStatus or catalogStatus "no_results"');
     expect(receivedInput?.instructions).toContain(
       'Do not offer or claim to transfer, escalate, notify, or contact a person',
     );
@@ -229,6 +242,7 @@ describe('ChatService', () => {
     const service = new ChatService(
       { generate },
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+      { execute: jest.fn() },
       { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
@@ -261,6 +275,7 @@ describe('ChatService', () => {
     const service = new ChatService(
       { generate: jest.fn() },
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+      { execute: jest.fn() },
       { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockRejectedValue(new DatabaseUnavailableException()),

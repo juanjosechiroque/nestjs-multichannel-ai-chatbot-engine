@@ -20,6 +20,8 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Reproducible Café Nube demo seed with products, promotions, and FAQs.
 - Read-only catalog endpoints backed by PostgreSQL.
 - Semantic business knowledge retrieval with OpenAI embeddings and PostgreSQL/pgvector.
+- Model-selected tools that avoid running RAG for greetings and unrelated requests.
+- Exact active-product catalog queries from PostgreSQL without generating embeddings.
 - Backend-managed web sessions with persistent PostgreSQL conversation history.
 - Context-aware knowledge retrieval for conversational follow-up questions.
 - Structured OpenAI latency and token usage logging.
@@ -42,12 +44,14 @@ ChatController        Receives and validates HTTP input
       ▼
 ChatService           Defines chatbot behavior
       │
-      ├──► RagService ──► EmbeddingService ─────────────► OpenAI Embeddings API
-      │         └───────────────────────────────────────► PostgreSQL + pgvector
       ├──► MemoryService ───────────────────────────────► PostgreSQL
+      ├──► CatalogSearchTool ──► CatalogService ────────► PostgreSQL
+      ├──► KnowledgeSearchTool ──► RagService
+      │                              ├──► EmbeddingService ──► OpenAI Embeddings API
+      │                              └──────────────────────► PostgreSQL + pgvector
       │
       ▼
-OpenAiService         Encapsulates the OpenAI SDK
+OpenAiService         Selects and executes at most one available tool
       │
       ▼
 OpenAI Responses API
@@ -158,7 +162,7 @@ After seeding and ingesting the knowledge base, run the retrieval evaluation:
 npm run rag:evaluate
 ```
 
-The command executes 29 representative queries against the real embeddings and pgvector search. It
+The command executes 32 representative queries against the real embeddings and pgvector search. It
 does not generate chatbot responses. It reports the expected-source hit rate for business questions
 and the no-result accuracy for unrelated questions, then exits with an error when any case fails.
 Use these results to calibrate `RAG_MIN_SIMILARITY` instead of choosing the threshold by intuition.
