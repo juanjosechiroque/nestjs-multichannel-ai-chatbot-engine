@@ -169,6 +169,21 @@ const CHAT_RESPONSE_FORMAT = {
   },
 };
 
+function isLocationKnowledgeRequest(message: string): boolean {
+  const normalizedMessage = message
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const hasExplicitLocationTerm =
+    /\b(direccion|ubicacion|domicilio|sede|sedes|sucursal|sucursales)\b/.test(normalizedMessage);
+  const asksWhere = /\b(donde|como llego|como llegar)\b/.test(normalizedMessage);
+  const mentionsBusinessPlace = /\b(cafe|cafeteria|local|locales|queda|ubicad[oa]s?)\b/.test(
+    normalizedMessage,
+  );
+
+  return hasExplicitLocationTerm || (asksWhere && mentionsBusinessPlace);
+}
+
 function isKnowledgeSourceType(value: unknown): value is KnowledgeSourceType {
   return (
     value === 'product' || value === 'product_category' || value === 'promotion' || value === 'faq'
@@ -200,11 +215,14 @@ export class OpenAiService {
 
     try {
       const initialInput = this.buildInput(message, history);
+      const forceLocationSearch = isLocationKnowledgeRequest(message);
       const initialCallStartedAt = Date.now();
       const initialResponse = await this.createResponse({
         instructions,
         input: initialInput,
-        toolChoice: 'auto',
+        toolChoice: forceLocationSearch
+          ? { type: 'function', name: KNOWLEDGE_SEARCH_TOOL_NAME }
+          : 'auto',
       });
       const toolCalls = initialResponse.output.filter(
         (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === 'function_call',
@@ -247,6 +265,7 @@ export class OpenAiService {
         toolCall,
         searchCatalog,
         searchKnowledge,
+        knowledgeQueryOverride: forceLocationSearch ? message : undefined,
       });
       // The Responses API requires replaying every output item. The SDK models a few
       // output-only status variants more broadly than its input union, so bridge them via unknown.
@@ -332,7 +351,7 @@ export class OpenAiService {
   }: {
     instructions: string;
     input: OpenAI.Responses.ResponseInput;
-    toolChoice: 'auto' | 'none';
+    toolChoice: OpenAI.Responses.ToolChoiceOptions | OpenAI.Responses.ToolChoiceFunction;
   }): Promise<OpenAI.Responses.Response> {
     return this.client.responses.create({
       model: this.config.get<string>('OPENAI_MODEL', 'gpt-5.6-luna'),
@@ -423,15 +442,17 @@ export class OpenAiService {
     toolCall,
     searchCatalog,
     searchKnowledge,
+    knowledgeQueryOverride,
   }: {
     toolCall: OpenAI.Responses.ResponseFunctionToolCall;
     searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
     searchKnowledge: (query: string) => Promise<string>;
+    knowledgeQueryOverride?: string;
   }): Promise<string> {
     switch (toolCall.name) {
       case KNOWLEDGE_SEARCH_TOOL_NAME: {
         const { query } = this.parseKnowledgeSearchArguments(toolCall.arguments);
-        return searchKnowledge(query);
+        return searchKnowledge(knowledgeQueryOverride ?? query);
       }
       case CATALOG_SEARCH_TOOL_NAME:
         return searchCatalog(this.parseCatalogSearchArguments(toolCall.arguments));
