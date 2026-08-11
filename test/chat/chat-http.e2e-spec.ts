@@ -362,6 +362,11 @@ describe('HTTP conversation flow', () => {
         productName: 'cappuccino',
         category: ProductCategory.HOT_DRINK,
         maxPrice: 15,
+        dietaryTags: [],
+        excludedAllergens: [],
+        containsCoffee: null,
+        decaffeinated: null,
+        caffeineFree: null,
       });
       return {
         answer: 'El Cappuccino Nube cuesta S/ 13.00.',
@@ -404,6 +409,116 @@ describe('HTTP conversation flow', () => {
     });
     expect(embed).not.toHaveBeenCalled();
     await expect(prisma.conversationMessage.count()).resolves.toBe(2);
+  });
+
+  it('applies dietary, allergen, and coffee preferences in PostgreSQL', async () => {
+    const veganCookieId = randomUUID();
+    await prisma.product.createMany({
+      data: [
+        {
+          id: veganCookieId,
+          slug: 'galleta-vegana',
+          name: 'Galleta vegana',
+          description: 'Galleta de avena y cacao.',
+          price: '9.00',
+          category: ProductCategory.FOOD,
+          active: true,
+          metadata: {
+            allergens: ['GLUTEN'],
+            dietaryTags: ['VEGAN', 'VEGETARIAN'],
+            containsCoffee: false,
+            decaffeinated: false,
+            caffeineFree: false,
+          },
+        },
+        {
+          id: randomUUID(),
+          slug: 'croissant-vegetariano',
+          name: 'Croissant vegetariano',
+          description: 'Croissant con mantequilla.',
+          price: '9.00',
+          category: ProductCategory.FOOD,
+          active: true,
+          metadata: {
+            allergens: ['GLUTEN', 'MILK'],
+            dietaryTags: ['VEGETARIAN'],
+            containsCoffee: false,
+            decaffeinated: false,
+            caffeineFree: true,
+          },
+        },
+        {
+          id: randomUUID(),
+          slug: 'brownie-con-leche',
+          name: 'Brownie con leche',
+          description: 'Brownie de cacao y leche.',
+          price: '8.00',
+          category: ProductCategory.FOOD,
+          active: true,
+          metadata: {
+            allergens: ['GLUTEN', 'MILK'],
+            dietaryTags: ['VEGAN', 'VEGETARIAN'],
+            containsCoffee: false,
+            decaffeinated: false,
+            caffeineFree: false,
+          },
+        },
+      ],
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    let toolOutput: string | undefined;
+    generate.mockImplementationOnce(async (input) => {
+      toolOutput = await input.searchCatalog({
+        productName: null,
+        category: ProductCategory.FOOD,
+        maxPrice: 10,
+        dietaryTags: ['VEGAN'],
+        excludedAllergens: ['MILK'],
+        containsCoffee: false,
+        decaffeinated: null,
+        caffeineFree: null,
+      });
+      return {
+        answer: 'La Galleta vegana cuesta S/ 9.00.',
+        usedSources: [
+          {
+            sourceId: veganCookieId,
+            sourceKey: 'galleta-vegana',
+            sourceType: 'product',
+          },
+        ],
+        llmCalls: 2,
+        usedTools: ['search_catalog'],
+      };
+    });
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Quiero comida vegana sin leche por máximo S/ 10.' })
+      .expect(201, { reply: 'La Galleta vegana cuesta S/ 9.00.' });
+
+    expect(JSON.parse(toolOutput ?? '')).toEqual({
+      catalogStatus: 'results_found',
+      products: [
+        {
+          sourceId: veganCookieId,
+          sourceKey: 'galleta-vegana',
+          type: 'product',
+          name: 'Galleta vegana',
+          description: 'Galleta de avena y cacao.',
+          price: '9',
+          currency: 'PEN',
+          category: 'FOOD',
+          allergens: ['GLUTEN'],
+          dietaryTags: ['VEGAN', 'VEGETARIAN'],
+          containsCoffee: false,
+          decaffeinated: false,
+          caffeineFree: false,
+        },
+      ],
+    });
+    expect(embed).not.toHaveBeenCalled();
   });
 
   it('retrieves matching pgvector knowledge before generating and persisting a reply', async () => {

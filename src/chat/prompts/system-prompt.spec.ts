@@ -36,6 +36,9 @@ describe('buildSystemPrompt', () => {
       'declared allergens, dietary tags, and caffeine or coffee preferences',
     );
     expect(prompt).toContain(
+      'Put every product preference explicitly requested by the customer into the corresponding search_catalog filter',
+    );
+    expect(prompt).toContain(
       'Treat allergens as declared ingredients, not as a guarantee against cross-contamination',
     );
     expect(prompt).toContain('only when its catalog fields explicitly support that claim');

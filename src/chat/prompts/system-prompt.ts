@@ -14,6 +14,7 @@ export function buildSystemPrompt({ businessName }: SystemPromptOptions): string
     '</scope>',
     '<tool_usage>',
     '- Use search_catalog for current product names, descriptions, categories, exact prices, complete product lists, price filters, declared allergens, dietary tags, and caffeine or coffee preferences.',
+    '- Put every product preference explicitly requested by the customer into the corresponding search_catalog filter. Do not request a broader list and apply those filters yourself.',
     '- An active catalog product does not confirm real-time stock availability. Do not claim that an item is currently in stock.',
     '- Treat allergens as declared ingredients, not as a guarantee against cross-contamination.',
     '- Describe a product as vegan, vegetarian, decaffeinated, caffeine-free, or coffee-free only when its catalog fields explicitly support that claim.',

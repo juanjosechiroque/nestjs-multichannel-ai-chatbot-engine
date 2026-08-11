@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { OpenAiService } from '../openai.service';
 import { buildSystemPrompt } from '../prompts/system-prompt';
 import { CatalogSearchTool } from '../tools/catalog-search.tool';
+import type { CatalogSearchArguments } from '../tools/catalog-search.tool';
 import type {
   CatalogEvaluationCase,
   CatalogEvaluationReport,
@@ -43,22 +44,32 @@ export class CatalogEvaluationService {
         conversationId: `catalog-eval-${randomUUID()}`,
         channel: 'evaluation',
       };
+      let appliedFilters: CatalogSearchArguments | null = null;
       const generation = await this.openAi.generate({
         context,
         message: evaluationCase.message,
         instructions: this.instructions,
         history: [],
-        searchCatalog: (filters) => this.catalogSearch.execute({ ...filters, context }),
+        searchCatalog: (filters) => {
+          appliedFilters = filters;
+          return this.catalogSearch.execute({ ...filters, context });
+        },
         searchKnowledge: () => Promise.resolve(EMPTY_KNOWLEDGE_RESULT),
       });
       const usedSourceKeys = generation.usedSources.map((source) => source.sourceKey);
-      const failures = this.getFailures(evaluationCase, generation.usedTools, usedSourceKeys);
+      const failures = this.getFailures(
+        evaluationCase,
+        generation.usedTools,
+        usedSourceKeys,
+        appliedFilters,
+      );
 
       results.push({
         ...evaluationCase,
         answer: generation.answer,
         usedTools: generation.usedTools,
         usedSourceKeys,
+        appliedFilters,
         passed: failures.length === 0,
         reason: failures.length === 0 ? 'Expected catalog sources were used.' : failures.join(' '),
       });
@@ -94,11 +105,24 @@ export class CatalogEvaluationService {
     evaluationCase: CatalogEvaluationCase,
     usedTools: readonly string[],
     usedSourceKeys: readonly string[],
+    appliedFilters: CatalogSearchArguments | null,
   ): string[] {
     const failures: string[] = [];
 
     if (usedTools.length !== 1 || usedTools[0] !== 'search_catalog') {
       failures.push(`Expected search_catalog but used: ${usedTools.join(', ') || 'no tool'}.`);
+    }
+
+    const filterEntries = Object.entries(evaluationCase.expectedFilters) as Array<
+      [keyof CatalogSearchArguments, CatalogSearchArguments[keyof CatalogSearchArguments]]
+    >;
+    for (const [filterName, expectedValue] of filterEntries) {
+      const appliedValue = appliedFilters?.[filterName];
+      if (!this.filterValuesMatch(expectedValue, appliedValue)) {
+        failures.push(
+          `Expected filter ${filterName}=${JSON.stringify(expectedValue)} but received ${JSON.stringify(appliedValue)}.`,
+        );
+      }
     }
 
     const missing = evaluationCase.expectedSourceKeys.filter(
@@ -116,5 +140,21 @@ export class CatalogEvaluationService {
     }
 
     return failures;
+  }
+
+  private filterValuesMatch(
+    expected: CatalogSearchArguments[keyof CatalogSearchArguments],
+    applied: CatalogSearchArguments[keyof CatalogSearchArguments] | undefined,
+  ): boolean {
+    if (Array.isArray(expected)) {
+      const appliedValues: readonly unknown[] = Array.isArray(applied) ? applied : [];
+      return (
+        Array.isArray(applied) &&
+        expected.length === appliedValues.length &&
+        expected.every((value) => appliedValues.includes(value))
+      );
+    }
+
+    return expected === applied;
   }
 }

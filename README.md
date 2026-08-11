@@ -23,6 +23,8 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Model-selected tools that avoid running RAG for greetings and unrelated requests.
 - Exact active-product catalog queries from PostgreSQL, including normalized allergens and dietary
   preferences, without generating embeddings.
+- Database-enforced catalog filters for dietary tags, excluded allergens, coffee, decaffeinated,
+  and caffeine-free preferences.
 - Backend-managed web sessions with persistent PostgreSQL conversation history.
 - Context-aware knowledge retrieval for conversational follow-up questions.
 - Structured OpenAI latency and token usage logging.
@@ -205,10 +207,11 @@ After loading the seed, run the live catalog evaluation:
 npm run chat:evaluate:catalog
 ```
 
-The command runs five representative chatbot questions for category, maximum price, and dietary
-or caffeine preferences. Each case verifies deterministically that the model selected
+The command runs seven representative chatbot questions for category, maximum price, dietary,
+allergen, coffee, decaffeinated, and caffeine preferences. Each case verifies deterministically that the model selected
 `search_catalog`, attributed every expected product source, and did not attribute explicitly
-forbidden products. It reads exact active products from PostgreSQL and does not generate embeddings.
+forbidden products. The model translates the request into typed filters, while PostgreSQL selects
+the matching products from normalized JSONB metadata. The evaluation does not generate embeddings.
 
 This evaluation uses the real OpenAI generation model, so it has API token cost and is intentionally
 excluded from `npm run validate` and CI. Run one case by exact name when diagnosing a failure:

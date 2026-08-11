@@ -307,6 +307,11 @@ describe('OpenAiService', () => {
         productName: 'cappuccino',
         category: 'HOT_DRINK',
         maxPrice: 15,
+        dietaryTags: ['VEGETARIAN'],
+        excludedAllergens: ['TREE_NUTS'],
+        containsCoffee: true,
+        decaffeinated: false,
+        caffeineFree: false,
       }),
     };
     create
@@ -344,6 +349,11 @@ describe('OpenAiService', () => {
       productName: 'cappuccino',
       category: ProductCategory.HOT_DRINK,
       maxPrice: 15,
+      dietaryTags: ['VEGETARIAN'],
+      excludedAllergens: ['TREE_NUTS'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
     });
     expect(responseRequest(create, 1)?.input).toEqual(
       expect.arrayContaining([
@@ -391,6 +401,47 @@ describe('OpenAiService', () => {
             productName: null,
             category: 'UNKNOWN_CATEGORY',
             maxPrice: -1,
+            dietaryTags: [],
+            excludedAllergens: [],
+            containsCoffee: null,
+            decaffeinated: null,
+            caffeineFree: null,
+          }),
+        },
+      ],
+      output_text: '',
+      model: 'gpt-5.6-luna',
+    });
+
+    await expect(service.generate(generateInput({ searchCatalog }))).rejects.toEqual(
+      new OpenAiRequestFailedException(),
+    );
+    expect(searchCatalog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'an unknown dietary tag', override: { dietaryTags: ['KETO'] } },
+    { name: 'a duplicated allergen', override: { excludedAllergens: ['MILK', 'MILK'] } },
+    { name: 'a non-boolean coffee preference', override: { containsCoffee: 'false' } },
+  ])('rejects $name without querying PostgreSQL', async ({ override }) => {
+    const { service, create } = createService();
+    const searchCatalog = jest.fn();
+    create.mockResolvedValue({
+      output: [
+        {
+          type: 'function_call',
+          call_id: 'call-invalid-preference',
+          name: 'search_catalog',
+          arguments: JSON.stringify({
+            productName: null,
+            category: null,
+            maxPrice: null,
+            dietaryTags: [],
+            excludedAllergens: [],
+            containsCoffee: null,
+            decaffeinated: null,
+            caffeineFree: null,
+            ...override,
           }),
         },
       ],

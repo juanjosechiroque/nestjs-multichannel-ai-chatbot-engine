@@ -59,8 +59,8 @@ flowchart LR
 The web adapter resolves a backend-created public session ID through `ConversationService` before
 calling `ChatService` with the internal conversation ID. `MemoryService` loads the latest 10
 messages and stores completed user/assistant exchanges using that internal ID. The model may select
-one read-only tool: `CatalogSearchTool` queries exact active product data, prices, and declared
-dietary attributes directly from PostgreSQL,
+one read-only tool: `CatalogSearchTool` translates typed product, price, allergen, dietary, coffee,
+and caffeine filters into exact PostgreSQL queries,
 while `KnowledgeSearchTool` delegates semantic FAQ, policy, location, schedule, promotion, and
 service questions to `RagService`. Retrieved source IDs are validated and logged without being
 exposed through the channel response.
@@ -90,7 +90,7 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 | `ConfigModule`              | Load and validate environment variables           | Expose secrets in logs or responses   |
 | `DatabaseModule`            | Provide one shared Prisma database client         | Contain catalog or chatbot rules      |
 | `CatalogService`            | Read structured business data through Prisma      | Depend on HTTP or a messaging channel |
-| `CatalogSearchTool`         | Expose exact active product data to the model     | Calculate orders or claim live stock  |
+| `CatalogSearchTool`         | Adapt typed product preferences to catalog search | Calculate orders or claim live stock  |
 | `KnowledgeSearchTool`       | Adapt semantic model queries to the RAG service   | Query structured transactional data   |
 | `EmbeddingService`          | Generate fixed-size vectors through OpenAI        | Build prompts or handle channels      |
 | `RagService`                | Retrieve relevant knowledge through pgvector      | Own structured catalog data           |
@@ -107,6 +107,7 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 | `gpt-5.6-luna`                  | Fits a cost-sensitive conversational workload                  | Harder requests may require a stronger model        |
 | HTTP endpoint first             | Validates the core with minimal transport complexity           | WebSocket streaming is not available yet            |
 | PostgreSQL + Prisma             | Keeps catalog data structured, queryable, and type-safe        | Requires a local database and migrations            |
+| Normalized product JSONB        | Adds preference filters without premature relation tables      | Database constraints do not enforce metadata values |
 | Demo seed in the repository     | Makes the project reproducible for reviewers and contributors  | Demo content must stay separate from engine logic   |
 | OpenAI `text-embedding-3-small` | Reuses the existing provider and SDK                           | Adds one small embedding request per search         |
 | Exact pgvector search           | Is simple and accurate for the current small knowledge base    | Needs a vector index when the dataset becomes large |
