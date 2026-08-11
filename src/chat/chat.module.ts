@@ -5,6 +5,7 @@ import { MemoryModule } from '../memory/memory.module';
 import { RagModule } from '../rag/rag.module';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
+import { CatalogEvaluationService } from './evaluation/catalog-evaluation.service';
 import { ConversationSecurityEvaluationService } from './evaluation/conversation-security-evaluation.service';
 import { ConversationSecurityJudgeService } from './evaluation/conversation-security-judge.service';
 import { OpenAiService } from './openai.service';
@@ -16,6 +17,7 @@ import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
   controllers: [ChatController],
   providers: [
     ChatService,
+    CatalogEvaluationService,
     CatalogSearchTool,
     ConversationSecurityEvaluationService,
     ConversationSecurityJudgeService,

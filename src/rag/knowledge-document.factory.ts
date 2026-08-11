@@ -172,6 +172,7 @@ export class KnowledgeDocumentFactory {
         return [
           'qué opciones de comida tienen',
           'carta de comida y platos disponibles',
+          'puedo ver la carta para comer',
           'opciones para comer o acompañar el café',
         ];
     }

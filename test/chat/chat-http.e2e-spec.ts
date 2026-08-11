@@ -394,6 +394,11 @@ describe('HTTP conversation flow', () => {
           price: '13',
           currency: 'PEN',
           category: 'HOT_DRINK',
+          allergens: [],
+          dietaryTags: [],
+          containsCoffee: null,
+          decaffeinated: null,
+          caffeineFree: null,
         },
       ],
     });
