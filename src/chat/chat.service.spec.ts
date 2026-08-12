@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseUnavailableException } from '../common/application-error';
 import type { MemoryService } from '../memory/memory.service';
+import { OrderAction } from '../order/order.types';
 import { ChatService } from './chat.service';
 import type {
   GenerateResponseInput,
@@ -188,6 +189,65 @@ describe('ChatService', () => {
     expect(typeof generate.mock.calls[0]?.[0].searchCatalog).toBe('function');
     expect(typeof generate.mock.calls[0]?.[0].getMenuDocument).toBe('function');
     expect(typeof generate.mock.calls[0]?.[0].manageOrder).toBe('function');
+  });
+
+  it('passes the same correlated request context to every business tool', async () => {
+    const catalogSearch = jest.fn().mockResolvedValue('{"catalogStatus":"results_found"}');
+    const knowledgeSearch = jest.fn().mockResolvedValue('{"retrievalStatus":"results_found"}');
+    const menuDocument = jest.fn().mockResolvedValue('{"document":{}}');
+    const orderTool = orderToolMock();
+    orderTool.execute.mockResolvedValue('{"orderOperationStatus":"completed"}');
+    const generate = jest.fn(
+      async (input: GenerateResponseInput): Promise<GenerateResponseResult> => {
+        await input.searchCatalog({
+          productName: 'latte',
+          category: null,
+          maxPrice: null,
+          maxPriceExclusive: false,
+          dietaryTags: [],
+          excludedAllergens: [],
+          containsCoffee: null,
+          decaffeinated: null,
+          caffeineFree: null,
+        });
+        await input.searchKnowledge('horarios');
+        await input.getMenuDocument();
+        await input.manageOrder({
+          action: OrderAction.ADD_ITEMS,
+          items: [{ productName: 'Latte', quantity: 1 }],
+        });
+        return directResult('Listo.');
+      },
+    );
+    const service = new ChatService(
+      { generate },
+      new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+      { execute: catalogSearch },
+      { execute: knowledgeSearch },
+      { execute: menuDocument },
+      orderTool,
+      {
+        getRecentMessages: jest.fn().mockResolvedValue([]),
+        saveExchange: jest.fn().mockResolvedValue(undefined),
+      },
+    );
+    const context = {
+      requestId: 'request-tools',
+      conversationId: 'conversation-1',
+      channel: 'web' as const,
+    };
+
+    await service.reply({ ...context, message: 'Agrega un latte' });
+
+    expect(catalogSearch).toHaveBeenCalledWith(expect.objectContaining({ context }));
+    expect(knowledgeSearch).toHaveBeenCalledWith({ query: 'horarios', context });
+    expect(menuDocument).toHaveBeenCalledWith();
+    expect(orderTool.execute).toHaveBeenCalledWith({
+      action: OrderAction.ADD_ITEMS,
+      items: [{ productName: 'Latte', quantity: 1 }],
+      conversationId: 'conversation-1',
+      context,
+    });
   });
 
   it('keeps security instructions when the user attempts prompt injection', async () => {

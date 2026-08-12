@@ -190,6 +190,26 @@ describe('OrderTool', () => {
     expect(orders.addItems).not.toHaveBeenCalled();
   });
 
+  it('reports a missing catalog product without creating a draft', async () => {
+    const { tool, searchProducts, orders } = createTool();
+    searchProducts.mockResolvedValue([]);
+
+    const result = JSON.parse(
+      await tool.execute({
+        action: OrderAction.ADD_ITEMS,
+        items: [{ productName: 'producto inventado', quantity: 1 }],
+        conversationId: 'conversation-1',
+        context,
+      }),
+    ) as { orderOperationStatus: string; issues: Array<{ reason: string }> };
+
+    expect(result.orderOperationStatus).toBe('clarification_required');
+    expect(result.issues).toEqual([
+      expect.objectContaining({ productName: 'producto inventado', reason: 'not_found' }),
+    ]);
+    expect(orders.addItems).not.toHaveBeenCalled();
+  });
+
   it('resolves removals against the current order snapshot instead of catalog prices', async () => {
     const { tool, searchProducts, orders } = createTool();
     orders.getActiveOrder.mockResolvedValue(order());
@@ -230,6 +250,67 @@ describe('OrderTool', () => {
       },
       context,
     );
+  });
+
+  it('returns a controlled rejection when removing without an active order', async () => {
+    const { tool, orders } = createTool();
+    orders.getActiveOrder.mockResolvedValue(null);
+
+    const result = JSON.parse(
+      await tool.execute({
+        action: OrderAction.REMOVE_ITEMS,
+        items: [{ productName: 'Latte', quantity: 1 }],
+        conversationId: 'conversation-1',
+        context,
+      }),
+    ) as { orderOperationStatus: string; issues: Array<{ reason: string }> };
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        orderOperationStatus: 'rejected',
+        order: null,
+        issues: [{ reason: 'no_active_order' }],
+      }),
+    );
+    expect(orders.removeItems).not.toHaveBeenCalled();
+  });
+
+  it('asks which current item to remove when the reference is ambiguous', async () => {
+    const { tool, orders } = createTool();
+    orders.getActiveOrder.mockResolvedValue(
+      order({
+        items: [
+          {
+            productId: 'product-latte',
+            productName: 'Latte',
+            unitPrice: 13,
+            quantity: 1,
+            lineTotal: 13,
+          },
+          {
+            productId: 'product-iced-latte',
+            productName: 'Iced latte',
+            unitPrice: 15,
+            quantity: 1,
+            lineTotal: 15,
+          },
+        ],
+        total: 28,
+      }),
+    );
+
+    const result = JSON.parse(
+      await tool.execute({
+        action: OrderAction.REMOVE_ITEMS,
+        items: [{ productName: 'lat', quantity: 1 }],
+        conversationId: 'conversation-1',
+        context,
+      }),
+    ) as { orderOperationStatus: string; issues: Array<{ candidates: string[] }> };
+
+    expect(result.orderOperationStatus).toBe('clarification_required');
+    expect(result.issues[0]?.candidates).toEqual(['Latte', 'Iced latte']);
+    expect(orders.removeItems).not.toHaveBeenCalled();
   });
 
   it('delegates review without allowing the model to supply prices or totals', async () => {

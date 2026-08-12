@@ -8,6 +8,7 @@ import { ChatService } from './chat.service';
 import { CatalogEvaluationService } from './evaluation/catalog-evaluation.service';
 import { ConversationSecurityEvaluationService } from './evaluation/conversation-security-evaluation.service';
 import { ConversationSecurityJudgeService } from './evaluation/conversation-security-judge.service';
+import { OrderConversationEvaluationService } from './evaluation/order-conversation-evaluation.service';
 import { OpenAiService } from './openai.service';
 import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
@@ -22,6 +23,7 @@ import { OrderTool } from './tools/order.tool';
     CatalogSearchTool,
     ConversationSecurityEvaluationService,
     ConversationSecurityJudgeService,
+    OrderConversationEvaluationService,
     KnowledgeSearchTool,
     MenuDocumentTool,
     OrderTool,
