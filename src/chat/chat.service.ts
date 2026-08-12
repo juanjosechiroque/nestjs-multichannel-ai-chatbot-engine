@@ -81,6 +81,7 @@ export class ChatService {
 
       return {
         reply: generation.answer,
+        ...(generation.tokenUsage ? { tokenUsage: generation.tokenUsage } : {}),
         ...(generation.content && generation.content.length > 0
           ? { content: generation.content }
           : {}),

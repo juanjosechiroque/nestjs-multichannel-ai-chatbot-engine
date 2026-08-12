@@ -40,6 +40,15 @@ function structuredResponse(answer: string, usedSourceIds: string[] = []) {
   return JSON.stringify({ answer, usedSourceIds });
 }
 
+const ZERO_TOKEN_USAGE = {
+  inputTokens: 0,
+  cachedInputTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  totalTokens: 0,
+};
+
 function noOrderContextInput() {
   return {
     role: 'developer',
@@ -118,6 +127,14 @@ describe('OpenAiService', () => {
       usedSources: [],
       llmCalls: 1,
       usedTools: [],
+      tokenUsage: {
+        inputTokens: 20,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 6,
+        reasoningTokens: 0,
+        totalTokens: 26,
+      },
     });
     expect(searchKnowledge).not.toHaveBeenCalled();
     const configuredClient = service as unknown as {
@@ -242,6 +259,14 @@ describe('OpenAiService', () => {
       ],
       llmCalls: 2,
       usedTools: ['search_knowledge'],
+      tokenUsage: {
+        inputTokens: 50,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 12,
+        reasoningTokens: 0,
+        totalTokens: 62,
+      },
     });
 
     expect(searchKnowledge).toHaveBeenCalledTimes(1);
@@ -339,6 +364,7 @@ describe('OpenAiService', () => {
       ],
       llmCalls: 2,
       usedTools: ['search_knowledge'],
+      tokenUsage: ZERO_TOKEN_USAGE,
     });
     expect(responseRequest(create, 0)?.tool_choice).toEqual({
       type: 'function',
@@ -410,6 +436,7 @@ describe('OpenAiService', () => {
       usedSources: [],
       llmCalls: 1,
       usedTools: [],
+      tokenUsage: ZERO_TOKEN_USAGE,
     });
     expect(warn).toHaveBeenCalledWith({
       event: 'openai.response.invalid_source_ids',
@@ -484,6 +511,7 @@ describe('OpenAiService', () => {
       ],
       llmCalls: 2,
       usedTools: ['search_catalog'],
+      tokenUsage: ZERO_TOKEN_USAGE,
     });
     expect(searchCatalog).toHaveBeenCalledWith({
       productName: 'cappuccino',
@@ -550,6 +578,7 @@ describe('OpenAiService', () => {
       usedSources: [],
       llmCalls: 2,
       usedTools: ['get_menu_document'],
+      tokenUsage: ZERO_TOKEN_USAGE,
       content: [
         {
           type: 'document',
@@ -627,6 +656,7 @@ describe('OpenAiService', () => {
       usedSources: [],
       llmCalls: 2,
       usedTools: ['manage_order'],
+      tokenUsage: ZERO_TOKEN_USAGE,
     });
     expect(manageOrder).toHaveBeenCalledWith({
       action: 'ADD_ITEMS',
@@ -722,6 +752,7 @@ describe('OpenAiService', () => {
       usedSources: [],
       llmCalls: 2,
       usedTools: ['manage_order'],
+      tokenUsage: ZERO_TOKEN_USAGE,
     });
 
     const orderTool = responseRequest(create, 0)?.tools?.find(

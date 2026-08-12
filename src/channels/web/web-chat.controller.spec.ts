@@ -80,6 +80,14 @@ describe('WebChatController', () => {
           mimeType: 'application/pdf',
         },
       ],
+      tokenUsage: {
+        inputTokens: 1_000,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 100,
+        reasoningTokens: 20,
+        totalTokens: 1_100,
+      },
     });
     const findBySession = jest.fn().mockResolvedValue({
       id: 'internal-conversation-id',

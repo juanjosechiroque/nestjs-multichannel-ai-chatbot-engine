@@ -14,6 +14,7 @@ import type { ChatHistoryMessage } from '../memory/memory.types';
 import type { KnowledgeSourceType, RagSourceReference } from '../rag/rag.types';
 import { OrderAction } from '../order/order.types';
 import type { ChatContent, DocumentChatContent } from './chat.types';
+import { addTokenUsage, type TokenUsage } from './token-usage';
 import type { CatalogSearchArguments } from './tools/catalog-search.tool';
 import {
   type CustomerOrderAction,
@@ -38,6 +39,7 @@ export interface GenerateResponseResult {
   usedSources: RagSourceReference[];
   llmCalls: number;
   usedTools: string[];
+  tokenUsage?: TokenUsage;
   content?: ChatContent[];
 }
 
@@ -377,6 +379,7 @@ export class OpenAiService {
       if (toolCalls.length === 0) {
         return this.completeGeneration({
           response: initialResponse,
+          responses: [initialResponse],
           businessContext: EMPTY_BUSINESS_CONTEXT,
           context,
           phase: 'initial',
@@ -442,6 +445,7 @@ export class OpenAiService {
 
       return this.completeGeneration({
         response: finalResponse,
+        responses: [initialResponse, finalResponse],
         businessContext: toolOutput,
         context,
         phase: 'final',
@@ -549,6 +553,7 @@ export class OpenAiService {
 
   private completeGeneration({
     response,
+    responses,
     businessContext,
     context,
     phase,
@@ -558,6 +563,7 @@ export class OpenAiService {
     usedTools,
   }: {
     response: OpenAI.Responses.Response;
+    responses: readonly OpenAI.Responses.Response[];
     businessContext: string;
     context: RequestContext;
     phase: 'initial' | 'final';
@@ -583,6 +589,7 @@ export class OpenAiService {
       const source = availableSources.get(sourceId);
       return source ? [source] : [];
     });
+    const tokenUsage = addTokenUsage(responses.map((item) => this.getTokenUsage(item)));
 
     if (invalidSourceIds.length > 0) {
       this.logger.warn({
@@ -600,12 +607,7 @@ export class OpenAiService {
       durationMs: Date.now() - callStartedAt,
       totalDurationMs: Date.now() - totalStartedAt,
       llmCalls,
-      inputTokens: response.usage?.input_tokens,
-      cachedInputTokens: response.usage?.input_tokens_details.cached_tokens,
-      cacheWriteTokens: response.usage?.input_tokens_details.cache_write_tokens,
-      outputTokens: response.usage?.output_tokens,
-      reasoningTokens: response.usage?.output_tokens_details.reasoning_tokens,
-      totalTokens: response.usage?.total_tokens,
+      ...tokenUsage,
       reportedSourceIds,
     });
 
@@ -614,7 +616,24 @@ export class OpenAiService {
       usedSources,
       llmCalls,
       usedTools,
+      tokenUsage,
       ...this.getContent(businessContext),
+    };
+  }
+
+  private getTokenUsage(response: OpenAI.Responses.Response): TokenUsage {
+    const usage = response.usage;
+    const inputDetails = usage?.input_tokens_details as
+      { cached_tokens?: number; cache_write_tokens?: number } | undefined;
+    const outputDetails = usage?.output_tokens_details as { reasoning_tokens?: number } | undefined;
+
+    return {
+      inputTokens: usage?.input_tokens ?? 0,
+      cachedInputTokens: inputDetails?.cached_tokens ?? 0,
+      cacheWriteTokens: inputDetails?.cache_write_tokens ?? 0,
+      outputTokens: usage?.output_tokens ?? 0,
+      reasoningTokens: outputDetails?.reasoning_tokens ?? 0,
+      totalTokens: usage?.total_tokens ?? 0,
     };
   }
 
