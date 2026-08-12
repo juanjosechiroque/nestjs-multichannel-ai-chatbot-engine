@@ -1,24 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import { Body, Controller, NotFoundException, Post } from '@nestjs/common';
-import { ConversationService } from '../conversation/conversation.service';
-import { ChatService } from './chat.service';
-import { ChatMessageDto } from './dto/chat-message.dto';
-import type { ChatContent } from './chat.types';
+import { ChatService } from '../../chat/chat.service';
+import type { ChatContent } from '../../chat/chat.types';
+import { ConversationService } from '../../conversation/conversation.service';
+import { WebChatMessageDto } from './dto/web-chat-message.dto';
 
-interface ChatResponse {
+interface WebChatResponse {
   reply: string;
   content?: ChatContent[];
 }
 
 @Controller('chat')
-export class ChatController {
+export class WebChatController {
   constructor(
     private readonly chatService: ChatService,
     private readonly conversations: ConversationService,
   ) {}
 
   @Post()
-  async chat(@Body() input: ChatMessageDto): Promise<ChatResponse> {
+  async chat(@Body() input: WebChatMessageDto): Promise<WebChatResponse> {
     const requestId = randomUUID();
     const conversation = await this.conversations.findBySession(
       {
@@ -38,6 +38,7 @@ export class ChatController {
       channel: 'web',
       message: input.message,
     });
+
     return {
       reply: result.reply,
       ...(result.content ? { content: result.content } : {}),

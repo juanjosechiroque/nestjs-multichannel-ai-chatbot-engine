@@ -1,6 +1,6 @@
 import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 
-export class ChatMessageDto {
+export class WebChatMessageDto {
   @IsUUID('4')
   sessionId!: string;
 

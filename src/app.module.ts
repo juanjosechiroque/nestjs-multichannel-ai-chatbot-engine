@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { cafeNubeMenuDocument } from '../examples/cafe-nube/cafe-nube.config';
+import { WebChannelModule } from './channels/web/web-channel.module';
 import { validateEnvironment } from './config/environment';
-import { ChatModule } from './chat/chat.module';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './database/database.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -17,7 +17,7 @@ import { CatalogModule } from './catalog/catalog.module';
     DatabaseModule,
     CatalogModule,
     HealthModule,
-    ChatModule,
+    WebChannelModule,
   ],
 })
 export class AppModule {}

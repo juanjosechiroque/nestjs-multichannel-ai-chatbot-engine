@@ -1,16 +1,16 @@
 import { NotFoundException } from '@nestjs/common';
-import type { RequestContext } from '../common/request-context';
-import type { ConversationService } from '../conversation/conversation.service';
+import type { ChatService } from '../../chat/chat.service';
+import type { ChatRequest, ChatResult } from '../../chat/chat.types';
+import type { RequestContext } from '../../common/request-context';
+import type { ConversationService } from '../../conversation/conversation.service';
 import type {
   ConversationReference,
   FindConversationInput,
-} from '../conversation/conversation.types';
-import { ChatController } from './chat.controller';
-import type { ChatService } from './chat.service';
-import type { ChatRequest, ChatResult } from './chat.types';
+} from '../../conversation/conversation.types';
+import { WebChatController } from './web-chat.controller';
 
-describe('ChatController', () => {
-  it('resolves the public web session before calling the chatbot core', async () => {
+describe('WebChatController', () => {
+  it('resolves the public web session before calling the channel-independent core', async () => {
     const reply = jest
       .fn<Promise<ChatResult>, [ChatRequest]>()
       .mockResolvedValue({ reply: 'Respuesta con memoria' });
@@ -20,7 +20,7 @@ describe('ChatController', () => {
         id: 'internal-conversation-id',
         sessionId: '59ad97ee-f9c0-44d7-8fb8-881b87d21e19',
       });
-    const controller = new ChatController(
+    const controller = new WebChatController(
       { reply } as unknown as ChatService,
       { findBySession } as unknown as ConversationService,
     );
@@ -43,14 +43,10 @@ describe('ChatController', () => {
     expect(chatRequest?.requestId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
-    const lookupContext = findBySession.mock.calls[0]?.[1];
-    expect(lookupContext).toEqual({
+    expect(findBySession.mock.calls[0]?.[1]).toEqual({
       requestId: chatRequest?.requestId,
       channel: 'web',
     });
-    expect(lookupContext?.requestId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    );
     expect(response).toEqual({ reply: 'Respuesta con memoria' });
   });
 
@@ -59,7 +55,7 @@ describe('ChatController', () => {
     const findBySession = jest
       .fn<Promise<ConversationReference | null>, [FindConversationInput, RequestContext?]>()
       .mockResolvedValue(null);
-    const controller = new ChatController(
+    const controller = new WebChatController(
       { reply } as unknown as ChatService,
       { findBySession } as unknown as ConversationService,
     );
@@ -89,7 +85,7 @@ describe('ChatController', () => {
       id: 'internal-conversation-id',
       sessionId: '59ad97ee-f9c0-44d7-8fb8-881b87d21e19',
     });
-    const controller = new ChatController(
+    const controller = new WebChatController(
       { reply } as unknown as ChatService,
       { findBySession } as unknown as ConversationService,
     );

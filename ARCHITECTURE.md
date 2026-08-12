@@ -8,9 +8,9 @@ to support multiple channels without duplicating conversational logic.
 The current request path is:
 
 ```text
-HTTP request → DTO validation → ChatController
-                                   ├→ ConversationService → PostgreSQL
-                                   └→ ChatService
+HTTP request → DTO validation → WebChatController
+                                      ├→ ConversationService → PostgreSQL
+                                      └→ ChatService
                                        ├→ MemoryService → PostgreSQL
                                        └→ OpenAiService → OpenAI
                                            ├→ CatalogSearchTool
@@ -31,7 +31,7 @@ flowchart LR
     client["API consumer"]
 
     subgraph app["NestJS application"]
-        controller["ChatController<br/>HTTP input and output"]
+        controller["WebChatController<br/>Web HTTP adapter"]
         conversation["ConversationService<br/>Session lifecycle and resolution"]
         chat["ChatService<br/>Chatbot behavior"]
         catalogTool["CatalogSearchTool<br/>Exact active products"]
@@ -116,7 +116,9 @@ response. It must not contain prompts, knowledge retrieval, memory rules, or ord
 
 | Component                   | Responsibility                                    | Must not                               |
 | --------------------------- | ------------------------------------------------- | -------------------------------------- |
-| `controller`                | Handle transport input and output                 | Contain chatbot rules                  |
+| `WebChatController`         | Adapt web HTTP input and output                   | Contain chatbot rules                  |
+| `WebConversationController` | Create backend-managed web sessions               | Own conversation persistence           |
+| `WebChannelModule`          | Compose the web transport with the chatbot core   | Implement prompts, RAG, or order rules |
 | `DTO`                       | Validate the transport contract                   | Contain business logic                 |
 | `ConversationService`       | Create and resolve backend-managed conversations  | Contain prompts or channel payloads    |
 | `ChatService`               | Define chatbot behavior and coordinate a reply    | Depend on HTTP or a messaging channel  |
@@ -169,10 +171,14 @@ src/
 │   ├── catalog.controller.ts
 │   ├── catalog.module.ts
 │   └── catalog.service.ts
+├── channels/
+│   └── web/
+│       ├── dto/
+│       │   └── web-chat-message.dto.ts
+│       ├── web-channel.module.ts
+│       ├── web-chat.controller.ts
+│       └── web-conversation.controller.ts
 ├── chat/
-│   ├── dto/
-│   │   └── chat-message.dto.ts
-│   ├── chat.controller.ts
 │   ├── chat.module.ts
 │   ├── chat.service.ts
 │   ├── chat.service.spec.ts
@@ -181,7 +187,6 @@ src/
 │   ├── environment.ts
 │   └── environment.spec.ts
 ├── conversation/
-│   ├── conversation.controller.ts
 │   ├── conversation.module.ts
 │   ├── conversation.service.ts
 │   ├── conversation.service.spec.ts

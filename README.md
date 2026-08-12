@@ -43,7 +43,7 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 POST /api/chat
       │
       ▼
-ChatController        Receives and validates HTTP input
+WebChatController     Adapts and validates web HTTP input
       │
       ├──► ConversationService ─────────────────────────► PostgreSQL
       │
@@ -67,8 +67,9 @@ OpenAiService         Selects and executes at most one available tool
 OpenAI Responses API
 ```
 
-`ChatService` does not depend on HTTP. WebSocket and WhatsApp adapters will eventually call the
-same service.
+`WebChannelModule` owns the current HTTP controllers and sets `channel: web`. `ChatModule` has no
+controllers and exports the same channel-independent `ChatService` that WebSocket and WhatsApp
+adapters can call later.
 
 Catalog behavior is intentionally hybrid: broad discovery questions return categories and a few
 examples, structured category and price questions query PostgreSQL, and an explicit request to see
@@ -409,15 +410,19 @@ src/
 │   ├── catalog.controller.ts
 │   ├── catalog.module.ts
 │   └── catalog.service.ts
+├── channels/
+│   └── web/
+│       ├── dto/
+│       │   └── web-chat-message.dto.ts
+│       ├── web-channel.module.ts
+│       ├── web-chat.controller.ts
+│       └── web-conversation.controller.ts
 ├── chat/
-│   ├── dto/
-│   ├── chat.controller.ts
 │   ├── chat.module.ts
 │   ├── chat.service.ts
 │   └── openai.service.ts
 ├── config/
 ├── conversation/
-│   ├── conversation.controller.ts
 │   ├── conversation.module.ts
 │   └── conversation.service.ts
 ├── database/
@@ -426,6 +431,11 @@ src/
 │   ├── memory.service.ts
 │   ├── memory.types.ts
 │   └── memory.module.ts
+├── order/
+│   ├── order-state-machine.ts
+│   ├── order.module.ts
+│   ├── order.service.ts
+│   └── order.types.ts
 ├── rag/
 │   ├── evaluation/
 │   ├── embedding.service.ts
