@@ -47,6 +47,7 @@ describe('CatalogService', () => {
           productName: 'cappuccino',
           category: ProductCategory.HOT_DRINK,
           maxPrice: 15,
+          maxPriceExclusive: false,
           dietaryTags: ['VEGAN'],
           excludedAllergens: ['MILK', 'TREE_NUTS'],
           containsCoffee: false,
@@ -76,6 +77,21 @@ describe('CatalogService', () => {
           ],
         },
       },
+      orderBy: { name: 'asc' },
+      take: 20,
+    });
+  });
+
+  it('applies an exclusive maximum price when the customer says less than', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new CatalogService({
+      product: { findMany },
+    } as unknown as PrismaService);
+
+    await service.searchProducts({ maxPrice: 15, maxPriceExclusive: true, limit: 20 });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { active: true, price: { lt: 15 } },
       orderBy: { name: 'asc' },
       take: 20,
     });

@@ -2,6 +2,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 
 export type ApplicationFailureCode =
   | 'OPENAI_REQUEST_FAILED'
+  | 'OPENAI_INCOMPLETE_RESPONSE'
   | 'OPENAI_EMPTY_RESPONSE'
   | 'OPENAI_EMBEDDING_FAILED'
   | 'DATABASE_UNAVAILABLE';
@@ -29,6 +30,15 @@ export class OpenAiEmptyResponseException extends ApplicationServiceUnavailableE
     super(
       'OPENAI_EMPTY_RESPONSE',
       'El asistente no está disponible en este momento. Inténtalo nuevamente.',
+    );
+  }
+}
+
+export class OpenAiIncompleteResponseException extends ApplicationServiceUnavailableException {
+  constructor(readonly reason: 'max_output_tokens' | 'content_filter' | 'unknown') {
+    super(
+      'OPENAI_INCOMPLETE_RESPONSE',
+      'No pude completar la respuesta. Inténtalo nuevamente con una consulta más específica.',
     );
   }
 }

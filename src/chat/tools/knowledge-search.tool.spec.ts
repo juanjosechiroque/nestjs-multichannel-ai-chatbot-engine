@@ -15,44 +15,31 @@ describe('KnowledgeSearchTool', () => {
     const rag: Pick<RagService, 'getContext'> = { getContext };
     const tool = new KnowledgeSearchTool(rag);
 
-    await expect(
-      tool.execute({ query: '  ubicación del local  ', history: [], context }),
-    ).resolves.toBe('{"retrievalStatus":"results_found","knowledge":[]}');
+    await expect(tool.execute({ query: '  ubicación del local  ', context })).resolves.toBe(
+      '{"retrievalStatus":"results_found","knowledge":[]}',
+    );
     expect(getContext).toHaveBeenCalledWith('ubicación del local', 5, context);
   });
 
-  it('adds the latest customer message to a follow-up search', async () => {
+  it('uses the self-contained model query without contaminating it with previous topics', async () => {
     const getContext = jest
       .fn()
       .mockResolvedValue('{"retrievalStatus":"no_results","knowledge":[]}');
     const tool = new KnowledgeSearchTool({ getContext });
 
     await tool.execute({
-      query: 'la opción más barata',
-      history: [
-        { role: 'user', content: '¿Qué bebidas calientes tienen?' },
-        { role: 'assistant', content: 'Tenemos espresso y cappuccino.' },
-      ],
+      query: 'métodos de pago aceptados',
       context,
     });
 
-    expect(getContext).toHaveBeenCalledWith(
-      [
-        'Previous customer message:',
-        '¿Qué bebidas calientes tienen?',
-        'Current customer message:',
-        'la opción más barata',
-      ].join('\n'),
-      5,
-      context,
-    );
+    expect(getContext).toHaveBeenCalledWith('métodos de pago aceptados', 5, context);
   });
 
   it('rejects an empty model-generated query before calling RAG', async () => {
     const getContext = jest.fn();
     const tool = new KnowledgeSearchTool({ getContext });
 
-    await expect(tool.execute({ query: '   ', history: [], context })).rejects.toThrow(
+    await expect(tool.execute({ query: '   ', context })).rejects.toThrow(
       'Knowledge search query cannot be empty',
     );
     expect(getContext).not.toHaveBeenCalled();

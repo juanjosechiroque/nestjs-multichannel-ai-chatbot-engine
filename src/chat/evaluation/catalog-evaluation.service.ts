@@ -50,6 +50,10 @@ export class CatalogEvaluationService {
         message: evaluationCase.message,
         instructions: this.instructions,
         history: [],
+        orderContext: { activeOrder: null },
+        manageOrder: () => Promise.reject(new Error('Order tool is unavailable in catalog evals')),
+        getMenuDocument: () =>
+          Promise.reject(new Error('Menu document tool is unavailable in catalog evals')),
         searchCatalog: (filters) => {
           appliedFilters = filters;
           return this.catalogSearch.execute({ ...filters, context });

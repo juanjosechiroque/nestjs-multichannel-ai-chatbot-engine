@@ -1,5 +1,28 @@
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { Client } from 'pg';
+
 interface DatabaseInspector {
   $queryRawUnsafe<T>(query: string): Promise<T>;
+}
+
+export async function applyMigrations(connectionString: string): Promise<void> {
+  const client = new Client({ connectionString });
+  const migrationsPath = join(process.cwd(), 'prisma', 'migrations');
+  const migrations = (await readdir(migrationsPath, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .sort((left, right) => left.name.localeCompare(right.name));
+  await client.connect();
+
+  try {
+    for (const migration of migrations) {
+      const migrationPath = join(migrationsPath, migration.name, 'migration.sql');
+      const sql = await readFile(migrationPath, 'utf8');
+      await client.query(sql);
+    }
+  } finally {
+    await client.end();
+  }
 }
 
 const TEST_DATABASE_NAME_PATTERN = /(?:^|_)(?:e2e|test)(?:_|$)/;

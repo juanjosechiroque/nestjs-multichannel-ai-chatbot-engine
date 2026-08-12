@@ -194,4 +194,51 @@ describe('KnowledgeDocumentFactory', () => {
     );
     expect(documents[1]?.content).toContain('Respuesta: Estamos en Miraflores.');
   });
+
+  it('creates one searchable services summary from business-owned FAQ metadata', () => {
+    const faqs = [
+      {
+        id: 'faq-delivery-id',
+        slug: 'delivery',
+        question: '¿Realizan delivery?',
+        answer: 'Sí, en Miraflores.',
+        category: 'DELIVERY',
+        metadata: { serviceSummary: 'delivery disponible en todo Miraflores' },
+      },
+      {
+        id: 'faq-wifi-id',
+        slug: 'wifi',
+        question: '¿Tienen wifi?',
+        answer: 'Sí, para clientes.',
+        category: 'AMENITIES',
+        metadata: { serviceSummary: 'wifi gratuito para clientes durante su visita' },
+      },
+      {
+        id: 'faq-hours-id',
+        slug: 'horario',
+        question: '¿Cuál es el horario?',
+        answer: 'Atendemos todos los días.',
+        category: 'HOURS',
+        metadata: {},
+      },
+    ] as unknown as Faq[];
+    const factory = new KnowledgeDocumentFactory();
+
+    const documents = factory.createCatalogDocuments([], [], faqs);
+    const services = documents.find((document) => document.metadata.slug === 'servicios');
+
+    expect(services).toMatchObject({
+      sourceType: 'faq',
+      sourceId: 'business-services-summary',
+      chunkIndex: 0,
+      metadata: {
+        slug: 'servicios',
+        category: 'SERVICES',
+        purpose: 'service_summary',
+      },
+    });
+    expect(services?.content).toContain('delivery disponible en todo Miraflores');
+    expect(services?.content).toContain('wifi gratuito para clientes durante su visita');
+    expect(services?.content).not.toContain('Atendemos todos los días');
+  });
 });

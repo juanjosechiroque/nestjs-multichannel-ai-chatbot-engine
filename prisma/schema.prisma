@@ -19,6 +19,15 @@ enum MessageRole {
   ASSISTANT
 }
 
+enum OrderStatus {
+  STARTED
+  SELECTING_PRODUCTS
+  CONFIRMING_ORDER
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
 model Product {
   id          String          @id @default(uuid()) @db.Uuid
   slug        String          @unique
@@ -29,6 +38,7 @@ model Product {
   category    ProductCategory
   active      Boolean         @default(true)
   metadata    Json?           @db.JsonB
+  orderItems  OrderItem[]
   createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -84,6 +94,7 @@ model Conversation {
   sessionId String                @map("session_id")
   channel   String
   messages  ConversationMessage[]
+  orders    Order[]
   createdAt DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -101,4 +112,37 @@ model ConversationMessage {
 
   @@index([conversationId, id])
   @@map("conversation_messages")
+}
+
+model Order {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
+  status         OrderStatus  @default(STARTED)
+  total          Decimal      @default(0) @db.Decimal(10, 2)
+  currency       String       @default("PEN") @db.Char(3)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  items          OrderItem[]
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([conversationId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  productName String   @map("product_name")
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(10, 2)
+  quantity    Int
+  lineTotal   Decimal  @map("line_total") @db.Decimal(10, 2)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([orderId, productId])
+  @@index([productId])
+  @@map("order_items")
 }

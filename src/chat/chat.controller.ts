@@ -3,9 +3,11 @@ import { Body, Controller, NotFoundException, Post } from '@nestjs/common';
 import { ConversationService } from '../conversation/conversation.service';
 import { ChatService } from './chat.service';
 import { ChatMessageDto } from './dto/chat-message.dto';
+import type { ChatContent } from './chat.types';
 
 interface ChatResponse {
   reply: string;
+  content?: ChatContent[];
 }
 
 @Controller('chat')
@@ -36,6 +38,9 @@ export class ChatController {
       channel: 'web',
       message: input.message,
     });
-    return { reply: result.reply };
+    return {
+      reply: result.reply,
+      ...(result.content ? { content: result.content } : {}),
+    };
   }
 }

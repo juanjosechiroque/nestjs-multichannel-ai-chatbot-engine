@@ -23,10 +23,13 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - Model-selected tools that avoid running RAG for greetings and unrelated requests.
 - Exact active-product catalog queries from PostgreSQL, including normalized allergens and dietary
   preferences, without generating embeddings.
+- Channel-neutral menu document responses backed by a verified Café Nube PDF.
 - Database-enforced catalog filters for dietary tags, excluded allergens, coffee, decaffeinated,
   and caffeine-free preferences.
 - Backend-managed web sessions with persistent PostgreSQL conversation history.
-- Context-aware knowledge retrieval for conversational follow-up questions.
+- Channel-independent order state machine and transactional PostgreSQL draft persistence.
+- Conversational order tool for adding, removing, reviewing, confirming, and cancelling orders.
+- Self-contained semantic queries for follow-up questions without mixing unrelated previous topics.
 - Structured OpenAI latency and token usage logging.
 - Correlated logs across conversation memory, RAG, and OpenAI calls.
 - Controlled handling of provider errors.
@@ -49,6 +52,10 @@ ChatService           Defines chatbot behavior
       │
       ├──► MemoryService ───────────────────────────────► PostgreSQL
       ├──► CatalogSearchTool ──► CatalogService ────────► PostgreSQL
+      ├──► MenuDocumentTool ──► CatalogDocumentService ─► PDF descriptor
+      ├──► OrderTool ──────────► CatalogService ────────► PostgreSQL
+      │                    └───► OrderService ──────────► PostgreSQL
+      │                              └──► OrderStateMachine
       ├──► KnowledgeSearchTool ──► RagService
       │                              ├──► EmbeddingService ──► OpenAI Embeddings API
       │                              └──────────────────────► PostgreSQL + pgvector
@@ -62,6 +69,20 @@ OpenAI Responses API
 
 `ChatService` does not depend on HTTP. WebSocket and WhatsApp adapters will eventually call the
 same service.
+
+Catalog behavior is intentionally hybrid: broad discovery questions return categories and a few
+examples, structured category and price questions query PostgreSQL, and an explicit request to see
+the menu returns a channel-neutral `document` content item. The web adapter renders that item as a
+PDF button; future channel adapters can translate the same item into their native document format.
+
+The model sees recent conversation history and writes a self-contained query when it needs semantic
+knowledge. `KnowledgeSearchTool` sends that query unchanged to RAG, preventing a new question about
+payments, location, or services from being contaminated by the preceding conversation topic.
+
+Order tool results expose only customer-facing items and totals plus backend-owned workflow
+guidance. After an item change, the assistant confirms the change and asks whether the customer
+wants to add something else or review the summary. A successful `REVIEW` is required before
+`CONFIRM`, and internal order state names are never shown to the customer.
 
 For the current design and its boundaries, see [Architecture](ARCHITECTURE.md).
 
@@ -90,7 +111,7 @@ DATABASE_URL=postgresql://chatbot:chatbot@localhost:5432/chatbot_engine?schema=p
 OPENAI_API_KEY=your_api_key
 OPENAI_MODEL=gpt-5.6-luna
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-OPENAI_MAX_OUTPUT_TOKENS=500
+OPENAI_MAX_OUTPUT_TOKENS=1000
 OPENAI_GENERATION_TIMEOUT_MS=20000
 OPENAI_GENERATION_MAX_RETRIES=1
 OPENAI_EMBEDDING_TIMEOUT_MS=8000
@@ -233,7 +254,12 @@ NestJS modules, type-only files, and command-line entry points. The quality gate
 85% statements, 75% branches, 80% functions, and 85% lines. `npm run validate` applies the same
 thresholds together with linting, formatting, strict TypeScript checking, and the production build.
 
-### PostgreSQL integration test
+The model can request `manage_order` with one structured action and product names and quantities.
+`OrderTool` resolves those names against the catalog before writing. `OrderService`, not OpenAI,
+uses current database prices, calculates totals, validates transitions, and persists the result.
+Ambiguous or missing products return a clarification result without partially changing the order.
+
+### PostgreSQL integration tests
 
 With Docker Desktop running, execute the deterministic RAG integration test:
 
@@ -241,11 +267,12 @@ With Docker Desktop running, execute the deterministic RAG integration test:
 npm run test:integration
 ```
 
-Testcontainers starts a disposable PostgreSQL 17 container with pgvector, verifies that the vector
-extension is available, and checks similarity ordering and threshold filtering with fixed vectors.
-It stops and removes the container after the test. The test does not call OpenAI and is intentionally
-kept separate from `npm run validate`, so the unit-test workflow remains fast and does not require
-Docker.
+Testcontainers starts disposable PostgreSQL 17 containers. The RAG suite verifies pgvector,
+similarity ordering, and threshold filtering with fixed vectors. The order suite applies every
+committed migration and verifies a complete draft, modification, review, confirmation, and
+cancellation flow with exact persisted totals. The containers are removed after the tests. These
+tests do not call OpenAI and remain separate from `npm run validate`, so the unit-test workflow does
+not require Docker.
 
 ### HTTP end-to-end test
 
@@ -329,6 +356,29 @@ Response:
 { "reply": "..." }
 ```
 
+An explicit menu request also returns structured content:
+
+```json
+{
+  "reply": "Aquí tienes nuestra carta.",
+  "content": [
+    {
+      "type": "document",
+      "title": "Carta de Café Nube",
+      "url": "/api/menu",
+      "mimeType": "application/pdf"
+    }
+  ]
+}
+```
+
+The PDF is served by `GET /api/menu`. Product searches, price filters, and orders still use the
+structured PostgreSQL catalog; the document is presentation only and is never sent to OpenAI.
+Its descriptor and repository path are declared in `examples/cafe-nube/cafe-nube.config.ts`
+because they belong to the demonstration business rather than to environment configuration.
+`AppModule` selects that example configuration at the application composition boundary; the
+catalog and chatbot modules do not import Café Nube directly.
+
 Reuse the same `sessionId` in later requests to preserve conversational context. The backend
 creates valid sessions; an unknown UUID is rejected instead of creating a conversation implicitly.
 
@@ -338,6 +388,7 @@ creates valid sessions; an unknown UUID is rejected instead of creating a conver
 curl http://localhost:3000/api/products
 curl http://localhost:3000/api/promotions
 curl http://localhost:3000/api/faqs
+curl http://localhost:3000/api/menu --output cafe-nube-menu.pdf
 ```
 
 ## Verification
@@ -353,6 +404,8 @@ npm run test:e2e
 ```text
 src/
 ├── catalog/
+│   ├── catalog-document.controller.ts
+│   ├── catalog-document.service.ts
 │   ├── catalog.controller.ts
 │   ├── catalog.module.ts
 │   └── catalog.service.ts
@@ -389,6 +442,13 @@ prisma/
 │   └── cafe-nube.ts
 ├── schema.prisma
 └── seed.ts
+
+examples/
+└── cafe-nube/
+    ├── assets/
+    │   └── menu.pdf
+    ├── cafe-nube.config.ts
+    └── README.md
 ```
 
 Initial implementations will remain simple while validating functionality. Refactors and

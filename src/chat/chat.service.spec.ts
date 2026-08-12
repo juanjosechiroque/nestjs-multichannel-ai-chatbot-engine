@@ -10,6 +10,13 @@ import type {
 } from './openai.service';
 import type { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 
+function orderToolMock() {
+  return {
+    execute: jest.fn(),
+    getContext: jest.fn().mockResolvedValue({ activeOrder: null }),
+  };
+}
+
 function directResult(answer: string): GenerateResponseResult {
   return { answer, usedSources: [], llmCalls: 1, usedTools: [] };
 }
@@ -54,11 +61,14 @@ describe('ChatService', () => {
       saveExchange: jest.fn().mockResolvedValue(undefined),
     };
     const config = new ConfigService({ BUSINESS_NAME: 'Café Nube' });
+    const orderTool = orderToolMock();
     const service = new ChatService(
       openAi,
       config,
       { execute: jest.fn() },
       knowledgeSearch,
+      { execute: jest.fn() },
+      orderTool,
       memory,
     );
 
@@ -72,10 +82,6 @@ describe('ChatService', () => {
     expect(result).toEqual({ reply: 'El americano es la bebida caliente más barata.' });
     expect(execute).toHaveBeenCalledWith({
       query: 'la bebida caliente más barata',
-      history: [
-        { role: 'user', content: '¿Qué bebidas calientes tienen?' },
-        { role: 'assistant', content: 'Tenemos espresso y cappuccino.' },
-      ],
       context: {
         requestId: 'request-1',
         conversationId: 'conversation-1',
@@ -87,8 +93,18 @@ describe('ChatService', () => {
       conversationId: 'conversation-1',
       channel: 'web',
     });
+    expect(orderTool.getContext).toHaveBeenCalledWith('conversation-1', {
+      requestId: 'request-1',
+      conversationId: 'conversation-1',
+      channel: 'web',
+    });
+    expect(receivedInput?.orderContext).toEqual({ activeOrder: null });
     expect(generate).toHaveBeenCalledTimes(1);
     expect(receivedInput?.message).toBe('¿Cuál es la más barata?');
+    expect(receivedInput?.history).toEqual([
+      { role: 'user', content: '¿Qué bebidas calientes tienen?' },
+      { role: 'assistant', content: 'Tenemos espresso y cappuccino.' },
+    ]);
     expect(receivedInput?.instructions).toContain(
       'virtual customer service assistant for Café Nube',
     );
@@ -96,6 +112,9 @@ describe('ChatService', () => {
       'Use search_knowledge for other factual questions about Café Nube',
     );
     expect(receivedInput?.instructions).toContain('Use search_catalog for current product names');
+    expect(receivedInput?.instructions).toContain(
+      'Use manage_order when the customer explicitly asks',
+    );
     expect(receivedInput?.history).toEqual([
       { role: 'user', content: '¿Qué bebidas calientes tienen?' },
       { role: 'assistant', content: 'Tenemos espresso y cappuccino.' },
@@ -127,6 +146,7 @@ describe('ChatService', () => {
           sourceType: 'product_category',
         },
       ],
+      contentTypes: [],
     });
   });
 
@@ -140,6 +160,8 @@ describe('ChatService', () => {
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
       { execute: jest.fn() },
       { execute },
+      { execute: jest.fn() },
+      orderToolMock(),
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange: jest.fn().mockResolvedValue(undefined),
@@ -164,6 +186,8 @@ describe('ChatService', () => {
     );
     expect(typeof generate.mock.calls[0]?.[0].searchKnowledge).toBe('function');
     expect(typeof generate.mock.calls[0]?.[0].searchCatalog).toBe('function');
+    expect(typeof generate.mock.calls[0]?.[0].getMenuDocument).toBe('function');
+    expect(typeof generate.mock.calls[0]?.[0].manageOrder).toBe('function');
   });
 
   it('keeps security instructions when the user attempts prompt injection', async () => {
@@ -177,6 +201,8 @@ describe('ChatService', () => {
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
       { execute: jest.fn() },
       { execute: jest.fn() },
+      { execute: jest.fn() },
+      orderToolMock(),
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange: jest.fn().mockResolvedValue(undefined),
@@ -207,6 +233,8 @@ describe('ChatService', () => {
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
       { execute: jest.fn() },
       { execute },
+      { execute: jest.fn() },
+      orderToolMock(),
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange: jest.fn().mockResolvedValue(undefined),
@@ -244,6 +272,8 @@ describe('ChatService', () => {
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
       { execute: jest.fn() },
       { execute: jest.fn() },
+      { execute: jest.fn() },
+      orderToolMock(),
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange,
@@ -277,6 +307,8 @@ describe('ChatService', () => {
       new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
       { execute: jest.fn() },
       { execute: jest.fn() },
+      { execute: jest.fn() },
+      orderToolMock(),
       {
         getRecentMessages: jest.fn().mockRejectedValue(new DatabaseUnavailableException()),
         saveExchange: jest.fn(),

@@ -65,7 +65,7 @@ class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  OPENAI_MAX_OUTPUT_TOKENS = 500;
+  OPENAI_MAX_OUTPUT_TOKENS = 1_000;
 
   @IsString()
   @IsNotEmpty()

@@ -18,6 +18,7 @@ export interface CatalogSearchArguments {
   productName: string | null;
   category: ProductCategory | null;
   maxPrice: number | null;
+  maxPriceExclusive: boolean;
   dietaryTags: ProductDietaryTag[];
   excludedAllergens: ProductAllergen[];
   containsCoffee: boolean | null;
@@ -40,6 +41,7 @@ export class CatalogSearchTool {
     productName,
     category,
     maxPrice,
+    maxPriceExclusive,
     dietaryTags,
     excludedAllergens,
     containsCoffee,
@@ -51,6 +53,7 @@ export class CatalogSearchTool {
       ...(productName ? { productName } : {}),
       ...(category ? { category } : {}),
       ...(maxPrice !== null ? { maxPrice } : {}),
+      ...(maxPrice !== null ? { maxPriceExclusive } : {}),
       ...(dietaryTags.length > 0 ? { dietaryTags } : {}),
       ...(excludedAllergens.length > 0 ? { excludedAllergens } : {}),
       ...(containsCoffee !== null ? { containsCoffee } : {}),

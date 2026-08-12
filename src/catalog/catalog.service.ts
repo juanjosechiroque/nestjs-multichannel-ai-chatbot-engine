@@ -27,6 +27,7 @@ export class CatalogService {
       productName,
       category,
       maxPrice,
+      maxPriceExclusive,
       dietaryTags,
       excludedAllergens,
       containsCoffee,
@@ -64,7 +65,9 @@ export class CatalogService {
               ? { name: { contains: productName, mode: 'insensitive' as const } }
               : {}),
             ...(category ? { category } : {}),
-            ...(maxPrice !== undefined ? { price: { lte: maxPrice } } : {}),
+            ...(maxPrice !== undefined
+              ? { price: maxPriceExclusive ? { lt: maxPrice } : { lte: maxPrice } }
+              : {}),
             ...(preferenceFilters.length > 0 ? { AND: preferenceFilters } : {}),
             ...(excludedAllergenFilters.length > 0 ? { NOT: { OR: excludedAllergenFilters } } : {}),
           },

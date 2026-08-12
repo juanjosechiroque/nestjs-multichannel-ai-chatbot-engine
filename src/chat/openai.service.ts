@@ -5,19 +5,30 @@ import { PRODUCT_ALLERGENS, PRODUCT_DIETARY_TAGS } from '../catalog/catalog-pref
 import {
   ApplicationServiceUnavailableException,
   OpenAiEmptyResponseException,
+  OpenAiIncompleteResponseException,
   OpenAiRequestFailedException,
 } from '../common/application-error';
 import type { RequestContext } from '../common/request-context';
 import { ProductCategory } from '../generated/prisma/enums';
 import type { ChatHistoryMessage } from '../memory/memory.types';
 import type { KnowledgeSourceType, RagSourceReference } from '../rag/rag.types';
+import { OrderAction } from '../order/order.types';
+import type { ChatContent, DocumentChatContent } from './chat.types';
 import type { CatalogSearchArguments } from './tools/catalog-search.tool';
+import {
+  type CustomerOrderAction,
+  type OrderConversationContext,
+  type OrderToolArguments,
+} from './tools/order.tool';
 
 export interface GenerateResponseInput {
   context: RequestContext;
   message: string;
   instructions: string;
   history: ChatHistoryMessage[];
+  orderContext: OrderConversationContext;
+  manageOrder: (order: OrderToolArguments) => Promise<string>;
+  getMenuDocument: () => Promise<string>;
   searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
   searchKnowledge: (query: string) => Promise<string>;
 }
@@ -27,6 +38,7 @@ export interface GenerateResponseResult {
   usedSources: RagSourceReference[];
   llmCalls: number;
   usedTools: string[];
+  content?: ChatContent[];
 }
 
 interface StructuredChatResponse {
@@ -38,8 +50,28 @@ interface KnowledgeSearchArguments {
   query: string;
 }
 
+function isOrderToolItemArgument(value: unknown): value is OrderToolArguments['items'][number] {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.productName === 'string' &&
+    item.productName.trim().length > 0 &&
+    item.productName.length <= 100 &&
+    typeof item.quantity === 'number' &&
+    Number.isInteger(item.quantity) &&
+    item.quantity >= 1 &&
+    item.quantity <= 99 &&
+    Object.keys(item).every((key) => key === 'productName' || key === 'quantity')
+  );
+}
+
 const KNOWLEDGE_SEARCH_TOOL_NAME = 'search_knowledge';
 const CATALOG_SEARCH_TOOL_NAME = 'search_catalog';
+const MENU_DOCUMENT_TOOL_NAME = 'get_menu_document';
+const ORDER_TOOL_NAME = 'manage_order';
 const EMPTY_BUSINESS_CONTEXT = JSON.stringify({
   retrievalStatus: 'no_results',
   knowledge: [],
@@ -50,10 +82,10 @@ const KNOWLEDGE_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
   name: KNOWLEDGE_SEARCH_TOOL_NAME,
   description: [
     "Search the current business's confirmed knowledge base.",
-    'Use it before answering factual questions about promotions, FAQs, location, hours, policies, or published services.',
+    'Use it before answering factual questions about promotions, FAQs, location, hours, policies, or confirmed services.',
     'Use search_catalog instead for products, product descriptions, categories, exact prices, or product lists.',
     'Do not use it for greetings, thanks, brief social messages, or requests outside the business scope.',
-    'Write a concise search query that preserves the customer intent.',
+    'Write a concise, self-contained search query that preserves the customer intent. If the customer question is already self-contained, pass it verbatim. Resolve true follow-up references from the conversation, but never include an unrelated previous topic.',
   ].join(' '),
   parameters: {
     type: 'object',
@@ -100,6 +132,11 @@ const CATALOG_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
         minimum: 0,
         maximum: 10_000,
       },
+      maxPriceExclusive: {
+        type: 'boolean',
+        description:
+          'True when the customer says less than or below the maximum price; false for up to, at most, maximum, or when maxPrice is null.',
+      },
       dietaryTags: {
         type: 'array',
         description:
@@ -134,6 +171,7 @@ const CATALOG_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
       'productName',
       'category',
       'maxPrice',
+      'maxPriceExclusive',
       'dietaryTags',
       'excludedAllergens',
       'containsCoffee',
@@ -145,7 +183,91 @@ const CATALOG_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
   strict: true,
 };
 
-const CHAT_TOOLS: OpenAI.Responses.FunctionTool[] = [KNOWLEDGE_SEARCH_TOOL, CATALOG_SEARCH_TOOL];
+const MENU_DOCUMENT_TOOL: OpenAI.Responses.FunctionTool = {
+  type: 'function',
+  name: MENU_DOCUMENT_TOOL_NAME,
+  description: [
+    "Get the current business's customer-facing menu document.",
+    'Use it when the customer explicitly asks to see, open, download, receive, or view the menu or full menu.',
+    'Do not use it for broad discovery questions such as what the business sells, or for product category, price, preference, allergen, or order questions.',
+    'The document is a presentation resource; use search_catalog for structured product facts and manage_order for order operations.',
+  ].join(' '),
+  parameters: {
+    type: 'object',
+    properties: {},
+    required: [],
+    additionalProperties: false,
+  },
+  strict: true,
+};
+
+const NO_ACTIVE_ORDER_ACTIONS: CustomerOrderAction[] = [OrderAction.ADD_ITEMS];
+
+function buildOrderTool(orderContext: OrderConversationContext): OpenAI.Responses.FunctionTool {
+  const allowedActions =
+    orderContext.activeOrder?.workflow.allowedActions ?? NO_ACTIVE_ORDER_ACTIONS;
+
+  return {
+    type: 'function',
+    name: ORDER_TOOL_NAME,
+    description: [
+      "Modify or inspect the current conversation's order using application-controlled business rules.",
+      `The actions currently allowed by the application are: ${allowedActions.join(', ')}. Never request another action.`,
+      'Use ADD_ITEMS only when the customer explicitly asks to add or order products; do not use it when they are only browsing or asking what is available.',
+      'Use REMOVE_ITEMS to remove quantities. Use REVIEW when the customer asks to see the current order or total, says the selected/current/listed items are the ones they want, or wants to proceed to confirmation.',
+      'Use CONFIRM when the trusted current order context has canConfirm=true and the customer explicitly agrees to the preceding confirmation question. Use CANCEL when explicitly requested.',
+      'Provide product names and positive integer quantities exactly as expressed or identified in the conversation.',
+      'The application resolves products, uses database prices, calculates totals, and validates every state transition.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: allowedActions,
+          description: 'The single currently allowed order action requested by the customer.',
+        },
+        items: {
+          type: 'array',
+          description:
+            'Products affected by ADD_ITEMS or REMOVE_ITEMS. Use an empty array for REVIEW, CONFIRM, and CANCEL.',
+          items: {
+            type: 'object',
+            properties: {
+              productName: {
+                type: 'string',
+                description: 'Product name or unambiguous product reference from the conversation.',
+                minLength: 1,
+                maxLength: 100,
+              },
+              quantity: {
+                type: 'integer',
+                description: 'Positive quantity to add or remove.',
+                minimum: 1,
+                maximum: 99,
+              },
+            },
+            required: ['productName', 'quantity'],
+            additionalProperties: false,
+          },
+          maxItems: 10,
+        },
+      },
+      required: ['action', 'items'],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+function buildChatTools(orderContext: OrderConversationContext): OpenAI.Responses.FunctionTool[] {
+  return [
+    KNOWLEDGE_SEARCH_TOOL,
+    CATALOG_SEARCH_TOOL,
+    MENU_DOCUMENT_TOOL,
+    buildOrderTool(orderContext),
+  ];
+}
 
 const CHAT_RESPONSE_FORMAT = {
   type: 'json_schema' as const,
@@ -184,6 +306,17 @@ function isLocationKnowledgeRequest(message: string): boolean {
   return hasExplicitLocationTerm || (asksWhere && mentionsBusinessPlace);
 }
 
+function isServicesKnowledgeRequest(message: string): boolean {
+  const normalizedMessage = message
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  return /\b(servicio|servicios|facilidad|facilidades|comodidad|comodidades)\b/.test(
+    normalizedMessage,
+  );
+}
+
 function isKnowledgeSourceType(value: unknown): value is KnowledgeSourceType {
   return (
     value === 'product' || value === 'product_category' || value === 'promotion' || value === 'faq'
@@ -208,22 +341,35 @@ export class OpenAiService {
     message,
     instructions,
     history,
+    orderContext,
+    manageOrder,
+    getMenuDocument,
     searchCatalog,
     searchKnowledge,
   }: GenerateResponseInput): Promise<GenerateResponseResult> {
     const startedAt = Date.now();
 
     try {
-      const initialInput = this.buildInput(message, history);
-      const forceLocationSearch = isLocationKnowledgeRequest(message);
+      const initialInput = this.buildInput(message, history, orderContext);
+      const tools = buildChatTools(orderContext);
+      const locationKnowledgeRequest = isLocationKnowledgeRequest(message);
+      const servicesKnowledgeRequest = isServicesKnowledgeRequest(message);
+      const forceKnowledgeSearch = locationKnowledgeRequest || servicesKnowledgeRequest;
+      const knowledgeQueryOverride = locationKnowledgeRequest
+        ? `dirección exacta, ubicación, cómo llegar y enlace de mapa. Pregunta del cliente: ${message}`
+        : servicesKnowledgeRequest
+          ? message
+          : undefined;
       const initialCallStartedAt = Date.now();
       const initialResponse = await this.createResponse({
         instructions,
         input: initialInput,
-        toolChoice: forceLocationSearch
+        tools,
+        toolChoice: forceKnowledgeSearch
           ? { type: 'function', name: KNOWLEDGE_SEARCH_TOOL_NAME }
           : 'auto',
       });
+      this.assertResponseCompleted(initialResponse);
       const toolCalls = initialResponse.output.filter(
         (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === 'function_call',
       );
@@ -263,9 +409,11 @@ export class OpenAiService {
 
       const toolOutput = await this.executeToolCall({
         toolCall,
+        manageOrder,
+        getMenuDocument,
         searchCatalog,
         searchKnowledge,
-        knowledgeQueryOverride: forceLocationSearch ? message : undefined,
+        knowledgeQueryOverride,
       });
       // The Responses API requires replaying every output item. The SDK models a few
       // output-only status variants more broadly than its input union, so bridge them via unknown.
@@ -283,8 +431,10 @@ export class OpenAiService {
       const finalResponse = await this.createResponse({
         instructions,
         input: continuationInput,
+        tools,
         toolChoice: 'none',
       });
+      this.assertResponseCompleted(finalResponse);
 
       if (finalResponse.output.some((item) => item.type === 'function_call')) {
         throw new Error('OpenAI requested an additional tool after reaching the tool limit');
@@ -309,15 +459,20 @@ export class OpenAiService {
       const event =
         failure.failureCode === 'OPENAI_EMPTY_RESPONSE'
           ? 'openai.response.empty'
-          : failure.failureCode === 'OPENAI_REQUEST_FAILED'
-            ? 'openai.response.failed'
-            : 'openai.tool.failed';
+          : failure.failureCode === 'OPENAI_INCOMPLETE_RESPONSE'
+            ? 'openai.response.incomplete'
+            : failure.failureCode === 'OPENAI_REQUEST_FAILED'
+              ? 'openai.response.failed'
+              : 'openai.tool.failed';
       this.logger.error({
         event,
         ...context,
         durationMs: Date.now() - startedAt,
         failureCode: failure.failureCode,
-        message,
+        message:
+          error instanceof OpenAiIncompleteResponseException
+            ? `OpenAI response incomplete: ${error.reason}`
+            : message,
       });
       throw failure;
     }
@@ -326,8 +481,22 @@ export class OpenAiService {
   private buildInput(
     message: string,
     history: ChatHistoryMessage[],
+    orderContext: OrderConversationContext,
   ): OpenAI.Responses.ResponseInput {
     return [
+      {
+        role: 'developer',
+        content: [
+          {
+            type: 'input_text',
+            text: [
+              'Trusted current order context from the application:',
+              JSON.stringify(orderContext),
+              'Use only its allowedActions. If canConfirm=true and the customer explicitly agrees to the preceding confirmation question, call manage_order with CONFIRM.',
+            ].join('\n'),
+          },
+        ],
+      },
       ...history.map((historyMessage) => ({
         role: historyMessage.role,
         content: historyMessage.content,
@@ -347,25 +516,35 @@ export class OpenAiService {
   private createResponse({
     instructions,
     input,
+    tools,
     toolChoice,
   }: {
     instructions: string;
     input: OpenAI.Responses.ResponseInput;
+    tools: OpenAI.Responses.FunctionTool[];
     toolChoice: OpenAI.Responses.ToolChoiceOptions | OpenAI.Responses.ToolChoiceFunction;
   }): Promise<OpenAI.Responses.Response> {
     return this.client.responses.create({
       model: this.config.get<string>('OPENAI_MODEL', 'gpt-5.6-luna'),
       instructions,
       input,
-      tools: CHAT_TOOLS,
+      tools,
       tool_choice: toolChoice,
       parallel_tool_calls: false,
       store: false,
       prompt_cache_options: { mode: 'explicit' },
       reasoning: { effort: 'low' },
-      max_output_tokens: this.config.get<number>('OPENAI_MAX_OUTPUT_TOKENS', 500),
+      max_output_tokens: this.config.get<number>('OPENAI_MAX_OUTPUT_TOKENS', 2_000),
       text: { format: CHAT_RESPONSE_FORMAT },
     });
+  }
+
+  private assertResponseCompleted(response: OpenAI.Responses.Response): void {
+    if (response.status !== 'incomplete') {
+      return;
+    }
+
+    throw new OpenAiIncompleteResponseException(response.incomplete_details?.reason ?? 'unknown');
   }
 
   private completeGeneration({
@@ -435,16 +614,21 @@ export class OpenAiService {
       usedSources,
       llmCalls,
       usedTools,
+      ...this.getContent(businessContext),
     };
   }
 
   private executeToolCall({
     toolCall,
+    manageOrder,
+    getMenuDocument,
     searchCatalog,
     searchKnowledge,
     knowledgeQueryOverride,
   }: {
     toolCall: OpenAI.Responses.ResponseFunctionToolCall;
+    manageOrder: (order: OrderToolArguments) => Promise<string>;
+    getMenuDocument: () => Promise<string>;
     searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
     searchKnowledge: (query: string) => Promise<string>;
     knowledgeQueryOverride?: string;
@@ -456,9 +640,61 @@ export class OpenAiService {
       }
       case CATALOG_SEARCH_TOOL_NAME:
         return searchCatalog(this.parseCatalogSearchArguments(toolCall.arguments));
+      case MENU_DOCUMENT_TOOL_NAME:
+        this.assertEmptyToolArguments(toolCall.arguments, MENU_DOCUMENT_TOOL_NAME);
+        return getMenuDocument();
+      case ORDER_TOOL_NAME:
+        return manageOrder(this.parseOrderToolArguments(toolCall.arguments));
       default:
         throw new Error(`OpenAI requested an unsupported tool: ${toolCall.name}`);
     }
+  }
+
+  private assertEmptyToolArguments(argumentsJson: string, toolName: string): void {
+    const parsed: unknown = JSON.parse(argumentsJson);
+
+    if (typeof parsed !== 'object' || parsed === null || Object.keys(parsed).length > 0) {
+      throw new Error(`OpenAI returned invalid ${toolName} arguments`);
+    }
+  }
+
+  private parseOrderToolArguments(argumentsJson: string): OrderToolArguments {
+    const parsed: unknown = JSON.parse(argumentsJson);
+
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !('action' in parsed) ||
+      !('items' in parsed) ||
+      Object.keys(parsed).some((key) => key !== 'action' && key !== 'items') ||
+      !Array.isArray(parsed.items) ||
+      parsed.items.length > 10
+    ) {
+      throw new Error('OpenAI returned invalid manage_order arguments');
+    }
+
+    const actions = ['ADD_ITEMS', 'REMOVE_ITEMS', 'REVIEW', 'CONFIRM', 'CANCEL'] as const;
+    const action = parsed.action;
+    const rawItems: unknown[] = parsed.items;
+    const validItems = rawItems.every(isOrderToolItemArgument);
+    const itemAction = action === 'ADD_ITEMS' || action === 'REMOVE_ITEMS';
+
+    if (
+      typeof action !== 'string' ||
+      !actions.some((allowedAction) => allowedAction === action) ||
+      !validItems ||
+      (itemAction ? rawItems.length === 0 : rawItems.length !== 0)
+    ) {
+      throw new Error('OpenAI returned invalid manage_order arguments');
+    }
+
+    return {
+      action: action as OrderToolArguments['action'],
+      items: rawItems.map((item) => ({
+        productName: item.productName.trim(),
+        quantity: item.quantity,
+      })),
+    };
   }
 
   private parseKnowledgeSearchArguments(argumentsJson: string): KnowledgeSearchArguments {
@@ -488,6 +724,7 @@ export class OpenAiService {
       !('productName' in parsed) ||
       !('category' in parsed) ||
       !('maxPrice' in parsed) ||
+      !('maxPriceExclusive' in parsed) ||
       !('dietaryTags' in parsed) ||
       !('excludedAllergens' in parsed) ||
       !('containsCoffee' in parsed) ||
@@ -498,6 +735,7 @@ export class OpenAiService {
           key !== 'productName' &&
           key !== 'category' &&
           key !== 'maxPrice' &&
+          key !== 'maxPriceExclusive' &&
           key !== 'dietaryTags' &&
           key !== 'excludedAllergens' &&
           key !== 'containsCoffee' &&
@@ -511,6 +749,7 @@ export class OpenAiService {
     const productName = parsed.productName;
     const category = parsed.category;
     const maxPrice = parsed.maxPrice;
+    const maxPriceExclusive = parsed.maxPriceExclusive;
     const dietaryTags = parsed.dietaryTags;
     const excludedAllergens = parsed.excludedAllergens;
     const containsCoffee = parsed.containsCoffee;
@@ -542,6 +781,7 @@ export class OpenAiService {
           productName.trim().length > 0 &&
           productName.length <= 100)
       ) ||
+      typeof maxPriceExclusive !== 'boolean' ||
       !validCategory ||
       !(
         maxPrice === null ||
@@ -563,6 +803,7 @@ export class OpenAiService {
       productName: productName === null ? null : productName.trim(),
       category: category as ProductCategory | null,
       maxPrice,
+      maxPriceExclusive,
       dietaryTags: dietaryTags as CatalogSearchArguments['dietaryTags'],
       excludedAllergens: excludedAllergens as CatalogSearchArguments['excludedAllergens'],
       containsCoffee,
@@ -587,9 +828,41 @@ export class OpenAiService {
     }
 
     return {
-      answer: parsed.answer,
+      answer: parsed.answer.replaceAll('\\n', '\n'),
       usedSourceIds: parsed.usedSourceIds,
     };
+  }
+
+  private getContent(businessContext: string): { content?: ChatContent[] } {
+    const parsed: unknown = JSON.parse(businessContext);
+
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !('documentStatus' in parsed) ||
+      parsed.documentStatus !== 'available' ||
+      !('document' in parsed) ||
+      !this.isDocumentContent(parsed.document)
+    ) {
+      return {};
+    }
+
+    return { content: [parsed.document] };
+  }
+
+  private isDocumentContent(value: unknown): value is DocumentChatContent {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      'type' in value &&
+      value.type === 'document' &&
+      'title' in value &&
+      typeof value.title === 'string' &&
+      'url' in value &&
+      typeof value.url === 'string' &&
+      'mimeType' in value &&
+      value.mimeType === 'application/pdf'
+    );
   }
 
   private getAvailableSources(businessContext: string): Map<string, RagSourceReference> {
@@ -598,7 +871,10 @@ export class OpenAiService {
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
-      (!('knowledge' in parsed) && !('products' in parsed)) ||
+      (!('knowledge' in parsed) &&
+        !('products' in parsed) &&
+        !('orderOperationStatus' in parsed) &&
+        !('documentStatus' in parsed)) ||
       ('knowledge' in parsed && !Array.isArray(parsed.knowledge)) ||
       ('products' in parsed && !Array.isArray(parsed.products))
     ) {
