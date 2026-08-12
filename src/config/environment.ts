@@ -65,6 +65,18 @@ class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
+  RATE_LIMIT_CONVERSATIONS_PER_HOUR = 5;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  RATE_LIMIT_MESSAGES_PER_MINUTE = 10;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
   OPENAI_MAX_OUTPUT_TOKENS = 1_000;
 
   @IsString()

@@ -118,6 +118,8 @@ OPENAI_GENERATION_MAX_RETRIES=1
 OPENAI_EMBEDDING_TIMEOUT_MS=8000
 OPENAI_EMBEDDING_MAX_RETRIES=1
 RAG_MIN_SIMILARITY=0.5
+RATE_LIMIT_CONVERSATIONS_PER_HOUR=5
+RATE_LIMIT_MESSAGES_PER_MINUTE=10
 ```
 
 Generation and embedding requests have separate timeout and retry limits because they have
@@ -136,6 +138,18 @@ exposing internal similarity scores. Until a human-handoff workflow is implement
 states that the information is not confirmed and does not claim that it can transfer or escalate the
 conversation. It also avoids suggesting unverified related services or contact methods that were not
 present in the retrieved context.
+
+### Web rate limiting
+
+The web channel limits conversation creation to five requests per hour per IP address and chat
+messages to ten requests per minute per public session. Limits are configurable through
+`RATE_LIMIT_CONVERSATIONS_PER_HOUR` and `RATE_LIMIT_MESSAGES_PER_MINUTE`. Exceeded requests return
+`429 Too Many Requests` before reaching PostgreSQL, the chatbot core, or OpenAI.
+
+The initial limiter uses the package's in-memory storage and is suitable for a single application
+instance. A distributed deployment should replace it with shared Redis storage. When deploying
+behind a reverse proxy, configure the HTTP adapter's trusted proxy policy so the limiter receives
+the real client IP instead of the proxy address.
 
 ### Failure handling
 
