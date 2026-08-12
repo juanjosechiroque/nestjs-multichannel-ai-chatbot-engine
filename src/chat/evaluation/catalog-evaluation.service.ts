@@ -50,7 +50,7 @@ export class CatalogEvaluationService {
         message: evaluationCase.message,
         instructions: this.instructions,
         history: [],
-        orderContext: { activeOrder: null },
+        orderContext: { activeOrder: null, confirmationReplayAvailable: false },
         manageOrder: () => Promise.reject(new Error('Order tool is unavailable in catalog evals')),
         getMenuDocument: () =>
           Promise.reject(new Error('Menu document tool is unavailable in catalog evals')),

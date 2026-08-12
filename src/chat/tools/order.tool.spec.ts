@@ -64,10 +64,17 @@ function createTool() {
     confirm: jest.fn(),
     cancel: jest.fn(),
     getActiveOrder: jest.fn(),
+    getLatestOrder: jest.fn(),
   } satisfies Record<
     keyof Pick<
       OrderService,
-      'addItems' | 'removeItems' | 'review' | 'confirm' | 'cancel' | 'getActiveOrder'
+      | 'addItems'
+      | 'removeItems'
+      | 'review'
+      | 'confirm'
+      | 'cancel'
+      | 'getActiveOrder'
+      | 'getLatestOrder'
     >,
     jest.Mock
   >;
@@ -79,7 +86,7 @@ function createTool() {
 describe('OrderTool', () => {
   it('exposes the active order and only its valid customer actions as trusted context', async () => {
     const { tool, orders } = createTool();
-    orders.getActiveOrder.mockResolvedValue(order({ status: OrderStatus.CONFIRMING_ORDER }));
+    orders.getLatestOrder.mockResolvedValue(order({ status: OrderStatus.CONFIRMING_ORDER }));
 
     await expect(tool.getContext('conversation-1', context)).resolves.toEqual({
       activeOrder: {
@@ -112,7 +119,19 @@ describe('OrderTool', () => {
           nextAction: OrderAction.CONFIRM,
         },
       },
+      confirmationReplayAvailable: false,
     });
+  });
+
+  it('exposes the latest confirmation only when there is no active order', async () => {
+    const { tool, orders } = createTool();
+    orders.getLatestOrder.mockResolvedValue(order({ status: OrderStatus.CONFIRMED, total: 35 }));
+
+    const result = await tool.getContext('conversation-1', context);
+
+    expect(result.activeOrder).toBeNull();
+    expect(result.confirmationReplayAvailable).toBe(true);
+    expect(orders.getLatestOrder).toHaveBeenCalledWith('conversation-1', context);
   });
 
   it('resolves every product before adding multiple items in one operation', async () => {
@@ -369,6 +388,31 @@ describe('OrderTool', () => {
         order: null,
         workflow: null,
         issues: [{ reason: 'no_active_order' }],
+      }),
+    );
+  });
+
+  it('marks a repeated confirmation as an idempotent replay', async () => {
+    const { tool, orders } = createTool();
+    orders.confirm.mockResolvedValue({
+      ...order({ status: OrderStatus.CONFIRMED }),
+      idempotentReplay: true,
+    });
+
+    const result = JSON.parse(
+      await tool.execute({
+        action: OrderAction.CONFIRM,
+        items: [],
+        conversationId: 'conversation-1',
+        context,
+      }),
+    ) as { orderOperationStatus: string; idempotentReplay: boolean };
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        orderOperationStatus: 'completed',
+        action: OrderAction.CONFIRM,
+        idempotentReplay: true,
       }),
     );
   });

@@ -40,6 +40,11 @@ export interface OrderResult {
   items: OrderItemResult[];
 }
 
+export interface OrderConfirmationResult extends OrderResult {
+  /** True when CONFIRM returns an order that this conversation already confirmed. */
+  idempotentReplay: boolean;
+}
+
 export interface AddOrderItemInput {
   conversationId: string;
   productId: string;

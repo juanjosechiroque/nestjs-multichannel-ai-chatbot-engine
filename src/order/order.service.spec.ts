@@ -185,6 +185,27 @@ describe('OrderService', () => {
     await expect(service.getActiveOrder(CONVERSATION_ID)).resolves.toBeNull();
   });
 
+  it('returns the latest terminal order for trusted conversation context', async () => {
+    const { service, orderFindFirst } = createService();
+    orderFindFirst.mockResolvedValue({
+      ...persistedOrder(PrismaOrderStatus.CONFIRMED, 13),
+      items: [persistedItem()],
+    });
+
+    await expect(service.getLatestOrder(CONVERSATION_ID)).resolves.toEqual(
+      expect.objectContaining({
+        id: ORDER_ID,
+        status: OrderStatus.CONFIRMED,
+        total: 13,
+      }),
+    );
+    expect(orderFindFirst).toHaveBeenCalledWith({
+      where: { conversationId: CONVERSATION_ID },
+      include: { items: { orderBy: { createdAt: 'asc' } } },
+      orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
+    });
+  });
+
   it('creates a draft and snapshots an active product when adding its first item', async () => {
     const {
       service,
@@ -456,6 +477,24 @@ describe('OrderService', () => {
         failureCode: 'InvalidOrderTransitionError',
       }),
     );
+  });
+
+  it('replays the latest confirmation without updating the order again', async () => {
+    const { service, orderFindFirst, orderItemFindMany, orderUpdate } = createService();
+    orderFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(persistedOrder(PrismaOrderStatus.CONFIRMED, 13));
+    orderItemFindMany.mockResolvedValue([persistedItem()]);
+
+    await expect(service.confirm(CONVERSATION_ID)).resolves.toEqual(
+      expect.objectContaining({
+        id: ORDER_ID,
+        status: OrderStatus.CONFIRMED,
+        total: 13,
+        idempotentReplay: true,
+      }),
+    );
+    expect(orderUpdate).not.toHaveBeenCalled();
   });
 
   it.each([0, -1, 1.5])(

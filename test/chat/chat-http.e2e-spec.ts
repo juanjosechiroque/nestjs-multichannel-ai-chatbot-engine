@@ -469,7 +469,10 @@ describe('HTTP conversation flow', () => {
 
     generate
       .mockImplementationOnce(async (input) => {
-        expect(input.orderContext).toEqual({ activeOrder: null });
+        expect(input.orderContext).toEqual({
+          activeOrder: null,
+          confirmationReplayAvailable: false,
+        });
         await input.manageOrder({
           action: OrderAction.ADD_ITEMS,
           items: [{ productName: 'Latte', quantity: 3 }],
@@ -519,6 +522,21 @@ describe('HTTP conversation flow', () => {
           llmCalls: 2,
           usedTools: ['manage_order'],
         };
+      })
+      .mockImplementationOnce(async (input) => {
+        expect(input.message).toBe('sí, confirma de nuevo');
+        expect(input.orderContext.activeOrder).toBeNull();
+        expect(input.orderContext.confirmationReplayAvailable).toBe(true);
+        const result = JSON.parse(
+          await input.manageOrder({ action: OrderAction.CONFIRM, items: [] }),
+        ) as { idempotentReplay: boolean };
+        expect(result.idempotentReplay).toBe(true);
+        return {
+          answer: 'Ese mismo pedido ya estaba confirmado; no se creó otro.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
       });
 
     await request(server)
@@ -534,9 +552,18 @@ describe('HTTP conversation flow', () => {
       .send({ sessionId, message: 'sí' })
       .expect(201, { reply: 'Tu pedido fue confirmado. Total: S/ 39.' });
 
+    const firstConfirmation = await prisma.order.findFirstOrThrow();
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'sí, confirma de nuevo' })
+      .expect(201, { reply: 'Ese mismo pedido ya estaba confirmado; no se creó otro.' });
+
     const confirmedOrder = await prisma.order.findFirstOrThrow();
     expect(confirmedOrder.status).toBe(OrderStatus.CONFIRMED);
     expect(confirmedOrder.total.toNumber()).toBe(39);
+    expect(confirmedOrder.id).toBe(firstConfirmation.id);
+    expect(confirmedOrder.updatedAt).toEqual(firstConfirmation.updatedAt);
+    await expect(prisma.order.count()).resolves.toBe(1);
   });
 
   it('cancels an active order without deleting its audit trail', async () => {

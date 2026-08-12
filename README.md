@@ -34,6 +34,7 @@ prompts, retrieval, memory, catalog, or order rules.
 - Add, remove, review, confirm, cancel, and internally expire orders.
 - Transactional PostgreSQL draft persistence and product price snapshots.
 - Database-calculated totals and validated state transitions.
+- Idempotent confirmation: repeated or concurrent confirmation returns the same order.
 - Clarification for unknown or ambiguous product names without partial writes.
 
 ### Web channel and operations
