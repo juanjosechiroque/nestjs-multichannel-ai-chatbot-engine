@@ -4,6 +4,12 @@ import { OpenAiEmbeddingFailedException } from '../common/application-error';
 import { EmbeddingService } from './embedding.service';
 import { EMBEDDING_DIMENSIONS } from './rag.types';
 
+const REQUEST_CONTEXT = {
+  requestId: 'request-1',
+  conversationId: 'conversation-1',
+  channel: 'web',
+};
+
 interface EmbeddingsClientStub {
   embeddings: {
     create: jest.Mock;
@@ -56,7 +62,7 @@ describe('EmbeddingService', () => {
       usage: { prompt_tokens: 4, total_tokens: 4 },
     });
 
-    const result = await service.embedMany(['first', 'second'], { requestId: 'request-1' });
+    const result = await service.embedMany(['first', 'second'], REQUEST_CONTEXT);
 
     expect(result).toEqual([firstEmbedding, secondEmbedding]);
     const configuredClient = service as unknown as {
@@ -73,9 +79,10 @@ describe('EmbeddingService', () => {
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'openai.embeddings.completed',
-        requestId: 'request-1',
+        ...REQUEST_CONTEXT,
       }),
     );
+    expect(JSON.stringify(log.mock.calls)).not.toContain('first');
   });
 
   it('returns the first embedding for a single input', async () => {

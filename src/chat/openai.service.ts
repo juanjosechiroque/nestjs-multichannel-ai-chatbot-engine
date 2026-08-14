@@ -5,11 +5,12 @@ import {
   OpenAiEmptyResponseException,
   OpenAiRequestFailedException,
 } from '../common/application-error';
+import type { RequestContext } from '../common/request-context';
 import type { ChatHistoryMessage } from '../memory/memory.types';
 import type { KnowledgeSourceType, RagSourceReference } from '../rag/rag.types';
 
 export interface GenerateResponseInput {
-  requestId: string;
+  context: RequestContext;
   message: string;
   instructions: string;
   businessContext: string;
@@ -68,7 +69,7 @@ export class OpenAiService {
   }
 
   async generate({
-    requestId,
+    context,
     message,
     instructions,
     businessContext,
@@ -138,14 +139,14 @@ export class OpenAiService {
       if (invalidSourceIds.length > 0) {
         this.logger.warn({
           event: 'openai.response.invalid_source_ids',
-          requestId,
+          ...context,
           invalidSourceIds: [...new Set(invalidSourceIds)],
         });
       }
 
       this.logger.log({
         event: 'openai.response.completed',
-        requestId,
+        ...context,
         model: response.model,
         durationMs: Date.now() - startedAt,
         inputTokens: response.usage?.input_tokens,
@@ -170,7 +171,7 @@ export class OpenAiService {
           failure.failureCode === 'OPENAI_EMPTY_RESPONSE'
             ? 'openai.response.empty'
             : 'openai.response.failed',
-        requestId,
+        ...context,
         durationMs: Date.now() - startedAt,
         failureCode: failure.failureCode,
         message,

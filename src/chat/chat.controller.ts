@@ -17,17 +17,21 @@ export class ChatController {
 
   @Post()
   async chat(@Body() input: ChatMessageDto): Promise<ChatResponse> {
-    const conversation = await this.conversations.findBySession({
-      sessionId: input.sessionId,
-      channel: 'web',
-    });
+    const requestId = randomUUID();
+    const conversation = await this.conversations.findBySession(
+      {
+        sessionId: input.sessionId,
+        channel: 'web',
+      },
+      { requestId, channel: 'web' },
+    );
 
     if (!conversation) {
       throw new NotFoundException('Conversation not found');
     }
 
     const reply = await this.chatService.reply({
-      requestId: randomUUID(),
+      requestId,
       conversationId: conversation.id,
       channel: 'web',
       message: input.message,

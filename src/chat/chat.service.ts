@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getApplicationFailureCode } from '../common/application-error';
+import type { RequestContext } from '../common/request-context';
 import { MemoryService } from '../memory/memory.service';
 import { RagService } from '../rag/rag.service';
 import { buildRetrievalQuery } from '../rag/retrieval-query';
@@ -31,25 +32,29 @@ export class ChatService {
 
   async reply({ requestId, conversationId, channel, message }: ChatRequest): Promise<string> {
     const startedAt = Date.now();
+    const context: RequestContext = { requestId, conversationId, channel };
 
     try {
-      const history = await this.memory.getRecentMessages(conversationId);
+      const history = await this.memory.getRecentMessages(conversationId, context);
       const retrievalQuery = buildRetrievalQuery(message, history);
-      const businessContext = await this.rag.getContext(retrievalQuery, RAG_TOP_K, { requestId });
+      const businessContext = await this.rag.getContext(retrievalQuery, RAG_TOP_K, context);
 
       const generation = await this.openAi.generate({
-        requestId,
+        context,
         message,
         instructions: this.instructions,
         businessContext,
         history,
       });
 
-      await this.memory.saveExchange({
-        conversationId,
-        userMessage: message,
-        assistantMessage: generation.answer,
-      });
+      await this.memory.saveExchange(
+        {
+          conversationId,
+          userMessage: message,
+          assistantMessage: generation.answer,
+        },
+        context,
+      );
 
       this.logger.log({
         event: 'chat.response.completed',

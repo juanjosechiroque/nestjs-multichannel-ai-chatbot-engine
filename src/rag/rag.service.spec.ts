@@ -5,6 +5,12 @@ import type { PrismaService } from '../database/prisma.service';
 import { RagService } from './rag.service';
 import { EMBEDDING_DIMENSIONS } from './rag.types';
 
+const REQUEST_CONTEXT = {
+  requestId: 'request-1',
+  conversationId: 'conversation-1',
+  channel: 'web',
+};
+
 describe('RagService', () => {
   const config = {
     get: jest.fn().mockReturnValue(0.5),
@@ -28,9 +34,9 @@ describe('RagService', () => {
       config,
     );
 
-    const results = await service.search('¿A qué hora abren?', 3, { requestId: 'request-1' });
+    const results = await service.search('¿A qué hora abren?', 3, REQUEST_CONTEXT);
 
-    expect(embed).toHaveBeenCalledWith('¿A qué hora abren?', { requestId: 'request-1' });
+    expect(embed).toHaveBeenCalledWith('¿A qué hora abren?', REQUEST_CONTEXT);
     expect(queryRaw).toHaveBeenCalledTimes(1);
     expect(results).toEqual([
       {
@@ -90,12 +96,17 @@ describe('RagService', () => {
     );
 
     await expect(
-      service.search('¿Tienen una sucursal en Cusco?', 5, { requestId: 'request-2' }),
+      service.search('¿Tienen una sucursal en Cusco?', 5, {
+        ...REQUEST_CONTEXT,
+        requestId: 'request-2',
+      }),
     ).resolves.toEqual([]);
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'rag.search.no_results',
         requestId: 'request-2',
+        conversationId: 'conversation-1',
+        channel: 'web',
         topK: 5,
         minSimilarity: 0.5,
         resultCode: 'RAG_NO_RESULTS',
@@ -119,11 +130,16 @@ describe('RagService', () => {
     );
 
     await expect(
-      service.search('¿Cuál es el horario?', 5, { requestId: 'request-db' }),
+      service.search('¿Cuál es el horario?', 5, {
+        ...REQUEST_CONTEXT,
+        requestId: 'request-db',
+      }),
     ).rejects.toEqual(new DatabaseUnavailableException());
     expect(error).toHaveBeenCalledWith({
       event: 'database.operation.failed',
       requestId: 'request-db',
+      conversationId: 'conversation-1',
+      channel: 'web',
       operation: 'rag.vector_search',
       failureCode: 'DATABASE_UNAVAILABLE',
       message: 'database unavailable',

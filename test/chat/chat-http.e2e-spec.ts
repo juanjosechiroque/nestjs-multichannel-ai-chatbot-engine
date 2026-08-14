@@ -289,9 +289,13 @@ describe('HTTP conversation flow', () => {
 
     expect(chatResponse.body as ChatResponse).toEqual({ reply: 'Respuesta de prueba' });
     const generationInput = generate.mock.calls[0]?.[0];
-    expect(generationInput?.requestId).toEqual(expect.any(String));
+    expect(generationInput?.context.requestId).toEqual(expect.any(String));
+    expect(generationInput?.context.conversationId).toEqual(expect.any(String));
+    expect(generationInput?.context.channel).toBe('web');
     expect(embed).toHaveBeenCalledWith('¿Cuál es su horario?', {
-      requestId: generationInput?.requestId,
+      requestId: generationInput?.context.requestId,
+      conversationId: generationInput?.context.conversationId,
+      channel: 'web',
     });
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -395,7 +399,7 @@ describe('HTTP conversation flow', () => {
         'Current customer message:',
         '¿Y cuál es la más barata?',
       ].join('\n'),
-      { requestId: secondGenerationInput?.requestId },
+      secondGenerationInput?.context,
     );
     expect(generate).toHaveBeenNthCalledWith(
       2,

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { PrismaService } from '../database/prisma.service';
 import { DatabaseUnavailableException } from '../common/application-error';
 import { ConversationService } from './conversation.service';
@@ -10,6 +11,10 @@ interface CreateConversationArgs {
 }
 
 describe('ConversationService', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('creates a web conversation with a backend-generated UUID', async () => {
     let receivedArgs: CreateConversationArgs | undefined;
     const create = jest.fn((args: CreateConversationArgs) => {
@@ -72,5 +77,29 @@ describe('ConversationService', () => {
     } as unknown as PrismaService);
 
     await expect(service.create('web')).rejects.toEqual(new DatabaseUnavailableException());
+  });
+
+  it('keeps the request identifier when the initial session lookup fails', async () => {
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const service = new ConversationService({
+      conversation: {
+        findUnique: jest.fn().mockRejectedValue(new Error('connection failed')),
+      },
+    } as unknown as PrismaService);
+
+    await expect(
+      service.findBySession(
+        { sessionId: 'public-session-id', channel: 'web' },
+        { requestId: 'request-lookup', channel: 'web' },
+      ),
+    ).rejects.toEqual(new DatabaseUnavailableException());
+    expect(error).toHaveBeenCalledWith({
+      event: 'database.operation.failed',
+      requestId: 'request-lookup',
+      channel: 'web',
+      operation: 'conversation.find_by_session',
+      failureCode: 'DATABASE_UNAVAILABLE',
+      message: 'connection failed',
+    });
   });
 });
