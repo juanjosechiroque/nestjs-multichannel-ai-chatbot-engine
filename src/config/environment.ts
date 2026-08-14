@@ -33,6 +33,30 @@ class EnvironmentVariables {
   OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
 
   @Type(() => Number)
+  @IsInt()
+  @Min(1_000)
+  @Max(120_000)
+  OPENAI_GENERATION_TIMEOUT_MS = 20_000;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  OPENAI_GENERATION_MAX_RETRIES = 1;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1_000)
+  @Max(120_000)
+  OPENAI_EMBEDDING_TIMEOUT_MS = 8_000;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  OPENAI_EMBEDDING_MAX_RETRIES = 1;
+
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(1)

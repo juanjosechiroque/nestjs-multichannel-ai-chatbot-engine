@@ -1,6 +1,10 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import {
+  OpenAiEmptyResponseException,
+  OpenAiRequestFailedException,
+} from '../common/application-error';
 import type { ChatHistoryMessage } from '../memory/memory.types';
 import type { KnowledgeSourceType, RagSourceReference } from '../rag/rag.types';
 
@@ -58,6 +62,8 @@ export class OpenAiService {
   constructor(private readonly config: ConfigService) {
     this.client = new OpenAI({
       apiKey: this.config.getOrThrow<string>('OPENAI_API_KEY'),
+      timeout: this.config.get<number>('OPENAI_GENERATION_TIMEOUT_MS', 20_000),
+      maxRetries: this.config.get<number>('OPENAI_GENERATION_MAX_RETRIES', 1),
     });
   }
 
@@ -112,10 +118,13 @@ export class OpenAiService {
       });
 
       if (!response.output_text) {
-        throw new Error('OpenAI returned an empty response');
+        throw new OpenAiEmptyResponseException();
       }
 
       const generatedResponse = this.parseResponse(response.output_text);
+      if (generatedResponse.answer.trim().length === 0) {
+        throw new OpenAiEmptyResponseException();
+      }
       const availableSources = this.getAvailableSources(businessContext);
       const invalidSourceIds = generatedResponse.usedSourceIds.filter(
         (sourceId) => !availableSources.has(sourceId),
@@ -154,15 +163,19 @@ export class OpenAiService {
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown OpenAI error';
+      const failure =
+        error instanceof OpenAiEmptyResponseException ? error : new OpenAiRequestFailedException();
       this.logger.error({
-        event: 'openai.response.failed',
+        event:
+          failure.failureCode === 'OPENAI_EMPTY_RESPONSE'
+            ? 'openai.response.empty'
+            : 'openai.response.failed',
         requestId,
         durationMs: Date.now() - startedAt,
+        failureCode: failure.failureCode,
         message,
       });
-      throw new ServiceUnavailableException(
-        'El asistente no está disponible en este momento. Inténtalo nuevamente.',
-      );
+      throw failure;
     }
   }
 

@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DatabaseUnavailableException } from '../common/application-error';
 import type { MemoryService } from '../memory/memory.service';
 import type { RagService } from '../rag/rag.service';
 import { ChatService } from './chat.service';
@@ -197,7 +198,37 @@ describe('ChatService', () => {
       conversationId: 'conversation-1',
       channel: 'web',
       totalDurationMs: 40,
+      failureCode: undefined,
       message: 'provider failed',
     });
+  });
+
+  it('includes the component failure code in correlated error logs', async () => {
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const service = new ChatService(
+      { generate: jest.fn() },
+      new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+      { getContext: jest.fn() },
+      {
+        getRecentMessages: jest.fn().mockRejectedValue(new DatabaseUnavailableException()),
+        saveExchange: jest.fn(),
+      },
+    );
+
+    await expect(
+      service.reply({
+        requestId: 'request-database-failed',
+        conversationId: 'conversation-1',
+        channel: 'web',
+        message: 'Hola',
+      }),
+    ).rejects.toEqual(new DatabaseUnavailableException());
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'chat.response.failed',
+        requestId: 'request-database-failed',
+        failureCode: 'DATABASE_UNAVAILABLE',
+      }),
+    );
   });
 });

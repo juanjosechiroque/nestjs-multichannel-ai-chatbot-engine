@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { RequestContext } from '../common/request-context';
+import { executeDatabaseOperation } from '../database/database-operation';
 import { PrismaService } from '../database/prisma.service';
 import { EmbeddingService } from './embedding.service';
 import type { RagGenerationContext, RagSearchResult } from './rag.types';
@@ -28,18 +29,25 @@ export class RagService {
     const startedAt = Date.now();
     const queryEmbedding = await this.embeddings.embed(query, context);
     const vectorLiteral = toVectorLiteral(queryEmbedding);
-    const results = await this.prisma.$queryRaw<RagSearchResult[]>`
-      SELECT
-        "source_id" AS "sourceId",
-        COALESCE("metadata"->>'slug', "source_id") AS "sourceKey",
-        "source_type" AS "sourceType",
-        "content",
-        1 - ("embedding" <=> ${vectorLiteral}::vector) AS "similarity"
-      FROM "knowledge_chunks"
-      WHERE 1 - ("embedding" <=> ${vectorLiteral}::vector) >= ${this.minSimilarity}
-      ORDER BY "embedding" <=> ${vectorLiteral}::vector
-      LIMIT ${topK}
-    `;
+    const results = await executeDatabaseOperation(
+      {
+        logger: this.logger,
+        operation: 'rag.vector_search',
+        context,
+      },
+      () => this.prisma.$queryRaw<RagSearchResult[]>`
+        SELECT
+          "source_id" AS "sourceId",
+          COALESCE("metadata"->>'slug', "source_id") AS "sourceKey",
+          "source_type" AS "sourceType",
+          "content",
+          1 - ("embedding" <=> ${vectorLiteral}::vector) AS "similarity"
+        FROM "knowledge_chunks"
+        WHERE 1 - ("embedding" <=> ${vectorLiteral}::vector) >= ${this.minSimilarity}
+        ORDER BY "embedding" <=> ${vectorLiteral}::vector
+        LIMIT ${topK}
+      `,
+    );
 
     const relevantResults = results.filter((result) => result.similarity >= this.minSimilarity);
 
@@ -49,6 +57,7 @@ export class RagService {
       durationMs: Date.now() - startedAt,
       topK,
       minSimilarity: this.minSimilarity,
+      resultCode: relevantResults.length === 0 ? 'RAG_NO_RESULTS' : 'RAG_RESULTS_FOUND',
       results: relevantResults.length,
       sources: relevantResults.map((result) => ({
         sourceId: result.sourceId,

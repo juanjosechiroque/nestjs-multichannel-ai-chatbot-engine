@@ -1,4 +1,5 @@
 import type { PrismaService } from '../database/prisma.service';
+import { DatabaseUnavailableException } from '../common/application-error';
 import { ConversationService } from './conversation.service';
 
 interface CreateConversationArgs {
@@ -61,5 +62,15 @@ describe('ConversationService', () => {
         sessionId: true,
       },
     });
+  });
+
+  it('returns a controlled database error when creating a conversation fails', async () => {
+    const service = new ConversationService({
+      conversation: {
+        create: jest.fn().mockRejectedValue(new Error('connection failed')),
+      },
+    } as unknown as PrismaService);
+
+    await expect(service.create('web')).rejects.toEqual(new DatabaseUnavailableException());
   });
 });

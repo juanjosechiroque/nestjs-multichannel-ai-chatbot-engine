@@ -1,5 +1,9 @@
-import { Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  OpenAiEmptyResponseException,
+  OpenAiRequestFailedException,
+} from '../common/application-error';
 import { OpenAiService } from './openai.service';
 
 interface ResponsesClientStub {
@@ -14,6 +18,8 @@ function createService(): { service: OpenAiService; create: jest.Mock } {
       OPENAI_API_KEY: 'test-api-key',
       OPENAI_MODEL: 'gpt-5.6-luna',
       OPENAI_MAX_OUTPUT_TOKENS: 500,
+      OPENAI_GENERATION_TIMEOUT_MS: 20_000,
+      OPENAI_GENERATION_MAX_RETRIES: 1,
     }),
   );
   const client = service as unknown as { client: ResponsesClientStub };
@@ -68,6 +74,11 @@ describe('OpenAiService', () => {
         },
       ],
     });
+    const configuredClient = service as unknown as {
+      client: { timeout: number; maxRetries: number };
+    };
+    expect(configuredClient.client.timeout).toBe(20_000);
+    expect(configuredClient.client.maxRetries).toBe(1);
     expect(create).toHaveBeenCalledWith({
       model: 'gpt-5.6-luna',
       instructions: 'Only answer questions about Café Nube.',
@@ -175,11 +186,6 @@ describe('OpenAiService', () => {
       configure: (create: jest.Mock) => create.mockRejectedValue(new Error('network failure')),
     },
     {
-      name: 'OpenAI returns an empty response',
-      configure: (create: jest.Mock) =>
-        create.mockResolvedValue({ output_text: '', model: 'gpt-5.6-luna' }),
-    },
-    {
       name: 'OpenAI returns an invalid structured response',
       configure: (create: jest.Mock) =>
         create.mockResolvedValue({
@@ -199,10 +205,38 @@ describe('OpenAiService', () => {
         businessContext: '{"retrievalStatus":"no_results","knowledge":[]}',
         history: [],
       }),
-    ).rejects.toEqual(
-      new ServiceUnavailableException(
-        'El asistente no está disponible en este momento. Inténtalo nuevamente.',
-      ),
+    ).rejects.toEqual(new OpenAiRequestFailedException());
+  });
+
+  it.each([
+    {
+      name: 'an empty API output',
+      outputText: '',
+    },
+    {
+      name: 'an empty structured answer',
+      outputText: JSON.stringify({ answer: '   ', usedSourceIds: [] }),
+    },
+  ])('classifies $name separately from an OpenAI request failure', async ({ outputText }) => {
+    const { service, create } = createService();
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    create.mockResolvedValue({ output_text: outputText, model: 'gpt-5.6-luna' });
+
+    await expect(
+      service.generate({
+        requestId: 'request-empty',
+        message: 'Hola',
+        instructions: 'Business instructions.',
+        businessContext: '{"retrievalStatus":"no_results","knowledge":[]}',
+        history: [],
+      }),
+    ).rejects.toEqual(new OpenAiEmptyResponseException());
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'openai.response.empty',
+        requestId: 'request-empty',
+        failureCode: 'OPENAI_EMPTY_RESPONSE',
+      }),
     );
   });
 });
