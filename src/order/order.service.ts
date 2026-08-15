@@ -21,17 +21,20 @@ import {
   type MutateOrderItemsInput,
   type OrderResult,
   type RemoveOrderItemInput,
+  type SetOrderCustomerDetailsInput,
 } from './order.types';
 
 const ACTIVE_ORDER_STATUSES = [
   PrismaOrderStatus.STARTED,
   PrismaOrderStatus.SELECTING_PRODUCTS,
+  PrismaOrderStatus.COLLECTING_CUSTOMER_DATA,
   PrismaOrderStatus.CONFIRMING_ORDER,
 ] as const;
 
 const DOMAIN_STATUS_BY_PERSISTENCE: Record<PrismaOrderStatus, OrderStatus> = {
   [PrismaOrderStatus.STARTED]: OrderStatus.STARTED,
   [PrismaOrderStatus.SELECTING_PRODUCTS]: OrderStatus.SELECTING_PRODUCTS,
+  [PrismaOrderStatus.COLLECTING_CUSTOMER_DATA]: OrderStatus.COLLECTING_CUSTOMER_DATA,
   [PrismaOrderStatus.CONFIRMING_ORDER]: OrderStatus.CONFIRMING_ORDER,
   [PrismaOrderStatus.CONFIRMED]: OrderStatus.CONFIRMED,
   [PrismaOrderStatus.CANCELLED]: OrderStatus.CANCELLED,
@@ -41,6 +44,7 @@ const DOMAIN_STATUS_BY_PERSISTENCE: Record<PrismaOrderStatus, OrderStatus> = {
 const PERSISTENCE_STATUS_BY_DOMAIN: Record<OrderStatus, PrismaOrderStatus> = {
   [OrderStatus.STARTED]: PrismaOrderStatus.STARTED,
   [OrderStatus.SELECTING_PRODUCTS]: PrismaOrderStatus.SELECTING_PRODUCTS,
+  [OrderStatus.COLLECTING_CUSTOMER_DATA]: PrismaOrderStatus.COLLECTING_CUSTOMER_DATA,
   [OrderStatus.CONFIRMING_ORDER]: PrismaOrderStatus.CONFIRMING_ORDER,
   [OrderStatus.CONFIRMED]: PrismaOrderStatus.CONFIRMED,
   [OrderStatus.CANCELLED]: PrismaOrderStatus.CANCELLED,
@@ -225,6 +229,29 @@ export class OrderService {
     return this.applyStatusAction(conversationId, OrderAction.REVIEW, 'order.review', context);
   }
 
+  setCustomerDetails(
+    input: SetOrderCustomerDetailsInput,
+    context?: RequestContext,
+  ): Promise<OrderResult> {
+    const details = this.normalizeCustomerDetails(input);
+
+    return this.executeAction(
+      'order.customer.update',
+      OrderAction.SET_CUSTOMER_DETAILS,
+      context,
+      () =>
+        this.prisma.$transaction(async (transaction) => {
+          await this.lockConversation(transaction, input.conversationId);
+          const order = await this.requireActiveOrder(transaction, input.conversationId);
+          const updatedOrder = await transaction.order.update({
+            where: { id: order.id },
+            data: details,
+          });
+          return this.applyAction(transaction, updatedOrder, OrderAction.SET_CUSTOMER_DETAILS);
+        }),
+    );
+  }
+
   confirm(conversationId: string, context?: RequestContext): Promise<OrderConfirmationResult> {
     return this.executeAction('order.confirm', OrderAction.CONFIRM, context, () =>
       this.prisma.$transaction(async (transaction) => {
@@ -301,12 +328,18 @@ export class OrderService {
       status: DOMAIN_STATUS_BY_PERSISTENCE[order.status],
       action,
       itemCount,
+      customerDetailsComplete: this.hasCompleteCustomerDetails(order),
     });
+    const orderNumber =
+      status === OrderStatus.CONFIRMED && order.orderNumber === null
+        ? await this.nextOrderNumber(transaction)
+        : order.orderNumber;
     const updatedOrder = await transaction.order.update({
       where: { id: order.id },
       data: {
         status: PERSISTENCE_STATUS_BY_DOMAIN[status],
         total,
+        ...(status === OrderStatus.CONFIRMED ? { orderNumber } : {}),
       },
     });
 
@@ -349,10 +382,13 @@ export class OrderService {
   private toOrderResult(order: PersistedOrder, items: PersistedOrderItem[]): OrderResult {
     return {
       id: order.id,
+      orderNumber: order.orderNumber,
       conversationId: order.conversationId,
       status: DOMAIN_STATUS_BY_PERSISTENCE[order.status],
       total: order.total.toNumber(),
       currency: order.currency,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
       items: items.map((item) => ({
         productId: item.productId,
         productName: item.productName,
@@ -367,6 +403,56 @@ export class OrderService {
     if (!Number.isInteger(quantity) || quantity <= 0) {
       throw new RangeError('Order item quantity must be a positive integer');
     }
+  }
+
+  private normalizeCustomerDetails({ customerName, customerPhone }: SetOrderCustomerDetailsInput): {
+    customerName?: string;
+    customerPhone?: string;
+  } {
+    if (customerName === undefined && customerPhone === undefined) {
+      throw new RangeError('At least one customer detail is required');
+    }
+
+    const details: { customerName?: string; customerPhone?: string } = {};
+    if (customerName !== undefined) {
+      const normalizedName = customerName.trim().replace(/\s+/g, ' ');
+      if (
+        normalizedName.length < 2 ||
+        normalizedName.length > 100 ||
+        !/\p{L}/u.test(normalizedName)
+      ) {
+        throw new RangeError('Customer name must contain between 2 and 100 characters');
+      }
+      details.customerName = normalizedName;
+    }
+    if (customerPhone !== undefined) {
+      const trimmedPhone = customerPhone.trim();
+      if (!/^\+?[\d\s()-]+$/.test(trimmedPhone)) {
+        throw new RangeError('Customer phone contains unsupported characters');
+      }
+      const hasInternationalPrefix = trimmedPhone.startsWith('+');
+      const digits = trimmedPhone.replace(/\D/g, '');
+      if (digits.length < 8 || digits.length > 15) {
+        throw new RangeError('Customer phone must contain between 8 and 15 digits');
+      }
+      details.customerPhone = `${hasInternationalPrefix ? '+' : ''}${digits}`;
+    }
+
+    return details;
+  }
+
+  private hasCompleteCustomerDetails(order: PersistedOrder): boolean {
+    return order.customerName !== null && order.customerPhone !== null;
+  }
+
+  private async nextOrderNumber(transaction: TransactionClient): Promise<number> {
+    const [result] = await transaction.$queryRaw<Array<{ value: bigint }>>`
+      SELECT nextval('order_number_seq') AS "value"
+    `;
+    if (!result) {
+      throw new Error('PostgreSQL did not generate an order number');
+    }
+    return Number(result.value);
   }
 
   private normalizeMutations(
@@ -400,6 +486,7 @@ export class OrderService {
         event: 'order.action.completed',
         ...context,
         orderId: result.id,
+        orderNumber: result.orderNumber,
         conversationId: result.conversationId,
         action,
         status: result.status,

@@ -134,6 +134,7 @@ telemetry and are not part of the web response contract.
 | Full menu presentation          | Repository demo asset | `MenuDocumentTool → CatalogDocumentService`    |
 | Conversation history            | PostgreSQL            | `MemoryService`                                |
 | Order draft and totals          | PostgreSQL            | `OrderTool → OrderService`                     |
+| Customer name, phone, order no. | PostgreSQL            | `OrderTool → OrderService`                     |
 | Valid order transitions         | Domain code           | `OrderStateMachine`                            |
 | Natural-language interpretation | OpenAI                | `OpenAiService` with structured tool arguments |
 
@@ -148,17 +149,25 @@ stateDiagram-v2
     STARTED --> SELECTING_PRODUCTS: ADD_ITEMS
     SELECTING_PRODUCTS --> SELECTING_PRODUCTS: ADD_ITEMS or REMOVE_ITEMS
     SELECTING_PRODUCTS --> STARTED: REMOVE_ITEMS leaves no items
-    SELECTING_PRODUCTS --> CONFIRMING_ORDER: REVIEW
+    SELECTING_PRODUCTS --> COLLECTING_CUSTOMER_DATA: REVIEW when customer data is incomplete
+    SELECTING_PRODUCTS --> CONFIRMING_ORDER: REVIEW when customer data is complete
+    SELECTING_PRODUCTS --> SELECTING_PRODUCTS: SET_CUSTOMER_DETAILS
+    COLLECTING_CUSTOMER_DATA --> COLLECTING_CUSTOMER_DATA: SET_CUSTOMER_DETAILS remains incomplete
+    COLLECTING_CUSTOMER_DATA --> CONFIRMING_ORDER: SET_CUSTOMER_DETAILS completes name and phone
+    COLLECTING_CUSTOMER_DATA --> SELECTING_PRODUCTS: ADD_ITEMS or REMOVE_ITEMS leaves items
+    COLLECTING_CUSTOMER_DATA --> STARTED: REMOVE_ITEMS leaves no items
     CONFIRMING_ORDER --> SELECTING_PRODUCTS: ADD_ITEMS or REMOVE_ITEMS leaves items
     CONFIRMING_ORDER --> STARTED: REMOVE_ITEMS leaves no items
     CONFIRMING_ORDER --> CONFIRMED: CONFIRM
 
     STARTED --> CANCELLED: CANCEL
     SELECTING_PRODUCTS --> CANCELLED: CANCEL
+    COLLECTING_CUSTOMER_DATA --> CANCELLED: CANCEL
     CONFIRMING_ORDER --> CANCELLED: CANCEL
 
     STARTED --> EXPIRED: EXPIRE
     SELECTING_PRODUCTS --> EXPIRED: EXPIRE
+    COLLECTING_CUSTOMER_DATA --> EXPIRED: EXPIRE
     CONFIRMING_ORDER --> EXPIRED: EXPIRE
 
     CONFIRMED --> [*]
@@ -168,12 +177,15 @@ stateDiagram-v2
 
 `EXPIRE` is an application lifecycle action rather than a customer-facing model action. Confirmed,
 cancelled, and expired orders are terminal. Product changes after review deliberately return the
-order to product selection before another review and confirmation.
+order to product selection before another review and confirmation. Customer details remain on the
+draft when products change.
 
 ### Confirmation guarantees
 
 - Order mutations take a PostgreSQL advisory transaction lock scoped to the conversation.
 - The first valid `CONFIRM` transitions the active order to `CONFIRMED`.
+- Confirmation is impossible until both normalized customer name and phone are persisted.
+- Confirmation assigns a unique public order number from PostgreSQL; drafts have no number.
 - A concurrent or repeated `CONFIRM` returns the latest confirmed order with
   `idempotentReplay=true`; it does not create or update another order.
 - Adding a product after a terminal order intentionally creates a new draft.
@@ -183,26 +195,27 @@ There is no payment, kitchen, or delivery side effect yet. When those integratio
 same database transaction must also persist an outbox event or idempotency key. Returning the same
 database order alone cannot make an external provider idempotent.
 
-### Planned checkout data
+### Checkout data
 
-The current confirmation closes only the product-selection flow. A real checkout increment should
-collect these normalized fields before enabling final confirmation:
+The current checkout requires the following identity fields before enabling final confirmation:
 
-| Field              | Requirement                                                              |
-| ------------------ | ------------------------------------------------------------------------ |
-| Customer name      | Required for pickup and delivery                                         |
-| Fulfillment method | Required enum such as `PICKUP` or `DELIVERY`                             |
-| Delivery address   | Required only for `DELIVERY`; absent for `PICKUP`                        |
-| Payment method     | Required business-defined option; never raw card credentials             |
-| Contact reference  | Reuse trusted channel identity when available; otherwise request contact |
+| Current field       | Requirement                                                                 |
+| ------------------- | --------------------------------------------------------------------------- |
+| Customer name       | Required and normalized before confirmation                                 |
+| Customer phone      | Required, normalized to 8–15 digits, and masked before entering LLM context |
+| Public order number | Assigned once by PostgreSQL only when the order becomes `CONFIRMED`         |
 
 These fields should belong to the order domain, not conversation memory or a channel adapter. A
-channel may provide a trusted contact reference, but the core must receive it in a normalized
-contract. Supported fulfillment and payment options must come from business configuration or the
-database rather than from the system prompt.
+channel may provide trusted name and phone values to the same application operation; if either is
+unavailable, the assistant requests only the missing value. The web example provides neither, so
+both are collected conversationally.
 
-Until this checkout increment is implemented, the chatbot must not claim that it collected an
-address, charged a payment method, sent an order to a store, or arranged delivery.
+A later checkout increment may add fulfillment method, conditional delivery address, and payment
+method. Supported options must come from business configuration or the database rather than from
+the system prompt, and raw card credentials must never be collected in chat.
+
+Until those integrations are implemented, the chatbot must not claim that it collected an address,
+charged a payment method, sent an order to a store, or arranged delivery.
 
 ## Multichannel boundary
 

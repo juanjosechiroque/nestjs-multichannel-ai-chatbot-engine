@@ -34,6 +34,8 @@ prompts, retrieval, memory, catalog, or order rules.
 - Add, remove, review, confirm, cancel, and internally expire orders.
 - Transactional PostgreSQL draft persistence and product price snapshots.
 - Database-calculated totals and validated state transitions.
+- Required customer name and phone before confirmation; phones are normalized and masked in order-tool context.
+- A unique public order number is assigned only when confirmation succeeds.
 - Idempotent confirmation: repeated or concurrent confirmation returns the same order.
 - Clarification for unknown or ambiguous product names without partial writes.
 
@@ -172,6 +174,7 @@ curl http://localhost:3000/api/menu --output cafe-nube-menu.pdf
 | “What cold drinks cost less than S/ 15?” | Typed PostgreSQL catalog query                    |
 | “Explain your allergen policy”           | Semantic knowledge search through RAG             |
 | “Add two cappuccinos”                    | Order tool, catalog resolution, and state machine |
+| “I am Ana and my phone is 987 654 321”   | Validated order customer-details tool             |
 | Greeting or thanks                       | Direct model response without retrieval           |
 
 The model may select at most one tool per customer message. A tool call uses one model response to

@@ -110,7 +110,20 @@ describe('OrderService with PostgreSQL', () => {
     });
     expect(secondResult.total).toBe(35);
     await expect(orders.review(conversationId)).resolves.toEqual(
-      expect.objectContaining({ status: OrderStatus.CONFIRMING_ORDER, total: 35 }),
+      expect.objectContaining({ status: OrderStatus.COLLECTING_CUSTOMER_DATA, total: 35 }),
+    );
+    await expect(
+      orders.setCustomerDetails({
+        conversationId,
+        customerName: 'Ana Pérez',
+        customerPhone: '+51 987-654-321',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: OrderStatus.CONFIRMING_ORDER,
+        customerName: 'Ana Pérez',
+        customerPhone: '+51987654321',
+      }),
     );
 
     const modifiedResult = await orders.removeItem({
@@ -127,6 +140,7 @@ describe('OrderService with PostgreSQL', () => {
     expect(confirmedResult).toEqual(
       expect.objectContaining({ status: OrderStatus.CONFIRMED, total: 22 }),
     );
+    expect(typeof confirmedResult.orderNumber).toBe('number');
     await expect(orders.getActiveOrder(conversationId)).resolves.toBeNull();
 
     const persisted = await prisma.order.findUniqueOrThrow({
@@ -134,6 +148,9 @@ describe('OrderService with PostgreSQL', () => {
       include: { items: { orderBy: { productName: 'asc' } } },
     });
     expect(persisted.status).toBe(PrismaOrderStatus.CONFIRMED);
+    expect(persisted.orderNumber).toBe(confirmedResult.orderNumber);
+    expect(persisted.customerName).toBe('Ana Pérez');
+    expect(persisted.customerPhone).toBe('+51987654321');
     expect(persisted.total.toNumber()).toBe(22);
     expect(
       persisted.items.map((item) => [item.productName, item.quantity, item.unitPrice.toNumber()]),
@@ -149,6 +166,11 @@ describe('OrderService with PostgreSQL', () => {
       productId: cappuccinoId,
       quantity: 1,
     });
+    await orders.setCustomerDetails({
+      conversationId,
+      customerName: 'Ana Pérez',
+      customerPhone: '987654321',
+    });
     await orders.review(conversationId);
 
     const confirmations = await Promise.all([
@@ -157,6 +179,7 @@ describe('OrderService with PostgreSQL', () => {
     ]);
 
     expect(confirmations.map(({ id }) => id)).toEqual([draft.id, draft.id]);
+    expect(new Set(confirmations.map(({ orderNumber }) => orderNumber)).size).toBe(1);
     expect(confirmations.map(({ idempotentReplay }) => idempotentReplay).sort()).toEqual([
       false,
       true,
@@ -173,6 +196,11 @@ describe('OrderService with PostgreSQL', () => {
 
   it('does not replay an older confirmation after a newer order is cancelled', async () => {
     await orders.addItem({ conversationId, productId: cappuccinoId, quantity: 1 });
+    await orders.setCustomerDetails({
+      conversationId,
+      customerName: 'Ana Pérez',
+      customerPhone: '987654321',
+    });
     await orders.review(conversationId);
     const confirmed = await orders.confirm(conversationId);
     await orders.addItem({ conversationId, productId: croissantId, quantity: 1 });
@@ -184,6 +212,39 @@ describe('OrderService with PostgreSQL', () => {
     );
     await expect(prisma.order.findUniqueOrThrow({ where: { id: confirmed.id } })).resolves.toEqual(
       expect.objectContaining({ status: PrismaOrderStatus.CONFIRMED }),
+    );
+  });
+
+  it('prevents confirmation after review until name and phone are complete', async () => {
+    const draft = await orders.addItem({
+      conversationId,
+      productId: cappuccinoId,
+      quantity: 1,
+    });
+    await expect(orders.review(conversationId)).resolves.toEqual(
+      expect.objectContaining({ status: OrderStatus.COLLECTING_CUSTOMER_DATA }),
+    );
+    await orders.setCustomerDetails({ conversationId, customerName: 'Ana Pérez' });
+
+    await expect(orders.confirm(conversationId)).rejects.toBeInstanceOf(
+      InvalidOrderTransitionError,
+    );
+    await expect(orders.getActiveOrder(conversationId)).resolves.toEqual(
+      expect.objectContaining({
+        id: draft.id,
+        status: OrderStatus.COLLECTING_CUSTOMER_DATA,
+        customerName: 'Ana Pérez',
+        customerPhone: null,
+      }),
+    );
+
+    await expect(
+      orders.setCustomerDetails({ conversationId, customerPhone: '987 654 321' }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: OrderStatus.CONFIRMING_ORDER,
+        customerPhone: '987654321',
+      }),
     );
   });
 
@@ -438,6 +499,7 @@ describe('OrderService with PostgreSQL', () => {
           in: [
             PrismaOrderStatus.STARTED,
             PrismaOrderStatus.SELECTING_PRODUCTS,
+            PrismaOrderStatus.COLLECTING_CUSTOMER_DATA,
             PrismaOrderStatus.CONFIRMING_ORDER,
           ],
         },

@@ -31,10 +31,13 @@ function product(id: string, name: string, slug: string) {
 function order(overrides: Partial<OrderResult> = {}): OrderResult {
   return {
     id: 'order-1',
+    orderNumber: null,
     conversationId: 'conversation-1',
     status: OrderStatus.SELECTING_PRODUCTS,
     total: 35,
     currency: 'PEN',
+    customerName: null,
+    customerPhone: null,
     items: [
       {
         productId: 'product-cappuccino',
@@ -63,6 +66,7 @@ function createTool() {
     review: jest.fn(),
     confirm: jest.fn(),
     cancel: jest.fn(),
+    setCustomerDetails: jest.fn(),
     getActiveOrder: jest.fn(),
     getLatestOrder: jest.fn(),
   } satisfies Record<
@@ -73,6 +77,7 @@ function createTool() {
       | 'review'
       | 'confirm'
       | 'cancel'
+      | 'setCustomerDetails'
       | 'getActiveOrder'
       | 'getLatestOrder'
     >,
@@ -86,13 +91,21 @@ function createTool() {
 describe('OrderTool', () => {
   it('exposes the active order and only its valid customer actions as trusted context', async () => {
     const { tool, orders } = createTool();
-    orders.getLatestOrder.mockResolvedValue(order({ status: OrderStatus.CONFIRMING_ORDER }));
+    orders.getLatestOrder.mockResolvedValue(
+      order({
+        status: OrderStatus.CONFIRMING_ORDER,
+        customerName: 'Ana Pérez',
+        customerPhone: '+51987654321',
+      }),
+    );
 
     await expect(tool.getContext('conversation-1', context)).resolves.toEqual({
       activeOrder: {
         order: {
+          orderNumber: null,
           total: 35,
           currency: 'PEN',
+          customer: { name: 'Ana Pérez', maskedPhone: '*********321' },
           items: [
             {
               productName: 'Cappuccino Nube',
@@ -117,6 +130,7 @@ describe('OrderTool', () => {
           ],
           canConfirm: true,
           nextAction: OrderAction.CONFIRM,
+          missingCustomerFields: [],
         },
       },
       confirmationReplayAvailable: false,
@@ -334,7 +348,7 @@ describe('OrderTool', () => {
 
   it('delegates review without allowing the model to supply prices or totals', async () => {
     const { tool, orders } = createTool();
-    orders.review.mockResolvedValue(order({ status: OrderStatus.CONFIRMING_ORDER }));
+    orders.review.mockResolvedValue(order({ status: OrderStatus.COLLECTING_CUSTOMER_DATA }));
 
     const result = JSON.parse(
       await tool.execute({
@@ -359,15 +373,51 @@ describe('OrderTool', () => {
     );
     expect(result.order).toEqual(expect.objectContaining({ total: 35, currency: 'PEN' }));
     expect(result.workflow).toEqual({
-      allowedActions: [
-        OrderAction.ADD_ITEMS,
-        OrderAction.REMOVE_ITEMS,
-        OrderAction.CONFIRM,
-        OrderAction.CANCEL,
-      ],
-      canConfirm: true,
-      nextAction: OrderAction.CONFIRM,
+      allowedActions: [OrderAction.ADD_ITEMS, OrderAction.REMOVE_ITEMS, OrderAction.CANCEL],
+      canConfirm: false,
+      nextAction: null,
+      missingCustomerFields: ['customerName', 'customerPhone'],
     });
+  });
+
+  it('stores supplied customer details and exposes only a masked phone to the model', async () => {
+    const { tool, orders } = createTool();
+    orders.setCustomerDetails.mockResolvedValue(
+      order({
+        status: OrderStatus.CONFIRMING_ORDER,
+        customerName: 'Ana Pérez',
+        customerPhone: '+51987654321',
+      }),
+    );
+
+    const result = JSON.parse(
+      await tool.setCustomerDetails(
+        { customerName: 'Ana Pérez', customerPhone: '+51 987 654 321' },
+        'conversation-1',
+        context,
+      ),
+    ) as {
+      orderOperationStatus: string;
+      order: { customer: { name: string; maskedPhone: string } };
+      workflow: { canConfirm: boolean; missingCustomerFields: string[] };
+    };
+
+    expect(orders.setCustomerDetails).toHaveBeenCalledWith(
+      {
+        conversationId: 'conversation-1',
+        customerName: 'Ana Pérez',
+        customerPhone: '+51 987 654 321',
+      },
+      context,
+    );
+    expect(result.orderOperationStatus).toBe('completed');
+    expect(result.order.customer).toEqual({
+      name: 'Ana Pérez',
+      maskedPhone: '*********321',
+    });
+    expect(result.workflow).toEqual(
+      expect.objectContaining({ canConfirm: true, missingCustomerFields: [] }),
+    );
   });
 
   it('turns a domain rejection into data the assistant can explain', async () => {
@@ -455,6 +505,7 @@ describe('OrderTool', () => {
       ],
       canConfirm: false,
       nextAction: OrderAction.REVIEW,
+      missingCustomerFields: ['customerName', 'customerPhone'],
     });
     expect(result.issues).toEqual([{ reason: 'invalid_transition' }]);
   });

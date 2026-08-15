@@ -9,7 +9,7 @@ import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 import { MenuDocumentTool } from './tools/menu-document.tool';
 import { OrderTool } from './tools/order.tool';
-import type { ChatRequest, ChatResult } from './chat.types';
+import type { ChatRequest, ChatResult, TrustedCustomerIdentity } from './chat.types';
 
 @Injectable()
 export class ChatService {
@@ -27,7 +27,7 @@ export class ChatService {
     @Inject(MenuDocumentTool)
     private readonly menuDocument: Pick<MenuDocumentTool, 'execute'>,
     @Inject(OrderTool)
-    private readonly orderTool: Pick<OrderTool, 'execute' | 'getContext'>,
+    private readonly orderTool: Pick<OrderTool, 'execute' | 'getContext' | 'setCustomerDetails'>,
     @Inject(MemoryService)
     private readonly memory: Pick<MemoryService, 'getRecentMessages' | 'saveExchange'>,
   ) {
@@ -36,15 +36,27 @@ export class ChatService {
     });
   }
 
-  async reply({ requestId, conversationId, channel, message }: ChatRequest): Promise<ChatResult> {
+  async reply({
+    requestId,
+    conversationId,
+    channel,
+    message,
+    customerIdentity,
+  }: ChatRequest): Promise<ChatResult> {
     const startedAt = Date.now();
     const context: RequestContext = { requestId, conversationId, channel };
 
     try {
-      const [history, orderContext] = await Promise.all([
+      const [history, initialOrderContext] = await Promise.all([
         this.memory.getRecentMessages(conversationId, context),
         this.orderTool.getContext(conversationId, context),
       ]);
+      const orderContext = await this.applyTrustedCustomerIdentity(
+        initialOrderContext,
+        customerIdentity,
+        conversationId,
+        context,
+      );
 
       const generation = await this.openAi.generate({
         context,
@@ -53,6 +65,8 @@ export class ChatService {
         history,
         orderContext,
         manageOrder: (order) => this.orderTool.execute({ ...order, conversationId, context }),
+        setOrderCustomer: (details) =>
+          this.orderTool.setCustomerDetails(details, conversationId, context),
         getMenuDocument: () => this.menuDocument.execute(),
         searchCatalog: (filters) => this.catalogSearch.execute({ ...filters, context }),
         searchKnowledge: (query) => this.knowledgeSearch.execute({ query, context }),
@@ -99,5 +113,27 @@ export class ChatService {
       });
       throw error;
     }
+  }
+
+  private async applyTrustedCustomerIdentity(
+    orderContext: Awaited<ReturnType<OrderTool['getContext']>>,
+    identity: TrustedCustomerIdentity | undefined,
+    conversationId: string,
+    context: RequestContext,
+  ): Promise<Awaited<ReturnType<OrderTool['getContext']>>> {
+    const missingFields = orderContext.activeOrder?.workflow.missingCustomerFields ?? [];
+    const customerName = missingFields.includes('customerName') ? identity?.name : undefined;
+    const customerPhone = missingFields.includes('customerPhone') ? identity?.phone : undefined;
+    if (customerName === undefined && customerPhone === undefined) return orderContext;
+
+    await this.orderTool.setCustomerDetails(
+      {
+        customerName: customerName ?? null,
+        customerPhone: customerPhone ?? null,
+      },
+      conversationId,
+      context,
+    );
+    return this.orderTool.getContext(conversationId, context);
   }
 }

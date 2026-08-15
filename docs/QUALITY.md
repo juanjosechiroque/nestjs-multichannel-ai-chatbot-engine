@@ -39,7 +39,8 @@ Testcontainers starts disposable PostgreSQL 17 instances with pgvector. The suit
 - The pgvector extension and real similarity queries.
 - Similarity ordering and minimum-threshold filtering.
 - Applied Prisma migrations.
-- Order draft creation, modification, review, confirmation, and cancellation.
+- Order draft creation, modification, review, customer identity collection, numbered confirmation,
+  and cancellation.
 - Exact persisted products, quantities, price snapshots, and totals.
 
 Integration tests do not call OpenAI.
@@ -123,7 +124,8 @@ CHAT_SECURITY_EVALUATION_CASE="prompt injection" npm run chat:evaluate:security
 
 The order evaluator runs representative conversations for additions, contextual references,
 review, confirmation, modification, cancellation, unknown products, price manipulation, repeated
-products, excessive removal, idempotent confirmation, and new orders after a terminal state.
+products, excessive removal, required customer identity, public order-number assignment, idempotent
+confirmation, and new orders after a terminal state.
 
 Each case receives a new backend-managed conversation in a disposable database. The evaluator
 checks state after every turn and verifies final products, quantities, totals, status, and persisted
@@ -147,7 +149,7 @@ The report contains:
 - Model and generation timestamp.
 - Overall pass rate, turns, and duration.
 - Customer message, model answer, expected state, and actual state for every turn.
-- Expected and persisted final order snapshots.
+- Expected and persisted final order snapshots, including checkout identity and order-number checks.
 - Input, cached-input, cache-write, output, reasoning, and total tokens.
 - Estimated USD cost with the pricing date, source, billable tokens, and breakdown.
 

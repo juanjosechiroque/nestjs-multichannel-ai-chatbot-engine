@@ -10,6 +10,9 @@ export interface ExpectedOrderSnapshot {
   status: OrderStatus;
   total: number;
   items: readonly ExpectedOrderItem[];
+  orderNumberAssigned?: boolean;
+  customerName?: string | null;
+  customerPhone?: string | null;
 }
 
 export interface OrderConversationEvaluationTurn {

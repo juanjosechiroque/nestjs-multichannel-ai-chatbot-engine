@@ -17,6 +17,7 @@ import type {
 const DOMAIN_STATUS: Record<PersistedOrderStatus, OrderStatus> = {
   [PersistedOrderStatus.STARTED]: OrderStatus.STARTED,
   [PersistedOrderStatus.SELECTING_PRODUCTS]: OrderStatus.SELECTING_PRODUCTS,
+  [PersistedOrderStatus.COLLECTING_CUSTOMER_DATA]: OrderStatus.COLLECTING_CUSTOMER_DATA,
   [PersistedOrderStatus.CONFIRMING_ORDER]: OrderStatus.CONFIRMING_ORDER,
   [PersistedOrderStatus.CONFIRMED]: OrderStatus.CONFIRMED,
   [PersistedOrderStatus.CANCELLED]: OrderStatus.CANCELLED,
@@ -24,7 +25,7 @@ const DOMAIN_STATUS: Record<PersistedOrderStatus, OrderStatus> = {
 };
 
 const INTERNAL_STATUS_PATTERN =
-  /\b(?:STARTED|SELECTING_PRODUCTS|CONFIRMING_ORDER|CONFIRMED|CANCELLED|EXPIRED)\b/;
+  /\b(?:STARTED|SELECTING_PRODUCTS|COLLECTING_CUSTOMER_DATA|CONFIRMING_ORDER|CONFIRMED|CANCELLED|EXPIRED)\b/;
 
 @Injectable()
 export class OrderConversationEvaluationService {
@@ -153,6 +154,9 @@ export class OrderConversationEvaluationService {
       ? {
           status: DOMAIN_STATUS[order.status],
           total: order.total.toNumber(),
+          orderNumberAssigned: order.orderNumber !== null,
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
           items: order.items.map((item) => ({
             productName: item.productName,
             quantity: item.quantity,
@@ -207,6 +211,18 @@ export class OrderConversationEvaluationService {
     }
     if (actual.total !== expected.total) {
       failures.push(`Expected final total ${expected.total} but received ${actual.total}.`);
+    }
+    if (
+      expected.orderNumberAssigned !== undefined &&
+      actual.orderNumberAssigned !== expected.orderNumberAssigned
+    ) {
+      failures.push('Final public order number assignment did not match the expectation.');
+    }
+    if (expected.customerName !== undefined && actual.customerName !== expected.customerName) {
+      failures.push('Final customer name did not match the expectation.');
+    }
+    if (expected.customerPhone !== undefined && actual.customerPhone !== expected.customerPhone) {
+      failures.push('Final customer phone did not match the expectation.');
     }
     if (
       JSON.stringify(this.sortItems(actual.items)) !==

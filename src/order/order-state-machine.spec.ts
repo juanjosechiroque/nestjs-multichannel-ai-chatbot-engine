@@ -38,6 +38,28 @@ describe('OrderStateMachine', () => {
         status: OrderStatus.SELECTING_PRODUCTS,
         action: OrderAction.REVIEW,
         itemCount: 2,
+        customerDetailsComplete: false,
+        expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA,
+      },
+      {
+        status: OrderStatus.SELECTING_PRODUCTS,
+        action: OrderAction.REVIEW,
+        itemCount: 2,
+        customerDetailsComplete: true,
+        expectedStatus: OrderStatus.CONFIRMING_ORDER,
+      },
+      {
+        status: OrderStatus.COLLECTING_CUSTOMER_DATA,
+        action: OrderAction.SET_CUSTOMER_DETAILS,
+        itemCount: 2,
+        customerDetailsComplete: false,
+        expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA,
+      },
+      {
+        status: OrderStatus.COLLECTING_CUSTOMER_DATA,
+        action: OrderAction.SET_CUSTOMER_DETAILS,
+        itemCount: 2,
+        customerDetailsComplete: true,
         expectedStatus: OrderStatus.CONFIRMING_ORDER,
       },
       {
@@ -62,12 +84,15 @@ describe('OrderStateMachine', () => {
         status: OrderStatus.CONFIRMING_ORDER,
         action: OrderAction.CONFIRM,
         itemCount: 2,
+        customerDetailsComplete: true,
         expectedStatus: OrderStatus.CONFIRMED,
       },
     ])(
       'moves $status to $expectedStatus when receiving $action',
-      ({ status, action, itemCount, expectedStatus }) => {
-        expect(stateMachine.transition({ status, action, itemCount })).toBe(expectedStatus);
+      ({ status, action, itemCount, customerDetailsComplete, expectedStatus }) => {
+        expect(
+          stateMachine.transition({ status, action, itemCount, customerDetailsComplete }),
+        ).toBe(expectedStatus);
       },
     );
   });
@@ -85,6 +110,18 @@ describe('OrderStateMachine', () => {
         OrderAction.ADD_ITEMS,
         OrderAction.REMOVE_ITEMS,
         OrderAction.REVIEW,
+        OrderAction.SET_CUSTOMER_DETAILS,
+        OrderAction.CANCEL,
+        OrderAction.EXPIRE,
+      ],
+    },
+    {
+      status: OrderStatus.COLLECTING_CUSTOMER_DATA,
+      itemCount: 3,
+      allowed: [
+        OrderAction.ADD_ITEMS,
+        OrderAction.REMOVE_ITEMS,
+        OrderAction.SET_CUSTOMER_DETAILS,
         OrderAction.CANCEL,
         OrderAction.EXPIRE,
       ],
@@ -95,6 +132,7 @@ describe('OrderStateMachine', () => {
       allowed: [
         OrderAction.ADD_ITEMS,
         OrderAction.REMOVE_ITEMS,
+        OrderAction.SET_CUSTOMER_DETAILS,
         OrderAction.CONFIRM,
         OrderAction.CANCEL,
         OrderAction.EXPIRE,
@@ -102,26 +140,30 @@ describe('OrderStateMachine', () => {
     },
     { status: OrderStatus.CONFIRMED, itemCount: 3, allowed: [] },
   ])('reports application-owned actions for $status', ({ status, itemCount, allowed }) => {
-    expect(stateMachine.getAllowedActions(status, itemCount)).toEqual(allowed);
+    expect(stateMachine.getAllowedActions(status, itemCount, true)).toEqual(allowed);
   });
 
-  it.each([OrderStatus.STARTED, OrderStatus.SELECTING_PRODUCTS, OrderStatus.CONFIRMING_ORDER])(
-    'cancels an active order from %s',
-    (status) => {
-      expect(stateMachine.transition({ status, action: OrderAction.CANCEL, itemCount: 0 })).toBe(
-        OrderStatus.CANCELLED,
-      );
-    },
-  );
+  it.each([
+    OrderStatus.STARTED,
+    OrderStatus.SELECTING_PRODUCTS,
+    OrderStatus.COLLECTING_CUSTOMER_DATA,
+    OrderStatus.CONFIRMING_ORDER,
+  ])('cancels an active order from %s', (status) => {
+    expect(stateMachine.transition({ status, action: OrderAction.CANCEL, itemCount: 0 })).toBe(
+      OrderStatus.CANCELLED,
+    );
+  });
 
-  it.each([OrderStatus.STARTED, OrderStatus.SELECTING_PRODUCTS, OrderStatus.CONFIRMING_ORDER])(
-    'expires an active order from %s',
-    (status) => {
-      expect(stateMachine.transition({ status, action: OrderAction.EXPIRE, itemCount: 0 })).toBe(
-        OrderStatus.EXPIRED,
-      );
-    },
-  );
+  it.each([
+    OrderStatus.STARTED,
+    OrderStatus.SELECTING_PRODUCTS,
+    OrderStatus.COLLECTING_CUSTOMER_DATA,
+    OrderStatus.CONFIRMING_ORDER,
+  ])('expires an active order from %s', (status) => {
+    expect(stateMachine.transition({ status, action: OrderAction.EXPIRE, itemCount: 0 })).toBe(
+      OrderStatus.EXPIRED,
+    );
+  });
 
   describe('given an invalid active order transition', () => {
     it.each([
@@ -144,6 +186,17 @@ describe('OrderStateMachine', () => {
       expect(() => stateMachine.transition({ status, action, itemCount: 0 })).toThrow(
         `Cannot apply ${action} to an order without items`,
       );
+    });
+
+    it('rejects confirmation until both customer details are present', () => {
+      expect(() =>
+        stateMachine.transition({
+          status: OrderStatus.CONFIRMING_ORDER,
+          action: OrderAction.CONFIRM,
+          itemCount: 1,
+          customerDetailsComplete: false,
+        }),
+      ).toThrow('Cannot confirm an order without customer name and phone');
     });
   });
 

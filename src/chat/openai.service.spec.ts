@@ -29,6 +29,7 @@ function generateInput(overrides: Partial<GenerateResponseInput> = {}): Generate
     history: [],
     orderContext: { activeOrder: null, confirmationReplayAvailable: false },
     manageOrder: jest.fn(),
+    setOrderCustomer: jest.fn(),
     getMenuDocument: jest.fn(),
     searchCatalog: jest.fn(),
     searchKnowledge: jest.fn(),
@@ -676,6 +677,96 @@ describe('OpenAiService', () => {
     );
   });
 
+  it('stores explicit customer details through the dedicated order tool', async () => {
+    const { service, create } = createService();
+    const setOrderCustomer = jest.fn().mockResolvedValue(
+      JSON.stringify({
+        orderOperationStatus: 'completed',
+        action: OrderAction.SET_CUSTOMER_DETAILS,
+        order: {
+          orderNumber: null,
+          total: 13,
+          currency: 'PEN',
+          customer: { name: 'Ana Pérez', maskedPhone: '*********321' },
+          items: [{ productName: 'Latte', unitPrice: 13, quantity: 1, lineTotal: 13 }],
+        },
+        workflow: {
+          allowedActions: [OrderAction.CONFIRM],
+          canConfirm: true,
+          nextAction: OrderAction.CONFIRM,
+          missingCustomerFields: [],
+        },
+        issues: [],
+      }),
+    );
+    create
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call-customer-details',
+            name: 'set_order_customer',
+            arguments: JSON.stringify({
+              customerName: 'Ana Pérez',
+              customerPhone: '+51 987 654 321',
+            }),
+          },
+        ],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse(
+          'Gracias, Ana. Tu total es S/ 13. ¿Deseas confirmar el pedido?',
+        ),
+        model: 'gpt-5.6-luna',
+      });
+
+    const activeOrder: GenerateResponseInput['orderContext'] = {
+      activeOrder: {
+        order: {
+          orderNumber: null,
+          total: 13,
+          currency: 'PEN',
+          customer: { name: null, maskedPhone: null },
+          items: [{ productName: 'Latte', unitPrice: 13, quantity: 1, lineTotal: 13 }],
+        },
+        workflow: {
+          allowedActions: [OrderAction.ADD_ITEMS, OrderAction.REMOVE_ITEMS, OrderAction.CANCEL],
+          canConfirm: false,
+          nextAction: null,
+          missingCustomerFields: ['customerName', 'customerPhone'],
+        },
+      },
+      confirmationReplayAvailable: false,
+    };
+
+    await expect(
+      service.generate(
+        generateInput({
+          message: 'Soy Ana Pérez y mi celular es +51 987 654 321.',
+          orderContext: activeOrder,
+          setOrderCustomer,
+        }),
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        answer: 'Gracias, Ana. Tu total es S/ 13. ¿Deseas confirmar el pedido?',
+        usedTools: ['set_order_customer'],
+      }),
+    );
+    expect(setOrderCustomer).toHaveBeenCalledWith({
+      customerName: 'Ana Pérez',
+      customerPhone: '+51 987 654 321',
+    });
+    expect(responseRequest(create, 0)?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'function', name: 'set_order_customer', strict: true }),
+      ]),
+    );
+  });
+
   it('limits order actions to the trusted workflow and confirms an explicit approval', async () => {
     const { service, create } = createService();
     const orderOutput = JSON.stringify({
@@ -725,8 +816,10 @@ describe('OpenAiService', () => {
           orderContext: {
             activeOrder: {
               order: {
+                orderNumber: null,
                 total: 54,
                 currency: 'PEN',
+                customer: { name: 'Ana Pérez', maskedPhone: '*******789' },
                 items: [
                   { productName: 'Latte', unitPrice: 13, quantity: 3, lineTotal: 39 },
                   { productName: 'Carrot cake', unitPrice: 15, quantity: 1, lineTotal: 15 },
@@ -741,6 +834,7 @@ describe('OpenAiService', () => {
                 ],
                 canConfirm: true,
                 nextAction: OrderAction.CONFIRM,
+                missingCustomerFields: [],
               },
             },
             confirmationReplayAvailable: false,

@@ -2,11 +2,18 @@ import type { TokenUsage } from './token-usage';
 
 export type ChatChannel = 'web' | 'whatsapp';
 
+/** Optional identity asserted by a channel adapter, never inferred from message text. */
+export interface TrustedCustomerIdentity {
+  name?: string;
+  phone?: string;
+}
+
 export interface ChatRequest {
   requestId: string;
   conversationId: string;
   channel: ChatChannel;
   message: string;
+  customerIdentity?: TrustedCustomerIdentity;
 }
 
 export interface DocumentChatContent {
