@@ -8,6 +8,7 @@ import type {
   FindConversationInput,
 } from '../../conversation/conversation.types';
 import { WebChatController } from './web-chat.controller';
+import { WebResponseAdapter } from './web-response.adapter';
 
 describe('WebChatController', () => {
   it('resolves the public web session before calling the channel-independent core', async () => {
@@ -23,6 +24,7 @@ describe('WebChatController', () => {
     const controller = new WebChatController(
       { reply } as unknown as ChatService,
       { findBySession } as unknown as ConversationService,
+      new WebResponseAdapter(),
     );
 
     const response = await controller.chat({
@@ -58,6 +60,7 @@ describe('WebChatController', () => {
     const controller = new WebChatController(
       { reply } as unknown as ChatService,
       { findBySession } as unknown as ConversationService,
+      new WebResponseAdapter(),
     );
 
     await expect(
@@ -96,6 +99,7 @@ describe('WebChatController', () => {
     const controller = new WebChatController(
       { reply } as unknown as ChatService,
       { findBySession } as unknown as ConversationService,
+      new WebResponseAdapter(),
     );
 
     await expect(
@@ -113,6 +117,30 @@ describe('WebChatController', () => {
           mimeType: 'application/pdf',
         },
       ],
+    });
+  });
+
+  it('returns plain text when the channel-neutral reply contains Markdown', async () => {
+    const reply = jest.fn<Promise<ChatResult>, [ChatRequest]>().mockResolvedValue({
+      reply: '**Pedido confirmado:** total `S/ 28`.',
+    });
+    const findBySession = jest.fn().mockResolvedValue({
+      id: 'internal-conversation-id',
+      sessionId: '59ad97ee-f9c0-44d7-8fb8-881b87d21e19',
+    });
+    const controller = new WebChatController(
+      { reply } as unknown as ChatService,
+      { findBySession } as unknown as ConversationService,
+      new WebResponseAdapter(),
+    );
+
+    await expect(
+      controller.chat({
+        sessionId: '59ad97ee-f9c0-44d7-8fb8-881b87d21e19',
+        message: 'Sí',
+      }),
+    ).resolves.toEqual({
+      reply: 'Pedido confirmado: total S/ 28.',
     });
   });
 });

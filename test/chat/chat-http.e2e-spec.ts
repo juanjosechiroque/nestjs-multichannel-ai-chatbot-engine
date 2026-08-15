@@ -321,6 +321,39 @@ describe('HTTP conversation flow', () => {
     ]);
   });
 
+  it('removes model Markdown from the web response while preserving the core message', async () => {
+    generate.mockResolvedValueOnce({
+      answer: '**Pedido confirmado:** total `S/ 28`.',
+      usedSources: [],
+      llmCalls: 1,
+      usedTools: [],
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Confirma mi pedido' })
+      .expect(201, { reply: 'Pedido confirmado: total S/ 28.' });
+
+    await expect(
+      prisma.conversation.findUniqueOrThrow({
+        where: { channel_sessionId: { channel: 'web', sessionId } },
+        include: { messages: { orderBy: { id: 'asc' } } },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        messages: [
+          expect.objectContaining({ role: 'USER', content: 'Confirma mi pedido' }),
+          expect.objectContaining({
+            role: 'ASSISTANT',
+            content: '**Pedido confirmado:** total `S/ 28`.',
+          }),
+        ],
+      }),
+    );
+  });
+
   it('returns the menu as structured document content and serves its PDF', async () => {
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;

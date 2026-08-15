@@ -12,6 +12,7 @@ import { ChatService } from '../../src/chat/chat.service';
 import { WebChatController } from '../../src/channels/web/web-chat.controller';
 import { WebConversationController } from '../../src/channels/web/web-conversation.controller';
 import { createWebRateLimitOptions } from '../../src/channels/web/web-rate-limit';
+import { WebResponseAdapter } from '../../src/channels/web/web-response.adapter';
 import { ConversationService } from '../../src/conversation/conversation.service';
 
 describe('Web channel rate limiting', () => {
@@ -39,6 +40,7 @@ describe('Web channel rate limiting', () => {
           useValue: { create: createConversation, findBySession },
         },
         { provide: ChatService, useValue: { reply } },
+        WebResponseAdapter,
       ],
     }).compile();
 
