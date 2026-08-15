@@ -40,6 +40,7 @@ const TEST_ENVIRONMENT = {
   RATE_LIMIT_CONVERSATIONS_PER_HOUR: '100',
   RATE_LIMIT_MESSAGES_PER_MINUTE: '100',
   BUSINESS_NAME: 'Café Nube',
+  BUSINESS_TIME_ZONE: 'America/Lima',
 } as const;
 
 type EnvironmentKey = keyof typeof TEST_ENVIRONMENT | 'DATABASE_URL';
@@ -319,6 +320,56 @@ describe('HTTP conversation flow', () => {
       expect.objectContaining({ role: 'USER', content: 'Hola' }),
       expect.objectContaining({ role: 'ASSISTANT', content: 'Respuesta de prueba' }),
     ]);
+  });
+
+  it('resolves current promotions through the structured PostgreSQL tool', async () => {
+    const promotionId = randomUUID();
+    await prisma.promotion.create({
+      data: {
+        id: promotionId,
+        slug: 'promocion-siempre-vigente',
+        name: 'Promoción siempre vigente',
+        description: 'Promoción de prueba disponible todos los días y durante todo el día.',
+        startsAt: new Date('2020-01-01T00:00:00.000Z'),
+        endsAt: null,
+        active: true,
+        metadata: {},
+      },
+    });
+    generate.mockImplementationOnce(async (input) => {
+      const promotionOutput = JSON.parse(
+        await input.searchPromotions({ scope: 'CURRENT', promotionName: null }),
+      ) as {
+        currentPromotions: Array<{ sourceId: string; sourceKey: string; currentlyValid: boolean }>;
+      };
+
+      expect(promotionOutput.currentPromotions).toEqual([
+        expect.objectContaining({
+          sourceId: promotionId,
+          sourceKey: 'promocion-siempre-vigente',
+          currentlyValid: true,
+        }),
+      ]);
+      return {
+        answer: 'Ahora está vigente la promoción siempre vigente.',
+        usedSources: [
+          {
+            sourceId: promotionId,
+            sourceKey: 'promocion-siempre-vigente',
+            sourceType: 'promotion',
+          },
+        ],
+        llmCalls: 2,
+        usedTools: ['search_promotions'],
+      };
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: '¿Qué promociones están vigentes ahora?' })
+      .expect(201, { reply: 'Ahora está vigente la promoción siempre vigente.' });
   });
 
   it('removes model Markdown from the web response while preserving the core message', async () => {

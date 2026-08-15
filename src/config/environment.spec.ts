@@ -14,6 +14,7 @@ const VALID_ENVIRONMENT: Record<string, unknown> = {
   OPENAI_MAX_OUTPUT_TOKENS: '500',
   DATABASE_URL: 'postgresql://chatbot:chatbot@localhost:5432/chatbot_engine',
   BUSINESS_NAME: 'Café Nube',
+  BUSINESS_TIME_ZONE: 'America/Lima',
 };
 
 describe('validateEnvironment', () => {
@@ -24,6 +25,7 @@ describe('validateEnvironment', () => {
     delete environmentInput.OPENAI_GENERATION_MAX_RETRIES;
     delete environmentInput.OPENAI_EMBEDDING_TIMEOUT_MS;
     delete environmentInput.OPENAI_EMBEDDING_MAX_RETRIES;
+    delete environmentInput.BUSINESS_TIME_ZONE;
 
     const environment = validateEnvironment(environmentInput);
 
@@ -37,6 +39,7 @@ describe('validateEnvironment', () => {
     expect(environment.RAG_MIN_SIMILARITY).toBe(0.5);
     expect(environment.RATE_LIMIT_CONVERSATIONS_PER_HOUR).toBe(5);
     expect(environment.RATE_LIMIT_MESSAGES_PER_MINUTE).toBe(10);
+    expect(environment.BUSINESS_TIME_ZONE).toBe('America/Lima');
   });
 
   it.each([
@@ -46,6 +49,7 @@ describe('validateEnvironment', () => {
     ['a non-numeric port', { PORT: 'abc' }, 'PORT'],
     ['an empty OpenAI API key', { OPENAI_API_KEY: '' }, 'OPENAI_API_KEY'],
     ['an empty database URL', { DATABASE_URL: '' }, 'DATABASE_URL'],
+    ['an invalid business time zone', { BUSINESS_TIME_ZONE: 'Lima' }, 'BUSINESS_TIME_ZONE'],
     ['a similarity below zero', { RAG_MIN_SIMILARITY: '-0.1' }, 'RAG_MIN_SIMILARITY'],
     ['a similarity above one', { RAG_MIN_SIMILARITY: '1.1' }, 'RAG_MIN_SIMILARITY'],
     [

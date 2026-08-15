@@ -1,19 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import type { Faq, Product, Promotion } from '../generated/prisma/client';
+import type { Faq, Product } from '../generated/prisma/client';
 import { ProductCategory } from '../generated/prisma/enums';
 import type { KnowledgeDocument } from './rag.types';
 
 @Injectable()
 export class KnowledgeDocumentFactory {
-  createCatalogDocuments(
-    products: Product[],
-    promotions: Promotion[],
-    faqs: Faq[],
-  ): KnowledgeDocument[] {
+  createCatalogDocuments(products: Product[], faqs: Faq[]): KnowledgeDocument[] {
     return [
       ...products.map((product) => this.createProductDocument(product)),
       ...this.createProductCategoryDocuments(products),
-      ...promotions.map((promotion) => this.createPromotionDocument(promotion)),
       ...this.createServiceSummaryDocuments(faqs),
       ...faqs.flatMap((faq) => this.createFaqDocuments(faq)),
     ];
@@ -97,20 +92,6 @@ export class KnowledgeDocumentFactory {
         slug: product.slug,
         category: product.category,
       },
-    };
-  }
-
-  private createPromotionDocument(promotion: Promotion): KnowledgeDocument {
-    return {
-      sourceType: 'promotion',
-      sourceId: promotion.id,
-      chunkIndex: 0,
-      content: [
-        'Tipo: promoción.',
-        `Nombre: ${promotion.name}.`,
-        `Descripción: ${promotion.description}`,
-      ].join(' '),
-      metadata: { slug: promotion.slug },
     };
   }
 

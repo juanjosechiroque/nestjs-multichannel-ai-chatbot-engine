@@ -14,6 +14,7 @@ import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 import { MenuDocumentTool } from './tools/menu-document.tool';
 import { OrderTool } from './tools/order.tool';
+import { PromotionSearchTool } from './tools/promotion-search.tool';
 
 @Module({
   imports: [CatalogModule, ConversationModule, MemoryModule, OrderModule, RagModule],
@@ -27,6 +28,7 @@ import { OrderTool } from './tools/order.tool';
     KnowledgeSearchTool,
     MenuDocumentTool,
     OrderTool,
+    PromotionSearchTool,
     OpenAiService,
   ],
   exports: [ChatService],

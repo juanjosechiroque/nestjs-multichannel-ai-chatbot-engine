@@ -16,6 +16,7 @@ import { OrderAction } from '../order/order.types';
 import type { ChatContent, DocumentChatContent } from './chat.types';
 import { addTokenUsage, type TokenUsage } from './token-usage';
 import type { CatalogSearchArguments } from './tools/catalog-search.tool';
+import type { PromotionSearchArguments } from './tools/promotion-search.tool';
 import {
   type CustomerOrderAction,
   type OrderConversationContext,
@@ -33,6 +34,7 @@ export interface GenerateResponseInput {
   setOrderCustomer: (details: OrderCustomerDetailsArguments) => Promise<string>;
   getMenuDocument: () => Promise<string>;
   searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
+  searchPromotions: (filters: PromotionSearchArguments) => Promise<string>;
   searchKnowledge: (query: string) => Promise<string>;
 }
 
@@ -74,6 +76,7 @@ function isOrderToolItemArgument(value: unknown): value is OrderToolArguments['i
 
 const KNOWLEDGE_SEARCH_TOOL_NAME = 'search_knowledge';
 const CATALOG_SEARCH_TOOL_NAME = 'search_catalog';
+const PROMOTION_SEARCH_TOOL_NAME = 'search_promotions';
 const MENU_DOCUMENT_TOOL_NAME = 'get_menu_document';
 const ORDER_TOOL_NAME = 'manage_order';
 const ORDER_CUSTOMER_TOOL_NAME = 'set_order_customer';
@@ -87,7 +90,8 @@ const KNOWLEDGE_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
   name: KNOWLEDGE_SEARCH_TOOL_NAME,
   description: [
     "Search the current business's confirmed knowledge base.",
-    'Use it before answering factual questions about promotions, FAQs, location, hours, policies, or confirmed services.',
+    'Use it before answering factual questions about FAQs, location, hours, policies, or confirmed services.',
+    'Use search_promotions instead for current, scheduled, or named promotions.',
     'Use search_catalog instead for products, product descriptions, categories, exact prices, or product lists.',
     'Do not use it for greetings, thanks, brief social messages, or requests outside the business scope.',
     'Write a concise, self-contained search query that preserves the customer intent. If the customer question is already self-contained, pass it verbatim. Resolve true follow-up references from the conversation, but never include an unrelated previous topic.',
@@ -183,6 +187,36 @@ const CATALOG_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
       'decaffeinated',
       'caffeineFree',
     ],
+    additionalProperties: false,
+  },
+  strict: true,
+};
+
+const PROMOTION_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
+  type: 'function',
+  name: PROMOTION_SEARCH_TOOL_NAME,
+  description: [
+    "Search the current business's promotions using application-controlled date, weekday, time, and time-zone rules.",
+    'Use CURRENT when the customer asks which promotions apply now, currently, or today.',
+    'Use CATALOG when the customer asks what promotions exist, asks about another time, or requests details about a named promotion.',
+    'The application supplies the current instant and business time zone. Never infer promotion validity yourself.',
+  ].join(' '),
+  parameters: {
+    type: 'object',
+    properties: {
+      scope: {
+        type: 'string',
+        enum: ['CURRENT', 'CATALOG'],
+        description: 'Whether to return only currently valid promotions or the published catalog.',
+      },
+      promotionName: {
+        type: ['string', 'null'],
+        description: 'Full or partial promotion name, or null when no name filter is needed.',
+        minLength: 1,
+        maxLength: 100,
+      },
+    },
+    required: ['scope', 'promotionName'],
     additionalProperties: false,
   },
   strict: true,
@@ -316,6 +350,7 @@ function buildChatTools(orderContext: OrderConversationContext): OpenAI.Response
   return [
     KNOWLEDGE_SEARCH_TOOL,
     CATALOG_SEARCH_TOOL,
+    PROMOTION_SEARCH_TOOL,
     MENU_DOCUMENT_TOOL,
     buildOrderTool(orderContext),
     ...(customerTool ? [customerTool] : []),
@@ -370,6 +405,17 @@ function isServicesKnowledgeRequest(message: string): boolean {
   );
 }
 
+function isPromotionRequest(message: string): boolean {
+  const normalizedMessage = message
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  return /\b(promocion|promociones|promo|promos|oferta|ofertas|descuento|descuentos|2x1)\b/.test(
+    normalizedMessage,
+  );
+}
+
 function isKnowledgeSourceType(value: unknown): value is KnowledgeSourceType {
   return (
     value === 'product' || value === 'product_category' || value === 'promotion' || value === 'faq'
@@ -399,6 +445,7 @@ export class OpenAiService {
     setOrderCustomer,
     getMenuDocument,
     searchCatalog,
+    searchPromotions,
     searchKnowledge,
   }: GenerateResponseInput): Promise<GenerateResponseResult> {
     const startedAt = Date.now();
@@ -408,7 +455,9 @@ export class OpenAiService {
       const tools = buildChatTools(orderContext);
       const locationKnowledgeRequest = isLocationKnowledgeRequest(message);
       const servicesKnowledgeRequest = isServicesKnowledgeRequest(message);
-      const forceKnowledgeSearch = locationKnowledgeRequest || servicesKnowledgeRequest;
+      const promotionRequest = isPromotionRequest(message);
+      const forceKnowledgeSearch =
+        !promotionRequest && (locationKnowledgeRequest || servicesKnowledgeRequest);
       const knowledgeQueryOverride = locationKnowledgeRequest
         ? `dirección exacta, ubicación, cómo llegar y enlace de mapa. Pregunta del cliente: ${message}`
         : servicesKnowledgeRequest
@@ -419,9 +468,11 @@ export class OpenAiService {
         instructions,
         input: initialInput,
         tools,
-        toolChoice: forceKnowledgeSearch
-          ? { type: 'function', name: KNOWLEDGE_SEARCH_TOOL_NAME }
-          : 'auto',
+        toolChoice: promotionRequest
+          ? { type: 'function', name: PROMOTION_SEARCH_TOOL_NAME }
+          : forceKnowledgeSearch
+            ? { type: 'function', name: KNOWLEDGE_SEARCH_TOOL_NAME }
+            : 'auto',
       });
       this.assertResponseCompleted(initialResponse);
       const toolCalls = initialResponse.output.filter(
@@ -468,6 +519,7 @@ export class OpenAiService {
         setOrderCustomer,
         getMenuDocument,
         searchCatalog,
+        searchPromotions,
         searchKnowledge,
         knowledgeQueryOverride,
       });
@@ -696,6 +748,7 @@ export class OpenAiService {
     setOrderCustomer,
     getMenuDocument,
     searchCatalog,
+    searchPromotions,
     searchKnowledge,
     knowledgeQueryOverride,
   }: {
@@ -704,6 +757,7 @@ export class OpenAiService {
     setOrderCustomer: (details: OrderCustomerDetailsArguments) => Promise<string>;
     getMenuDocument: () => Promise<string>;
     searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
+    searchPromotions: (filters: PromotionSearchArguments) => Promise<string>;
     searchKnowledge: (query: string) => Promise<string>;
     knowledgeQueryOverride?: string;
   }): Promise<string> {
@@ -714,6 +768,8 @@ export class OpenAiService {
       }
       case CATALOG_SEARCH_TOOL_NAME:
         return searchCatalog(this.parseCatalogSearchArguments(toolCall.arguments));
+      case PROMOTION_SEARCH_TOOL_NAME:
+        return searchPromotions(this.parsePromotionSearchArguments(toolCall.arguments));
       case MENU_DOCUMENT_TOOL_NAME:
         this.assertEmptyToolArguments(toolCall.arguments, MENU_DOCUMENT_TOOL_NAME);
         return getMenuDocument();
@@ -924,6 +980,39 @@ export class OpenAiService {
     };
   }
 
+  private parsePromotionSearchArguments(argumentsJson: string): PromotionSearchArguments {
+    const parsed: unknown = JSON.parse(argumentsJson);
+
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !('scope' in parsed) ||
+      !('promotionName' in parsed) ||
+      Object.keys(parsed).some((key) => key !== 'scope' && key !== 'promotionName')
+    ) {
+      throw new Error('OpenAI returned invalid search_promotions arguments');
+    }
+
+    const scope = parsed.scope;
+    const promotionName = parsed.promotionName;
+    if (
+      !(scope === 'CURRENT' || scope === 'CATALOG') ||
+      !(
+        promotionName === null ||
+        (typeof promotionName === 'string' &&
+          promotionName.trim().length > 0 &&
+          promotionName.length <= 100)
+      )
+    ) {
+      throw new Error('OpenAI returned invalid search_promotions arguments');
+    }
+
+    return {
+      scope,
+      promotionName: promotionName === null ? null : promotionName.trim(),
+    };
+  }
+
   private parseResponse(outputText: string): StructuredChatResponse {
     const parsed: unknown = JSON.parse(outputText);
 
@@ -985,10 +1074,13 @@ export class OpenAiService {
       parsed === null ||
       (!('knowledge' in parsed) &&
         !('products' in parsed) &&
+        !('currentPromotions' in parsed) &&
         !('orderOperationStatus' in parsed) &&
         !('documentStatus' in parsed)) ||
       ('knowledge' in parsed && !Array.isArray(parsed.knowledge)) ||
-      ('products' in parsed && !Array.isArray(parsed.products))
+      ('products' in parsed && !Array.isArray(parsed.products)) ||
+      ('currentPromotions' in parsed && !Array.isArray(parsed.currentPromotions)) ||
+      ('otherPromotions' in parsed && !Array.isArray(parsed.otherPromotions))
     ) {
       throw new Error('Business context has an invalid structure');
     }
@@ -997,33 +1089,43 @@ export class OpenAiService {
       'knowledge' in parsed && Array.isArray(parsed.knowledge) ? parsed.knowledge : [];
     const products: unknown[] =
       'products' in parsed && Array.isArray(parsed.products) ? parsed.products : [];
+    const currentPromotions: unknown[] =
+      'currentPromotions' in parsed && Array.isArray(parsed.currentPromotions)
+        ? parsed.currentPromotions
+        : [];
+    const otherPromotions: unknown[] =
+      'otherPromotions' in parsed && Array.isArray(parsed.otherPromotions)
+        ? parsed.otherPromotions
+        : [];
 
     return new Map<string, RagSourceReference>(
-      [...knowledge, ...products].flatMap((item): Array<[string, RagSourceReference]> => {
-        if (
-          typeof item === 'object' &&
-          item !== null &&
-          'sourceId' in item &&
-          typeof item.sourceId === 'string' &&
-          'sourceKey' in item &&
-          typeof item.sourceKey === 'string' &&
-          'type' in item &&
-          isKnowledgeSourceType(item.type)
-        ) {
-          return [
-            [
-              item.sourceId,
-              {
-                sourceId: item.sourceId,
-                sourceKey: item.sourceKey,
-                sourceType: item.type,
-              },
-            ],
-          ];
-        }
+      [...knowledge, ...products, ...currentPromotions, ...otherPromotions].flatMap(
+        (item): Array<[string, RagSourceReference]> => {
+          if (
+            typeof item === 'object' &&
+            item !== null &&
+            'sourceId' in item &&
+            typeof item.sourceId === 'string' &&
+            'sourceKey' in item &&
+            typeof item.sourceKey === 'string' &&
+            'type' in item &&
+            isKnowledgeSourceType(item.type)
+          ) {
+            return [
+              [
+                item.sourceId,
+                {
+                  sourceId: item.sourceId,
+                  sourceKey: item.sourceKey,
+                  sourceType: item.type,
+                },
+              ],
+            ];
+          }
 
-        return [];
-      }),
+          return [];
+        },
+      ),
     );
   }
 }

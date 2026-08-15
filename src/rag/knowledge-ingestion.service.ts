@@ -26,9 +26,8 @@ export class KnowledgeIngestionService {
   ) {}
 
   async ingest(): Promise<IngestionResult> {
-    const [products, promotions, faqs, existingChunks] = await Promise.all([
+    const [products, faqs, existingChunks] = await Promise.all([
       this.catalog.getProducts(),
-      this.catalog.getPromotions(),
       this.catalog.getFaqs(),
       this.prisma.knowledgeChunk.findMany({
         where: { sourceType: { in: MANAGED_SOURCE_TYPES } },
@@ -41,7 +40,7 @@ export class KnowledgeIngestionService {
         },
       }),
     ]);
-    const documents = this.documents.createCatalogDocuments(products, promotions, faqs);
+    const documents = this.documents.createCatalogDocuments(products, faqs);
     const existingByKey = new Map(
       existingChunks.map((chunk) => [this.getKey(chunk), chunk] as const),
     );

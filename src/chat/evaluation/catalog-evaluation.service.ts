@@ -60,6 +60,8 @@ export class CatalogEvaluationService {
           appliedFilters = filters;
           return this.catalogSearch.execute({ ...filters, context });
         },
+        searchPromotions: () =>
+          Promise.reject(new Error('Promotion tool is unavailable in catalog evals')),
         searchKnowledge: () => Promise.resolve(EMPTY_KNOWLEDGE_RESULT),
       });
       const usedSourceKeys = generation.usedSources.map((source) => source.sourceKey);

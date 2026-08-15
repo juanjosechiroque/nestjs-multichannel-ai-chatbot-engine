@@ -40,7 +40,6 @@ function createHarness({
 }: TestHarnessOptions) {
   const catalog = {
     getProducts: jest.fn().mockResolvedValue([]),
-    getPromotions: jest.fn().mockResolvedValue([]),
     getFaqs: jest.fn().mockResolvedValue([]),
   } as unknown as CatalogService;
   const documentFactory = {
@@ -142,10 +141,10 @@ describe('KnowledgeIngestionService', () => {
         },
         {
           id: 'stale-id',
-          sourceType: 'faq',
-          sourceId: 'removed-faq',
+          sourceType: 'promotion',
+          sourceId: 'promotion-now-structured',
           chunkIndex: 0,
-          content: 'Removed FAQ',
+          content: 'Promotion formerly stored in RAG',
         },
       ],
     });

@@ -1,4 +1,4 @@
-import type { Faq, Product, Promotion } from '../generated/prisma/client';
+import type { Faq, Product } from '../generated/prisma/client';
 import { ProductCategory } from '../generated/prisma/enums';
 import { KnowledgeDocumentFactory } from './knowledge-document.factory';
 
@@ -47,14 +47,6 @@ describe('KnowledgeDocumentFactory', () => {
         price: '8.00',
       }),
     ];
-    const promotions = [
-      {
-        id: 'promotion-id',
-        slug: 'tarde-de-frappes',
-        name: 'Tarde de frappés',
-        description: '2x1 de 3:00 p. m. a 5:00 p. m.',
-      },
-    ] as Promotion[];
     const faqs = [
       {
         id: 'faq-id',
@@ -66,9 +58,9 @@ describe('KnowledgeDocumentFactory', () => {
     ] as unknown as Faq[];
     const factory = new KnowledgeDocumentFactory();
 
-    const documents = factory.createCatalogDocuments(products, promotions, faqs);
+    const documents = factory.createCatalogDocuments(products, faqs);
 
-    expect(documents).toHaveLength(4);
+    expect(documents).toHaveLength(3);
     expect(documents[0]).toMatchObject({
       sourceType: 'product',
       sourceId: 'product-id',
@@ -87,8 +79,7 @@ describe('KnowledgeDocumentFactory', () => {
     expect(documents[1]?.content).toContain('qué bebidas calientes tienen');
     expect(documents[1]?.content).toContain('Espresso Nube');
     expect(documents[1]?.content).not.toContain('Espresso doble con notas de cacao.');
-    expect(documents[2]?.content).toContain('Tipo: promoción');
-    expect(documents[3]?.content).toContain('Pregunta: ¿Cuál es el horario?');
+    expect(documents[2]?.content).toContain('Pregunta: ¿Cuál es el horario?');
   });
 
   it.each(CATEGORY_SCENARIOS)(
@@ -97,7 +88,7 @@ describe('KnowledgeDocumentFactory', () => {
       const product = createProduct(category);
       const factory = new KnowledgeDocumentFactory();
 
-      const documents = factory.createCatalogDocuments([product], [], []);
+      const documents = factory.createCatalogDocuments([product], []);
       const categoryDocument = documents.find(
         (document) => document.sourceType === 'product_category',
       );
@@ -140,7 +131,7 @@ describe('KnowledgeDocumentFactory', () => {
     ];
     const factory = new KnowledgeDocumentFactory();
 
-    const documents = factory.createCatalogDocuments(products, [], []);
+    const documents = factory.createCatalogDocuments(products, []);
     const categoryDocuments = documents.filter(
       (document) => document.sourceType === 'product_category',
     );
@@ -172,7 +163,7 @@ describe('KnowledgeDocumentFactory', () => {
     ] as unknown as Faq[];
     const factory = new KnowledgeDocumentFactory();
 
-    const documents = factory.createCatalogDocuments([], [], faqs);
+    const documents = factory.createCatalogDocuments([], faqs);
 
     expect(documents).toHaveLength(2);
     expect(documents[0]).toMatchObject({
@@ -224,7 +215,7 @@ describe('KnowledgeDocumentFactory', () => {
     ] as unknown as Faq[];
     const factory = new KnowledgeDocumentFactory();
 
-    const documents = factory.createCatalogDocuments([], [], faqs);
+    const documents = factory.createCatalogDocuments([], faqs);
     const services = documents.find((document) => document.metadata.slug === 'servicios');
 
     expect(services).toMatchObject({

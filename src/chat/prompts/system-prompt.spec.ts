@@ -48,6 +48,11 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Use get_menu_document when the customer explicitly asks');
     expect(prompt).toContain('Do not list the complete catalog in generated text');
     expect(prompt).toContain('Use search_knowledge for other factual questions about Café Nube');
+    expect(prompt).toContain('Use search_promotions for every question about promotions');
+    expect(prompt).toContain('promotion scope CURRENT');
+    expect(prompt).toContain('Clearly distinguish currentPromotions from otherPromotions');
+    expect(prompt).toContain('Never describe an item from otherPromotions as currently valid');
+    expect(prompt).toContain('Do not use it for promotions');
     expect(prompt).toContain('Do not use business tools for greetings');
     expect(prompt).toContain('Use at most one business tool');
     expect(prompt).toContain('Use only business-tool results');

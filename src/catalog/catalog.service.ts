@@ -4,6 +4,7 @@ import { executeDatabaseOperation } from '../database/database-operation';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 import type { ProductSearchFilters } from './catalog.types';
+import type { PromotionSearchFilters } from './promotion.types';
 
 @Injectable()
 export class CatalogService {
@@ -83,6 +84,33 @@ export class CatalogService {
       () =>
         this.prisma.promotion.findMany({
           where: { active: true },
+          orderBy: { name: 'asc' },
+        }),
+    );
+  }
+
+  searchPromotions(
+    { promotionName, evaluatedAt, includeNotStarted }: PromotionSearchFilters,
+    context?: RequestContext,
+  ) {
+    const dateWindow: Prisma.PromotionWhereInput[] = [
+      { OR: [{ endsAt: null }, { endsAt: { gt: evaluatedAt } }] },
+      ...(includeNotStarted
+        ? []
+        : [{ OR: [{ startsAt: null }, { startsAt: { lte: evaluatedAt } }] }]),
+    ];
+
+    return executeDatabaseOperation(
+      { logger: this.logger, operation: 'catalog.promotions.search', context },
+      () =>
+        this.prisma.promotion.findMany({
+          where: {
+            active: true,
+            ...(promotionName
+              ? { name: { contains: promotionName, mode: 'insensitive' as const } }
+              : {}),
+            AND: dateWindow,
+          },
           orderBy: { name: 'asc' },
         }),
     );

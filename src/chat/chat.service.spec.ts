@@ -73,6 +73,7 @@ describe('ChatService', () => {
       knowledgeSearch,
       { execute: jest.fn() },
       orderTool,
+      { execute: jest.fn() },
       memory,
     );
 
@@ -169,6 +170,7 @@ describe('ChatService', () => {
       { execute },
       { execute: jest.fn() },
       orderToolMock(),
+      { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange: jest.fn().mockResolvedValue(undefined),
@@ -201,6 +203,7 @@ describe('ChatService', () => {
     const catalogSearch = jest.fn().mockResolvedValue('{"catalogStatus":"results_found"}');
     const knowledgeSearch = jest.fn().mockResolvedValue('{"retrievalStatus":"results_found"}');
     const menuDocument = jest.fn().mockResolvedValue('{"document":{}}');
+    const promotionSearch = jest.fn().mockResolvedValue('{"promotionStatus":"no_promotions"}');
     const orderTool = orderToolMock();
     orderTool.execute.mockResolvedValue('{"orderOperationStatus":"completed"}');
     const generate = jest.fn(
@@ -217,6 +220,7 @@ describe('ChatService', () => {
           caffeineFree: null,
         });
         await input.searchKnowledge('horarios');
+        await input.searchPromotions({ scope: 'CURRENT', promotionName: null });
         await input.getMenuDocument();
         await input.manageOrder({
           action: OrderAction.ADD_ITEMS,
@@ -232,6 +236,7 @@ describe('ChatService', () => {
       { execute: knowledgeSearch },
       { execute: menuDocument },
       orderTool,
+      { execute: promotionSearch },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange: jest.fn().mockResolvedValue(undefined),
@@ -247,6 +252,11 @@ describe('ChatService', () => {
 
     expect(catalogSearch).toHaveBeenCalledWith(expect.objectContaining({ context }));
     expect(knowledgeSearch).toHaveBeenCalledWith({ query: 'horarios', context });
+    expect(promotionSearch).toHaveBeenCalledWith({
+      scope: 'CURRENT',
+      promotionName: null,
+      context,
+    });
     expect(menuDocument).toHaveBeenCalledWith();
     expect(orderTool.execute).toHaveBeenCalledWith({
       action: OrderAction.ADD_ITEMS,
@@ -312,6 +322,7 @@ describe('ChatService', () => {
       { execute: jest.fn() },
       { execute: jest.fn() },
       orderTool,
+      { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange: jest.fn().mockResolvedValue(undefined),
@@ -351,6 +362,7 @@ describe('ChatService', () => {
       { execute: jest.fn() },
       { execute: jest.fn() },
       orderToolMock(),
+      { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange: jest.fn().mockResolvedValue(undefined),
@@ -383,6 +395,7 @@ describe('ChatService', () => {
       { execute },
       { execute: jest.fn() },
       orderToolMock(),
+      { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange: jest.fn().mockResolvedValue(undefined),
@@ -422,6 +435,7 @@ describe('ChatService', () => {
       { execute: jest.fn() },
       { execute: jest.fn() },
       orderToolMock(),
+      { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockResolvedValue([]),
         saveExchange,
@@ -457,6 +471,7 @@ describe('ChatService', () => {
       { execute: jest.fn() },
       { execute: jest.fn() },
       orderToolMock(),
+      { execute: jest.fn() },
       {
         getRecentMessages: jest.fn().mockRejectedValue(new DatabaseUnavailableException()),
         saveExchange: jest.fn(),

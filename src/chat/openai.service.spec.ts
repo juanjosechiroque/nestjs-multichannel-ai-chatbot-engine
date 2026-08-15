@@ -32,6 +32,7 @@ function generateInput(overrides: Partial<GenerateResponseInput> = {}): Generate
     setOrderCustomer: jest.fn(),
     getMenuDocument: jest.fn(),
     searchCatalog: jest.fn(),
+    searchPromotions: jest.fn(),
     searchKnowledge: jest.fn(),
     ...overrides,
   };
@@ -165,7 +166,7 @@ describe('OpenAiService', () => {
         max_output_tokens: 1_000,
       }),
     );
-    expect(initialRequest?.tools).toHaveLength(4);
+    expect(initialRequest?.tools).toHaveLength(5);
     expect(initialRequest?.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -180,6 +181,15 @@ describe('OpenAiService', () => {
         expect.objectContaining({
           type: 'function',
           name: 'search_knowledge',
+          strict: true,
+        }),
+      ]),
+    );
+    expect(initialRequest?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'function',
+          name: 'search_promotions',
           strict: true,
         }),
       ]),
@@ -531,6 +541,82 @@ describe('OpenAiService', () => {
           type: 'function_call_output',
           call_id: 'call-catalog',
           output: catalogOutput,
+        },
+      ]),
+    );
+  });
+
+  it('forces structured promotion search and attributes the current promotion', async () => {
+    const { service, create } = createService();
+    const promotionOutput = JSON.stringify({
+      promotionStatus: 'current_promotions_found',
+      scope: 'CURRENT',
+      evaluatedAt: '2026-08-15T00:30:00.000Z',
+      timeZone: 'America/Lima',
+      currentPromotions: [
+        {
+          sourceId: 'promotion-1',
+          sourceKey: 'viernes-frio',
+          type: 'promotion',
+          name: 'Viernes frío',
+          description: '15% de descuento todos los viernes.',
+          currentlyValid: true,
+        },
+      ],
+    });
+    const searchPromotions = jest.fn().mockResolvedValue(promotionOutput);
+    const functionCall = {
+      type: 'function_call',
+      call_id: 'call-promotions',
+      name: 'search_promotions',
+      arguments: JSON.stringify({ scope: 'CURRENT', promotionName: null }),
+    };
+    create
+      .mockResolvedValueOnce({
+        output: [functionCall],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse('Ahora aplica Viernes frío.', ['promotion-1']),
+        model: 'gpt-5.6-luna',
+      });
+
+    await expect(
+      service.generate(
+        generateInput({
+          message: '¿Qué promociones tienen en este momento?',
+          searchPromotions,
+        }),
+      ),
+    ).resolves.toEqual({
+      answer: 'Ahora aplica Viernes frío.',
+      usedSources: [
+        {
+          sourceId: 'promotion-1',
+          sourceKey: 'viernes-frio',
+          sourceType: 'promotion',
+        },
+      ],
+      llmCalls: 2,
+      usedTools: ['search_promotions'],
+      tokenUsage: ZERO_TOKEN_USAGE,
+    });
+    expect(searchPromotions).toHaveBeenCalledWith({
+      scope: 'CURRENT',
+      promotionName: null,
+    });
+    expect(responseRequest(create, 0)?.tool_choice).toEqual({
+      type: 'function',
+      name: 'search_promotions',
+    });
+    expect(responseRequest(create, 1)?.input).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'function_call_output',
+          call_id: 'call-promotions',
+          output: promotionOutput,
         },
       ]),
     );
@@ -1001,6 +1087,28 @@ describe('OpenAiService', () => {
       new OpenAiRequestFailedException(),
     );
     expect(searchCatalog).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid promotion scope without querying PostgreSQL', async () => {
+    const { service, create } = createService();
+    const searchPromotions = jest.fn();
+    create.mockResolvedValue({
+      output: [
+        {
+          type: 'function_call',
+          call_id: 'call-invalid-promotion',
+          name: 'search_promotions',
+          arguments: JSON.stringify({ scope: 'YESTERDAY', promotionName: null }),
+        },
+      ],
+      output_text: '',
+      model: 'gpt-5.6-luna',
+    });
+
+    await expect(
+      service.generate(generateInput({ message: '¿Qué promociones hubo ayer?', searchPromotions })),
+    ).rejects.toEqual(new OpenAiRequestFailedException());
+    expect(searchPromotions).not.toHaveBeenCalled();
   });
 
   it.each([
