@@ -132,7 +132,12 @@ describe('HTTP conversation flow', () => {
   });
 
   beforeEach(async () => {
-    generate.mockReset().mockResolvedValue({ answer: 'Respuesta de prueba', usedSources: [] });
+    generate.mockReset().mockResolvedValue({
+      answer: 'Respuesta de prueba',
+      usedSources: [],
+      llmCalls: 1,
+      usedTools: [],
+    });
     embed.mockReset().mockResolvedValue(deterministicEmbedding());
     await prisma.conversationMessage.deleteMany();
     await Promise.all([
@@ -290,13 +295,13 @@ describe('HTTP conversation flow', () => {
     expect(faqs.every((faq) => faq.active)).toBe(true);
   });
 
-  it('persists a complete HTTP chat exchange in PostgreSQL', async () => {
+  it('persists a social exchange without executing embeddings or RAG', async () => {
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
 
     const chatResponse = await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: '¿Cuál es su horario?' })
+      .send({ sessionId, message: 'Hola' })
       .expect(201);
 
     expect(chatResponse.body as ChatResponse).toEqual({ reply: 'Respuesta de prueba' });
@@ -304,18 +309,14 @@ describe('HTTP conversation flow', () => {
     expect(generationInput?.context.requestId).toEqual(expect.any(String));
     expect(generationInput?.context.conversationId).toEqual(expect.any(String));
     expect(generationInput?.context.channel).toBe('web');
-    expect(embed).toHaveBeenCalledWith('¿Cuál es su horario?', {
-      requestId: generationInput?.context.requestId,
-      conversationId: generationInput?.context.conversationId,
-      channel: 'web',
-    });
+    expect(embed).not.toHaveBeenCalled();
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: '¿Cuál es su horario?',
-        businessContext: JSON.stringify({ retrievalStatus: 'no_results', knowledge: [] }),
+        message: 'Hola',
         history: [],
       }),
     );
+    expect(typeof generationInput?.searchKnowledge).toBe('function');
 
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { channel_sessionId: { channel: 'web', sessionId } },
@@ -323,7 +324,7 @@ describe('HTTP conversation flow', () => {
     });
 
     expect(conversation.messages).toEqual([
-      expect.objectContaining({ role: 'USER', content: '¿Cuál es su horario?' }),
+      expect.objectContaining({ role: 'USER', content: 'Hola' }),
       expect.objectContaining({ role: 'ASSISTANT', content: 'Respuesta de prueba' }),
     ]);
   });
@@ -359,15 +360,21 @@ describe('HTTP conversation flow', () => {
     `;
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
-    generate.mockResolvedValueOnce({
-      answer: 'Atendemos todos los días de 7:00 a. m. a 9:00 p. m.',
-      usedSources: [
-        {
-          sourceId,
-          sourceKey: 'horario-atencion',
-          sourceType: 'faq',
-        },
-      ],
+    let toolOutput: string | undefined;
+    generate.mockImplementationOnce(async (input) => {
+      toolOutput = await input.searchKnowledge('horario de atención');
+      return {
+        answer: 'Atendemos todos los días de 7:00 a. m. a 9:00 p. m.',
+        usedSources: [
+          {
+            sourceId,
+            sourceKey: 'horario-atencion',
+            sourceType: 'faq',
+          },
+        ],
+        llmCalls: 2,
+        usedTools: ['search_knowledge'],
+      };
     });
 
     await request(server)
@@ -377,12 +384,13 @@ describe('HTTP conversation flow', () => {
 
     const generationInput = generate.mock.calls[0]?.[0];
     expect(generationInput).toBeDefined();
-    expect(JSON.parse(generationInput?.businessContext ?? '')).toEqual({
+    expect(JSON.parse(toolOutput ?? '')).toEqual({
       retrievalStatus: 'results_found',
       knowledge: [{ sourceId, sourceKey: 'horario-atencion', type: 'faq', content }],
     });
-    expect(generationInput?.businessContext).toContain(sourceId);
-    expect(generationInput?.businessContext).not.toContain('similarity');
+    expect(toolOutput).toContain(sourceId);
+    expect(toolOutput).not.toContain('similarity');
+    expect(embed).toHaveBeenCalledWith('horario de atención', generationInput?.context);
     await expect(prisma.conversationMessage.count()).resolves.toBe(2);
   });
 
@@ -390,8 +398,24 @@ describe('HTTP conversation flow', () => {
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
     generate
-      .mockResolvedValueOnce({ answer: 'Tenemos bebidas calientes.', usedSources: [] })
-      .mockResolvedValueOnce({ answer: 'El americano.', usedSources: [] });
+      .mockImplementationOnce(async (input) => {
+        await input.searchKnowledge('bebidas calientes');
+        return {
+          answer: 'Tenemos bebidas calientes.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['search_knowledge'],
+        };
+      })
+      .mockImplementationOnce(async (input) => {
+        await input.searchKnowledge('la bebida caliente más barata');
+        return {
+          answer: 'El americano.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['search_knowledge'],
+        };
+      });
 
     await request(server)
       .post('/api/chat')
@@ -409,7 +433,7 @@ describe('HTTP conversation flow', () => {
         'Previous customer message:',
         '¿Qué bebidas calientes tienen?',
         'Current customer message:',
-        '¿Y cuál es la más barata?',
+        'la bebida caliente más barata',
       ].join('\n'),
       secondGenerationInput?.context,
     );
