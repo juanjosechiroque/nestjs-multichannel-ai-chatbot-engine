@@ -7,6 +7,21 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
     expectedSource: { sourceType: 'faq', sourceKey: 'horario-atencion' },
   },
   {
+    name: 'business opening hours paraphrase',
+    query: '¿A qué hora abren?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'horario-atencion' },
+  },
+  {
+    name: 'business closing hours paraphrase',
+    query: '¿Hasta qué hora atienden hoy?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'horario-atencion' },
+  },
+  {
+    name: 'kitchen closing time',
+    query: '¿A qué hora cierra la cocina?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'horario-atencion' },
+  },
+  {
     name: 'location',
     query: '¿Cómo llego a su local en Miraflores?',
     expectedSource: { sourceType: 'faq', sourceKey: 'ubicacion' },
