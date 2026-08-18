@@ -2,7 +2,16 @@ import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 
-export function configureApplication(app: INestApplication): void {
+interface ApplicationOptions {
+  corsAllowedOrigins?: readonly string[];
+}
+
+const DEFAULT_CORS_ALLOWED_ORIGINS = ['http://localhost:4173'];
+
+export function configureApplication(
+  app: INestApplication,
+  options: ApplicationOptions = {},
+): void {
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -16,7 +25,9 @@ export function configureApplication(app: INestApplication): void {
     }),
   );
   app.setGlobalPrefix('api');
-  app.enableCors();
+  app.enableCors({
+    origin: [...(options.corsAllowedOrigins ?? DEFAULT_CORS_ALLOWED_ORIGINS)],
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,

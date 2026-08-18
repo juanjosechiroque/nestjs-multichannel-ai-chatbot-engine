@@ -239,6 +239,7 @@ Important controls include:
 | ----------------------------------- | ------------------------ |
 | `OPENAI_MODEL`                      | `gpt-5.6-luna`           |
 | `OPENAI_EMBEDDING_MODEL`            | `text-embedding-3-small` |
+| `CORS_ALLOWED_ORIGINS`              | `http://localhost:4173`  |
 | `RAG_MIN_SIMILARITY`                | `0.5`                    |
 | `RATE_LIMIT_CONVERSATIONS_PER_HOUR` | `5`                      |
 | `RATE_LIMIT_MESSAGES_PER_MINUTE`    | `10`                     |
@@ -247,6 +248,10 @@ Important controls include:
 The current rate-limit store is in memory and intentionally targets one application instance. A
 distributed deployment requires shared Redis storage. A reverse proxy must also be trusted
 explicitly so the web adapter receives the real client IP.
+
+`CORS_ALLOWED_ORIGINS` is a comma-separated list of exact Web origins, including scheme and optional
+port. Requests without an `Origin` header remain available to server clients and webhooks. CORS is
+a browser policy, not API authentication.
 
 ## Commands
 

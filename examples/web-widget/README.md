@@ -49,5 +49,5 @@ origin. `storage-key` is optional and can isolate multiple widgets that use the 
 - Uses Shadow DOM so its styles do not leak into the host page.
 
 The widget does not contain prompts, retrieval rules, prices, order transitions, or other chatbot
-business behavior. A production deployment should restrict CORS to the websites that host the
-widget.
+business behavior. Add every website that hosts it to the API's comma-separated
+`CORS_ALLOWED_ORIGINS` configuration.

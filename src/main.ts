@@ -10,8 +10,9 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
   const config = app.get(ConfigService);
   const port = config.get<number>('PORT', 3000);
+  const corsAllowedOrigins = config.getOrThrow<string[]>('CORS_ALLOWED_ORIGINS');
 
-  configureApplication(app);
+  configureApplication(app, { corsAllowedOrigins });
 
   await app.listen(port);
   Logger.log(`Server running at http://localhost:${port}`, 'Bootstrap');

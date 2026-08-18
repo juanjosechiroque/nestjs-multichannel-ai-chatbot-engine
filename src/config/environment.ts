@@ -1,15 +1,27 @@
-import { plainToInstance, Type } from 'class-transformer';
+import { plainToInstance, Transform, type TransformFnParams, Type } from 'class-transformer';
 import {
+  ArrayNotEmpty,
+  IsArray,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
   IsString,
   IsTimeZone,
+  IsUrl,
   Max,
   Min,
   validateSync,
 } from 'class-validator';
+
+function parseCorsAllowedOrigins(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+
+  return value
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter((origin) => origin.length > 0);
+}
 
 class EnvironmentVariables {
   @IsIn(['development', 'test', 'production'])
@@ -20,6 +32,15 @@ class EnvironmentVariables {
   @Min(1)
   @Max(65535)
   PORT = 3000;
+
+  @Transform(({ value }: TransformFnParams) => parseCorsAllowedOrigins(value as unknown))
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsUrl(
+    { protocols: ['http', 'https'], require_protocol: true, require_tld: false },
+    { each: true },
+  )
+  CORS_ALLOWED_ORIGINS: string[] = ['http://localhost:4173'];
 
   @IsString()
   @IsNotEmpty()
