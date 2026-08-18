@@ -67,73 +67,16 @@ describe('MemoryService', () => {
     expect(messages).toEqual([]);
   });
 
-  it('stores the user and assistant messages in an existing conversation', async () => {
-    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
-    const update = jest.fn().mockResolvedValue({ id: 'conversation-id' });
+  it('returns a controlled database error when reading history fails', async () => {
     const prisma = {
-      conversation: { update },
-    } as unknown as PrismaService;
-    const service = new MemoryService(prisma);
-
-    await service.saveExchange(
-      {
-        conversationId: 'conversation-id',
-        userMessage: 'Hola',
-        assistantMessage: '¡Hola! ¿Cómo puedo ayudarte?',
+      conversationMessage: {
+        findMany: jest.fn().mockRejectedValue(new Error('read failed')),
       },
-      REQUEST_CONTEXT,
-    );
-
-    const messages = {
-      create: [
-        { role: MessageRole.USER, content: 'Hola' },
-        { role: MessageRole.ASSISTANT, content: '¡Hola! ¿Cómo puedo ayudarte?' },
-      ],
     };
-    expect(update).toHaveBeenCalledWith({
-      where: { id: 'conversation-id' },
-      data: { messages },
-    });
-    expect(log).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: 'memory.exchange.saved',
-        ...REQUEST_CONTEXT,
-      }),
-    );
-    expect(JSON.stringify(log.mock.calls)).not.toContain('¡Hola! ¿Cómo puedo ayudarte?');
-  });
-
-  it.each([
-    {
-      name: 'reading history',
-      run: (service: MemoryService) =>
-        service.getRecentMessages('conversation-id', REQUEST_CONTEXT),
-      prisma: {
-        conversationMessage: {
-          findMany: jest.fn().mockRejectedValue(new Error('read failed')),
-        },
-      },
-    },
-    {
-      name: 'writing an exchange',
-      run: (service: MemoryService) =>
-        service.saveExchange(
-          {
-            conversationId: 'conversation-id',
-            userMessage: 'Hola',
-            assistantMessage: 'Hola',
-          },
-          REQUEST_CONTEXT,
-        ),
-      prisma: {
-        conversation: {
-          update: jest.fn().mockRejectedValue(new Error('write failed')),
-        },
-      },
-    },
-  ])('returns a controlled database error when $name fails', async ({ run, prisma }) => {
     const service = new MemoryService(prisma as unknown as PrismaService);
 
-    await expect(run(service)).rejects.toEqual(new DatabaseUnavailableException());
+    await expect(service.getRecentMessages('conversation-id', REQUEST_CONTEXT)).rejects.toEqual(
+      new DatabaseUnavailableException(),
+    );
   });
 });

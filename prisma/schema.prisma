@@ -19,6 +19,12 @@ enum MessageRole {
   ASSISTANT
 }
 
+enum ConversationTurnStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum OrderStatus {
   STARTED
   SELECTING_PRODUCTS
@@ -96,6 +102,7 @@ model Conversation {
   sessionId String                @map("session_id")
   channel   String
   messages  ConversationMessage[]
+  turns     ConversationTurn[]
   orders    Order[]
   createdAt DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -114,6 +121,21 @@ model ConversationMessage {
 
   @@index([conversationId, id])
   @@map("conversation_messages")
+}
+
+model ConversationTurn {
+  conversationId String                 @map("conversation_id") @db.Uuid
+  messageId      String                 @map("message_id") @db.VarChar(255)
+  messageHash    String                 @map("message_hash") @db.Char(64)
+  status         ConversationTurnStatus @default(PROCESSING)
+  response       Json?                  @db.JsonB
+  conversation   Conversation           @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([conversationId, messageId])
+  @@index([status, createdAt])
+  @@map("conversation_turns")
 }
 
 model Order {

@@ -67,6 +67,7 @@ that are not implemented.
 
 - Backend-created public sessions through `POST /api/conversations`.
 - Chat through `POST /api/chat`.
+- Durable message idempotency: safe retries reuse the completed response without calling OpenAI or tools again.
 - Five conversation creations per hour per IP.
 - Ten chat messages per minute per public session.
 - Structured correlated logs for memory, RAG, tools, OpenAI, and completed chat requests.
@@ -145,12 +146,19 @@ Unknown session IDs are rejected instead of implicitly creating conversations.
 ```bash
 curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"sessionId":"a51f973c-4f93-4cc5-832d-63ae2ff86d65","message":"¿Qué bebidas calientes tienen y cuánto cuestan?"}'
+  -d '{"sessionId":"a51f973c-4f93-4cc5-832d-63ae2ff86d65","messageId":"d355b4d6-a0dc-4a46-bb7d-f86886ea75dc","message":"¿Qué bebidas calientes tienen y cuánto cuestan?"}'
 ```
 
 ```json
 { "reply": "..." }
 ```
+
+The client generates one UUID v4 `messageId` for each new user message and persists it until the
+request finishes. Network retries must reuse that same ID and text. A completed retry receives the
+stored response without repeating OpenAI calls, tool execution, or conversation-memory writes.
+Reusing an ID with different text, retrying while it is still processing, or retrying a previously
+failed turn returns `409`; a genuinely new user message must use a new ID. Future channel adapters
+should map the provider message identifier to this same channel-neutral contract.
 
 An explicit request to see the menu returns channel-neutral structured content:
 
@@ -173,12 +181,13 @@ facts, price filters, and orders continue to use PostgreSQL.
 
 The public HTTP contract uses controlled status codes:
 
-| Status | Meaning                                             |
-| -----: | --------------------------------------------------- |
-|  `400` | Invalid DTO or unsupported property                 |
-|  `404` | Validly shaped but unknown public session           |
-|  `429` | Web conversation or message rate limit exceeded     |
-|  `503` | Required OpenAI or PostgreSQL operation unavailable |
+| Status | Meaning                                                 |
+| -----: | ------------------------------------------------------- |
+|  `400` | Invalid DTO or unsupported property                     |
+|  `404` | Validly shaped but unknown public session               |
+|  `409` | Duplicate message is processing, conflicting, or failed |
+|  `429` | Web conversation or message rate limit exceeded         |
+|  `503` | Required OpenAI or PostgreSQL operation unavailable     |
 
 ### Catalog and menu
 

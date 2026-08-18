@@ -18,7 +18,7 @@ import type { GenerateResponseInput, GenerateResponseResult } from '../../src/ch
 import { OpenAiService } from '../../src/chat/openai.service';
 import type { DocumentChatContent } from '../../src/chat/chat.types';
 import { PrismaService } from '../../src/database/prisma.service';
-import { ProductCategory } from '../../src/generated/prisma/enums';
+import { ConversationTurnStatus, ProductCategory } from '../../src/generated/prisma/enums';
 import { OrderAction, OrderStatus } from '../../src/order/order.types';
 import { EmbeddingService } from '../../src/rag/embedding.service';
 import { EMBEDDING_DIMENSIONS } from '../../src/rag/rag.types';
@@ -57,6 +57,10 @@ interface ChatResponse {
     url: string;
     mimeType: string;
   }>;
+}
+
+function chatMessage(sessionId: string, message: string, messageId = randomUUID()) {
+  return { sessionId, messageId, message };
 }
 
 interface CatalogItemResponse {
@@ -294,7 +298,7 @@ describe('HTTP conversation flow', () => {
 
     const chatResponse = await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Hola' })
+      .send(chatMessage(sessionId, 'Hola'))
       .expect(201);
 
     expect(chatResponse.body as ChatResponse).toEqual({ reply: 'Respuesta de prueba' });
@@ -323,6 +327,139 @@ describe('HTTP conversation flow', () => {
       expect.objectContaining({ role: 'USER', content: 'Hola' }),
       expect.objectContaining({ role: 'ASSISTANT', content: 'Respuesta de prueba' }),
     ]);
+  });
+
+  it('replays a completed message without calling OpenAI or saving memory twice', async () => {
+    generate.mockResolvedValueOnce({
+      answer: 'Respuesta idempotente',
+      usedSources: [],
+      llmCalls: 1,
+      usedTools: [],
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    const messageId = randomUUID();
+    const payload = chatMessage(sessionId, 'Hola', messageId);
+
+    await request(server).post('/api/chat').send(payload).expect(201, {
+      reply: 'Respuesta idempotente',
+    });
+    await request(server).post('/api/chat').send(payload).expect(201, {
+      reply: 'Respuesta idempotente',
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    await expect(prisma.conversationMessage.count()).resolves.toBe(2);
+    await expect(prisma.conversationTurn.count()).resolves.toBe(1);
+    await expect(prisma.conversationTurn.findFirstOrThrow()).resolves.toEqual(
+      expect.objectContaining({
+        messageId,
+        status: ConversationTurnStatus.COMPLETED,
+        response: { reply: 'Respuesta idempotente' },
+      }),
+    );
+  });
+
+  it('rejects a messageId reused with different text', async () => {
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    const messageId = randomUUID();
+
+    await request(server)
+      .post('/api/chat')
+      .send(chatMessage(sessionId, 'Hola', messageId))
+      .expect(201);
+    await request(server)
+      .post('/api/chat')
+      .send(chatMessage(sessionId, 'Quiero ver la carta', messageId))
+      .expect(409)
+      .expect(({ body }: { body: unknown }) => {
+        expect(body).toEqual(
+          expect.objectContaining({
+            message: 'El messageId ya fue utilizado con un mensaje diferente.',
+          }),
+        );
+      });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    await expect(prisma.conversationMessage.count()).resolves.toBe(2);
+  });
+
+  it('rejects a concurrent retry while the original message is still processing', async () => {
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    const messageId = randomUUID();
+    const payload = chatMessage(sessionId, 'Hola', messageId);
+    let signalGenerationStarted: () => void = () => undefined;
+    let finishGeneration: (result: GenerateResponseResult) => void = () => undefined;
+    const generationStarted = new Promise<void>((resolve) => {
+      signalGenerationStarted = resolve;
+    });
+    const pendingGeneration = new Promise<GenerateResponseResult>((resolve) => {
+      finishGeneration = resolve;
+    });
+    generate.mockImplementationOnce(() => {
+      signalGenerationStarted();
+      return pendingGeneration;
+    });
+
+    const firstRequest = request(server).post('/api/chat').send(payload).then();
+    await generationStarted;
+    await request(server)
+      .post('/api/chat')
+      .send(payload)
+      .expect(409)
+      .expect(({ body }: { body: unknown }) => {
+        expect(body).toEqual(
+          expect.objectContaining({
+            message:
+              'Este mensaje todavía se está procesando. Inténtalo nuevamente en unos segundos.',
+          }),
+        );
+      });
+
+    finishGeneration({
+      answer: 'Respuesta terminada',
+      usedSources: [],
+      llmCalls: 1,
+      usedTools: [],
+    });
+    const firstResponse = await firstRequest;
+
+    expect(firstResponse.status).toBe(201);
+    expect(firstResponse.body).toEqual({ reply: 'Respuesta terminada' });
+    expect(generate).toHaveBeenCalledTimes(1);
+    await expect(prisma.conversationMessage.count()).resolves.toBe(2);
+  });
+
+  it('does not reprocess a failed message with the same messageId', async () => {
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    const messageId = randomUUID();
+    const payload = chatMessage(sessionId, 'Hola', messageId);
+    generate.mockRejectedValueOnce(new OpenAiRequestFailedException());
+
+    await request(server).post('/api/chat').send(payload).expect(503);
+    await request(server)
+      .post('/api/chat')
+      .send(payload)
+      .expect(409)
+      .expect(({ body }: { body: unknown }) => {
+        expect(body).toEqual(
+          expect.objectContaining({
+            message: 'Este mensaje ya terminó con error. Reintenta con un messageId nuevo.',
+          }),
+        );
+      });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    await expect(prisma.conversationMessage.count()).resolves.toBe(0);
+    await expect(prisma.conversationTurn.findFirstOrThrow()).resolves.toEqual(
+      expect.objectContaining({
+        messageId,
+        status: ConversationTurnStatus.FAILED,
+      }),
+    );
   });
 
   it('resolves current promotions through the structured PostgreSQL tool', async () => {
@@ -371,7 +508,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: '¿Qué promociones están vigentes ahora?' })
+      .send(chatMessage(sessionId, '¿Qué promociones están vigentes ahora?'))
       .expect(201, { reply: 'Ahora está vigente la promoción siempre vigente.' });
   });
 
@@ -387,7 +524,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Confirma mi pedido' })
+      .send(chatMessage(sessionId, 'Confirma mi pedido'))
       .expect(201, { reply: 'Pedido confirmado: total S/ 28.' });
 
     await expect(
@@ -426,7 +563,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Quiero ver la carta' })
+      .send(chatMessage(sessionId, 'Quiero ver la carta'))
       .expect(201, {
         reply: 'Aquí tienes nuestra carta.',
         content: [
@@ -492,7 +629,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Agrega dos cappuccinos y un croissant.' })
+      .send(chatMessage(sessionId, 'Agrega dos cappuccinos y un croissant.'))
       .expect(201, {
         reply: 'Agregué 2 Cappuccino Nube y 1 Croissant de mantequilla. Total: S/ 35.',
       });
@@ -659,22 +796,22 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Quiero tres lattes.' })
+      .send(chatMessage(sessionId, 'Quiero tres lattes.'))
       .expect(201);
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Revisar pedido.' })
+      .send(chatMessage(sessionId, 'Revisar pedido.'))
       .expect(201);
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Soy Ana Pérez, mi celular es +51 987 654 321.' })
+      .send(chatMessage(sessionId, 'Soy Ana Pérez, mi celular es +51 987 654 321.'))
       .expect(201, { reply: 'Ana, llevas 3 lattes por S/ 39. ¿Deseas confirmar el pedido?' });
-    await request(server).post('/api/chat').send({ sessionId, message: 'sí' }).expect(201);
+    await request(server).post('/api/chat').send(chatMessage(sessionId, 'sí')).expect(201);
 
     const firstConfirmation = await prisma.order.findFirstOrThrow();
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'sí, confirma de nuevo' })
+      .send(chatMessage(sessionId, 'sí, confirma de nuevo'))
       .expect(201, { reply: 'Ese mismo pedido ya estaba confirmado; no se creó otro.' });
 
     const confirmedOrder = await prisma.order.findFirstOrThrow();
@@ -725,11 +862,11 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Agrega un latte' })
+      .send(chatMessage(sessionId, 'Agrega un latte'))
       .expect(201);
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Cancela el pedido' })
+      .send(chatMessage(sessionId, 'Cancela el pedido'))
       .expect(201, { reply: 'Pedido cancelado.' });
 
     const cancelledOrder = await prisma.order.findFirstOrThrow({ include: { items: true } });
@@ -791,7 +928,7 @@ describe('HTTP conversation flow', () => {
       });
 
     for (const message of ['Quiero dos cappuccinos', 'Revisa mi pedido', 'Mejor quita uno']) {
-      await request(server).post('/api/chat').send({ sessionId, message }).expect(201);
+      await request(server).post('/api/chat').send(chatMessage(sessionId, message)).expect(201);
     }
 
     const order = await prisma.order.findFirstOrThrow({ include: { items: true } });
@@ -827,10 +964,10 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Agrega un brownie' })
+      .send(chatMessage(sessionId, 'Agrega un brownie'))
       .expect(201);
     generate.mockRejectedValueOnce(new OpenAiRequestFailedException());
-    await request(server).post('/api/chat').send({ sessionId, message: 'Agrega otro' }).expect(503);
+    await request(server).post('/api/chat').send(chatMessage(sessionId, 'Agrega otro')).expect(503);
 
     const order = await prisma.order.findFirstOrThrow({ include: { items: true } });
     expect(order.status).toBe(OrderStatus.SELECTING_PRODUCTS);
@@ -897,7 +1034,7 @@ describe('HTTP conversation flow', () => {
       });
 
     for (const message of ['Agrega un latte', '¿Tienen brownies?', 'Agrega uno']) {
-      await request(server).post('/api/chat').send({ sessionId, message }).expect(201);
+      await request(server).post('/api/chat').send(chatMessage(sessionId, message)).expect(201);
     }
 
     const order = await prisma.order.findFirstOrThrow({ include: { items: true } });
@@ -960,7 +1097,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: '¿Cuánto cuesta el cappuccino?' })
+      .send(chatMessage(sessionId, '¿Cuánto cuesta el cappuccino?'))
       .expect(201, { reply: 'El Cappuccino Nube cuesta S/ 13.00.' });
 
     expect(JSON.parse(toolOutput ?? '')).toEqual({
@@ -1043,7 +1180,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: '¿Qué tienen por menos de S/ 15?' })
+      .send(chatMessage(sessionId, '¿Qué tienen por menos de S/ 15?'))
       .expect(201, { reply: 'Tenemos una opción por menos de S/ 15.' });
 
     const parsedOutput = JSON.parse(toolOutput ?? '') as {
@@ -1137,7 +1274,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Quiero comida vegana sin leche por máximo S/ 10.' })
+      .send(chatMessage(sessionId, 'Quiero comida vegana sin leche por máximo S/ 10.'))
       .expect(201, { reply: 'La Galleta vegana cuesta S/ 9.00.' });
 
     expect(JSON.parse(toolOutput ?? '')).toEqual({
@@ -1214,7 +1351,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: '¿A qué hora atienden?' })
+      .send(chatMessage(sessionId, '¿A qué hora atienden?'))
       .expect(201, { reply: 'Atendemos todos los días de 7:00 a. m. a 9:00 p. m.' });
 
     const generationInput = generate.mock.calls[0]?.[0];
@@ -1254,11 +1391,11 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: '¿Qué bebidas calientes tienen?' })
+      .send(chatMessage(sessionId, '¿Qué bebidas calientes tienen?'))
       .expect(201);
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: '¿Y cuál es la más barata?' })
+      .send(chatMessage(sessionId, '¿Y cuál es la más barata?'))
       .expect(201, { reply: 'El americano.' });
 
     const secondGenerationInput = generate.mock.calls[1]?.[0];
@@ -1282,7 +1419,7 @@ describe('HTTP conversation flow', () => {
   it('rejects a valid but unknown session', async () => {
     await request(server)
       .post('/api/chat')
-      .send({ sessionId: randomUUID(), message: 'Hola' })
+      .send(chatMessage(randomUUID(), 'Hola'))
       .expect(404)
       .expect(({ body }: { body: unknown }) => {
         expect(body).toEqual(expect.objectContaining({ message: 'Conversation not found' }));
@@ -1290,14 +1427,25 @@ describe('HTTP conversation flow', () => {
   });
 
   it.each([
-    ['an invalid UUID', { sessionId: 'not-a-uuid', message: 'Hola' }],
-    ['an empty message', { sessionId: randomUUID(), message: '' }],
+    [
+      'an invalid session UUID',
+      { sessionId: 'not-a-uuid', messageId: randomUUID(), message: 'Hola' },
+    ],
+    ['a missing messageId', { sessionId: randomUUID(), message: 'Hola' }],
+    [
+      'an invalid message UUID',
+      { sessionId: randomUUID(), messageId: 'not-a-uuid', message: 'Hola' },
+    ],
+    ['an empty message', { sessionId: randomUUID(), messageId: randomUUID(), message: '' }],
     [
       'a message longer than 2000 characters',
-      { sessionId: randomUUID(), message: 'a'.repeat(2001) },
+      { sessionId: randomUUID(), messageId: randomUUID(), message: 'a'.repeat(2001) },
     ],
-    ['a non-string message', { sessionId: randomUUID(), message: 123 }],
-    ['an unexpected property', { sessionId: randomUUID(), message: 'Hola', internal: true }],
+    ['a non-string message', { sessionId: randomUUID(), messageId: randomUUID(), message: 123 }],
+    [
+      'an unexpected property',
+      { sessionId: randomUUID(), messageId: randomUUID(), message: 'Hola', internal: true },
+    ],
   ])('returns 400 for %s', async (_scenario, payload) => {
     await request(server).post('/api/chat').send(payload).expect(400);
   });
@@ -1312,7 +1460,7 @@ describe('HTTP conversation flow', () => {
 
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Hola' })
+      .send(chatMessage(sessionId, 'Hola'))
       .expect(503)
       .expect(({ body }: { body: unknown }) => {
         expect(body).toEqual(
@@ -1335,7 +1483,7 @@ describe('HTTP conversation flow', () => {
     try {
       await request(server)
         .post('/api/chat')
-        .send({ sessionId: randomUUID(), message: 'Hola' })
+        .send(chatMessage(randomUUID(), 'Hola'))
         .expect(503)
         .expect(({ body }: { body: unknown }) => {
           expect(body).toEqual(

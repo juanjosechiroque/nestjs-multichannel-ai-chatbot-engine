@@ -4,6 +4,9 @@ export class WebChatMessageDto {
   @IsUUID('4')
   sessionId!: string;
 
+  @IsUUID('4')
+  messageId!: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(2_000)

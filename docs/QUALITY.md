@@ -62,6 +62,7 @@ generation and embeddings are replaced by deterministic test doubles. They cover
 
 - Global DTO validation and controlled errors.
 - Backend-managed conversations and persistent history.
+- Completed-message replay, conflicting IDs, failed retries, and concurrent duplicate rejection.
 - Catalog endpoints, typed catalog search, and menu documents.
 - RAG context propagation with real pgvector queries.
 - Multi-turn order changes and confirmation.

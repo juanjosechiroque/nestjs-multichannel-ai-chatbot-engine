@@ -84,6 +84,7 @@ flowchart LR
 
     subgraph core["Channel-independent conversational core"]
         chat["ChatService<br/>Conversation orchestration"]
+        turns["ChatTurnService<br/>Message idempotency"]
         provider["OpenAiService<br/>Structured response and tool selection"]
         memory["MemoryService"]
 
@@ -112,6 +113,7 @@ flowchart LR
     request --> limit --> validation --> controller
     controller --> conversation --> postgres
     controller --> chat
+    chat --> turns --> postgres
     chat --> memory --> postgres
     chat --> provider --> openai
     provider --> catalogTool --> catalog --> postgres
@@ -133,12 +135,16 @@ persistence, the chatbot core, or OpenAI.
 1. The web rate limiter accepts or rejects the request.
 2. Global DTO validation normalizes and validates the transport payload.
 3. `WebChatController` resolves the public session through `ConversationService`.
-4. `ChatService` loads recent history and the current order context.
-5. `OpenAiService` either answers directly or selects one typed tool.
-6. Application code executes the tool and returns controlled JSON to the model.
-7. OpenAI produces the customer-facing answer from the trusted tool result.
-8. `MemoryService` saves the completed user and assistant exchange.
-9. The channel adapter returns only public reply and content fields.
+4. `ChatTurnService` reserves `(conversationId, messageId)` before any model or tool execution.
+5. A completed duplicate returns its stored response immediately; conflicting, processing, or
+   previously failed duplicates are rejected with a channel-mapped conflict.
+6. For a new turn, `ChatService` loads recent history and the current order context.
+7. `OpenAiService` either answers directly or selects one typed tool.
+8. Application code executes the tool and returns controlled JSON to the model.
+9. OpenAI produces the customer-facing answer from the trusted tool result.
+10. One PostgreSQL transaction completes the turn, stores its replay response, and appends both
+    user and assistant messages to conversation memory.
+11. The channel adapter returns only public reply and content fields.
 
 Token usage, tool names, source references, latency, and correlation identifiers remain internal
 telemetry and are not part of the web response contract.
@@ -153,6 +159,7 @@ telemetry and are not part of the web response contract.
 | FAQs, location, policies, services  | PostgreSQL            | `KnowledgeSearchTool → RagService`             |
 | Full menu presentation              | Repository demo asset | `MenuDocumentTool → CatalogDocumentService`    |
 | Conversation history                | PostgreSQL            | `MemoryService`                                |
+| Message processing and replay       | PostgreSQL            | `ChatTurnService`                              |
 | Order draft and totals              | PostgreSQL            | `OrderTool → OrderService`                     |
 | Customer name, phone, order no.     | PostgreSQL            | `OrderTool → OrderService`                     |
 | Valid order transitions             | Domain code           | `OrderStateMachine`                            |
@@ -265,22 +272,23 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 
 ## Component responsibilities
 
-| Component                    | Owns                                                     | Must not own                               |
-| ---------------------------- | -------------------------------------------------------- | ------------------------------------------ |
-| Web controllers              | HTTP input/output and public session mapping             | Chatbot or order rules                     |
-| Web rate-limit configuration | IP/session tracking and `429` protection                 | Business limits or model behavior          |
-| `ConversationService`        | Conversation creation and public-session resolution      | Prompt or channel payload interpretation   |
-| `ChatService`                | One complete channel-neutral reply                       | HTTP, WhatsApp, or provider payloads       |
-| `OpenAiService`              | OpenAI SDK, tools, structured output, provider errors    | Authoritative business calculations        |
-| `CatalogService`             | Exact structured business-data queries                   | Semantic retrieval or channel formatting   |
-| `PromotionSearchTool`        | Current/catalog scope and time-zone-aware classification | Natural-language date calculations         |
-| `RagService`                 | Similarity search and accepted knowledge context         | Transactional catalog ownership            |
-| `KnowledgeIngestionService`  | Derived vector-index synchronization                     | Source-of-truth business data              |
-| `MemoryService`              | Bounded conversation history                             | Public session resolution                  |
-| `OrderTool`                  | Structured model action to application operation         | Prices, totals, or transition decisions    |
-| `OrderService`               | Transactional order mutations and persistence            | Natural-language interpretation            |
-| `OrderStateMachine`          | Valid actions and deterministic transitions              | Database, NestJS, model, or channel access |
-| Prisma seed                  | Reproducible demo records                                | Runtime chatbot dependency                 |
+| Component                    | Owns                                                            | Must not own                               |
+| ---------------------------- | --------------------------------------------------------------- | ------------------------------------------ |
+| Web controllers              | HTTP input/output and public session mapping                    | Chatbot or order rules                     |
+| Web rate-limit configuration | IP/session tracking and `429` protection                        | Business limits or model behavior          |
+| `ConversationService`        | Conversation creation and public-session resolution             | Prompt or channel payload interpretation   |
+| `ChatService`                | One complete channel-neutral reply                              | HTTP, WhatsApp, or provider payloads       |
+| `ChatTurnService`            | Message reservation, replay, failure state, atomic memory write | Channel-specific retry policy              |
+| `OpenAiService`              | OpenAI SDK, tools, structured output, provider errors           | Authoritative business calculations        |
+| `CatalogService`             | Exact structured business-data queries                          | Semantic retrieval or channel formatting   |
+| `PromotionSearchTool`        | Current/catalog scope and time-zone-aware classification        | Natural-language date calculations         |
+| `RagService`                 | Similarity search and accepted knowledge context                | Transactional catalog ownership            |
+| `KnowledgeIngestionService`  | Derived vector-index synchronization                            | Source-of-truth business data              |
+| `MemoryService`              | Bounded conversation history                                    | Public session resolution                  |
+| `OrderTool`                  | Structured model action to application operation                | Prices, totals, or transition decisions    |
+| `OrderService`               | Transactional order mutations and persistence                   | Natural-language interpretation            |
+| `OrderStateMachine`          | Valid actions and deterministic transitions                     | Database, NestJS, model, or channel access |
+| Prisma seed                  | Reproducible demo records                                       | Runtime chatbot dependency                 |
 
 ## Decisions and trade-offs
 
@@ -293,6 +301,7 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 | Hybrid RAG and typed tools    | Uses the appropriate access pattern for each question           | More explicit routing than sending all data to LLM |
 | One tool per message          | Bounds orchestration, latency, and failure modes                | Complex requests may require another customer turn |
 | Backend-created sessions      | Rejects unknown conversations and controls lifecycle            | Requires a session-creation request                |
+| PostgreSQL message ledger     | Makes channel retries durable across restarts                   | Adds one small row per attempted message           |
 | Last ten history messages     | Bounds prompt growth and cost                                   | Older context is not sent to the model             |
 | PostgreSQL order drafts       | Keeps order state independent from model memory                 | Abandoned drafts need lifecycle cleanup            |
 | Product price snapshots       | Preserves historical order totals                               | Duplicates selected catalog data                   |
