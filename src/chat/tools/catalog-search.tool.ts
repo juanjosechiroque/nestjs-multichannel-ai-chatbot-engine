@@ -82,6 +82,7 @@ export class CatalogSearchTool {
         price: product.price.toString(),
         currency: product.currency,
         category: product.category,
+        availableForOrdering: product.availableForOrdering,
         ...this.getProductPreferences(product.metadata),
       })),
     });

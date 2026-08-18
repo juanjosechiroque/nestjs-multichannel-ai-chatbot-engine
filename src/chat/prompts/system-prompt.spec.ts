@@ -57,7 +57,8 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Use at most one business tool');
     expect(prompt).toContain('Use only business-tool results');
     expect(prompt).toContain('Return the URL as plain HTTPS text');
-    expect(prompt).toContain('does not confirm real-time stock availability');
+    expect(prompt).toContain('availableForOrdering from search_catalog as authoritative');
+    expect(prompt).toContain('does not represent an exact stock quantity');
   });
 
   it('keeps order prices, totals, and transitions under application control', () => {

@@ -88,6 +88,7 @@ function activeProduct(price = 13, currency = 'PEN') {
     currency,
     category: 'HOT_DRINK' as const,
     active: true,
+    availableForOrdering: true,
     metadata: null,
     createdAt: new Date('2026-08-11T00:00:00.000Z'),
     updatedAt: new Date('2026-08-11T00:00:00.000Z'),
@@ -96,6 +97,7 @@ function activeProduct(price = 13, currency = 'PEN') {
 
 function createService() {
   const productFindFirst = jest.fn();
+  const productFindMany = jest.fn().mockResolvedValue([{ id: PRODUCT_ID }]);
   const orderFindFirst = jest.fn();
   const orderCreate = jest.fn();
   const orderUpdate = jest.fn();
@@ -107,7 +109,7 @@ function createService() {
   const conversationLock = jest.fn().mockResolvedValue([{ locked: 1 }]);
   const transactionClient = {
     $queryRaw: conversationLock,
-    product: { findFirst: productFindFirst },
+    product: { findFirst: productFindFirst, findMany: productFindMany },
     order: { findFirst: orderFindFirst, create: orderCreate, update: orderUpdate },
     orderItem: {
       findUnique: orderItemFindUnique,
@@ -129,6 +131,7 @@ function createService() {
   return {
     service,
     productFindFirst,
+    productFindMany,
     orderFindFirst,
     orderCreate,
     orderUpdate,
@@ -262,6 +265,9 @@ describe('OrderService', () => {
         status: PrismaOrderStatus.STARTED,
         currency: 'PEN',
       },
+    });
+    expect(productFindFirst).toHaveBeenCalledWith({
+      where: { id: PRODUCT_ID, active: true, availableForOrdering: true },
     });
     expect(conversationLock).toHaveBeenCalledTimes(1);
     const createData = orderItemCreate.mock.calls[0]?.[0].data;
@@ -533,8 +539,14 @@ describe('OrderService', () => {
   });
 
   it('confirms a complete order and assigns its public number once', async () => {
-    const { service, orderFindFirst, orderItemFindMany, orderUpdate, conversationLock } =
-      createService();
+    const {
+      service,
+      productFindMany,
+      orderFindFirst,
+      orderItemFindMany,
+      orderUpdate,
+      conversationLock,
+    } = createService();
     const completeOrder = persistedOrder(PrismaOrderStatus.CONFIRMING_ORDER, 13, {
       customerName: 'Ana Pérez',
       customerPhone: '+51987654321',
@@ -567,6 +579,32 @@ describe('OrderService', () => {
         orderNumber: 1000,
       },
     });
+    expect(productFindMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: [PRODUCT_ID] },
+        active: true,
+        availableForOrdering: true,
+      },
+      select: { id: true },
+    });
+  });
+
+  it('rejects confirmation when a selected product became unavailable', async () => {
+    const { service, productFindMany, orderFindFirst, orderItemFindMany, orderUpdate } =
+      createService();
+    orderFindFirst.mockResolvedValue(
+      persistedOrder(PrismaOrderStatus.CONFIRMING_ORDER, 13, {
+        customerName: 'Ana Pérez',
+        customerPhone: '987654321',
+      }),
+    );
+    orderItemFindMany.mockResolvedValue([persistedItem()]);
+    productFindMany.mockResolvedValue([]);
+
+    await expect(service.confirm(CONVERSATION_ID)).rejects.toEqual(
+      new OrderProductNotAvailableError(PRODUCT_ID),
+    );
+    expect(orderUpdate).not.toHaveBeenCalled();
   });
 
   it('rejects status actions without an active order or from an invalid state', async () => {

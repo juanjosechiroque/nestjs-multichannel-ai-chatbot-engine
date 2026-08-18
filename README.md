@@ -1,12 +1,17 @@
-# NestJS Multichannel AI Chatbot Engine
+# Reusable NestJS AI Chatbot Backend
 
 [![CI](https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine/actions/workflows/ci.yml)
 
-A reusable AI chatbot engine built with NestJS, strict TypeScript, OpenAI, PostgreSQL, and pgvector.
+Reusable NestJS AI chatbot backend with OpenAI tool calling, pgvector RAG, persistent memory,
+hybrid catalog search, and deterministic order workflows.
 
-The engine has one channel-independent conversational core. Web is the current adapter; additional
-channels can translate their transport payloads and call the same `ChatService` without duplicating
-prompts, retrieval, memory, catalog, or order rules.
+The repository demonstrates a channel-independent conversational core built for product backends.
+Web is the current adapter; additional channels can translate their transport payloads and call the
+same `ChatService` without duplicating prompts, retrieval, memory, catalog, or order rules.
+
+It is intentionally more than a prompt wrapper: the model interprets language and selects typed
+tools, while PostgreSQL-backed application code owns business facts, prices, totals, order state, and
+confirmation guarantees.
 
 ## Design principles
 
@@ -17,6 +22,22 @@ prompts, retrieval, memory, catalog, or order rules.
 - Provider and database failures produce controlled responses instead of exposing internal errors.
 - The included Café Nube business is reproducible demo data, not hardcoded chatbot logic.
 
+## Scope and current boundaries
+
+This repository is a reusable backend engine with one configured Café Nube example, not a hosted
+multi-tenant SaaS product. The implemented path is the Web HTTP adapter backed by PostgreSQL and
+OpenAI.
+
+The current release does not claim to provide:
+
+- WhatsApp, Messenger, or other production channel adapters.
+- Payment processing, kitchen dispatch, delivery orchestration, or real-time inventory.
+- Authentication, tenant isolation, billing, or an administrative catalog panel.
+- Distributed rate limiting, a worker queue, or a deployed application image.
+
+Those boundaries are explicit so the architecture and demo do not imply operational capabilities
+that are not implemented.
+
 ## Implemented capabilities
 
 ### Conversational core
@@ -24,6 +45,7 @@ prompts, retrieval, memory, catalog, or order rules.
 - OpenAI Responses API with structured output and model-selected tools.
 - Persistent PostgreSQL conversation history with a bounded recent-message window.
 - Direct catalog search by category, price, allergens, dietary tags, and caffeine preferences.
+- Separate catalog publication and ordering availability for every product.
 - Semantic FAQ, location, policy, and service retrieval with pgvector.
 - Date- and time-zone-aware promotion queries backed by PostgreSQL.
 - Channel-neutral PDF menu responses.
@@ -39,6 +61,7 @@ prompts, retrieval, memory, catalog, or order rules.
 - A unique public order number is assigned only when confirmation succeeds.
 - Idempotent confirmation: repeated or concurrent confirmation returns the same order.
 - Clarification for unknown or ambiguous product names without partial writes.
+- Availability validation both when products are added and immediately before confirmation.
 
 ### Web channel and operations
 

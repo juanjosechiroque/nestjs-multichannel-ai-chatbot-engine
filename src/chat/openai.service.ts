@@ -117,9 +117,9 @@ const CATALOG_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
   name: CATALOG_SEARCH_TOOL_NAME,
   description: [
     "Search the current business's active product catalog in its database.",
-    'Use it for product names, descriptions, categories, exact prices, complete product lists, price filters, declared allergens, dietary tags, and caffeine or coffee preferences.',
+    'Use it for product names, descriptions, categories, exact prices, ordering availability, complete product lists, price filters, declared allergens, dietary tags, and caffeine or coffee preferences.',
     'Do not use it for FAQs, policies, location, hours, services, or promotions.',
-    'A catalog product being active does not confirm real-time stock availability.',
+    'The availableForOrdering field confirms whether the business currently accepts that product in orders, but it does not represent an exact stock quantity.',
   ].join(' '),
   parameters: {
     type: 'object',

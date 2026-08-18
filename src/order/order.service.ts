@@ -106,7 +106,7 @@ export class OrderService {
         const products: Product[] = [];
         for (const item of items) {
           const product = await transaction.product.findFirst({
-            where: { id: item.productId, active: true },
+            where: { id: item.productId, active: true, availableForOrdering: true },
           });
           if (!product) {
             throw new OrderProductNotAvailableError(item.productId);
@@ -330,6 +330,9 @@ export class OrderService {
       itemCount,
       customerDetailsComplete: this.hasCompleteCustomerDetails(order),
     });
+    if (action === OrderAction.CONFIRM) {
+      await this.assertProductsAvailable(transaction, items);
+    }
     const orderNumber =
       status === OrderStatus.CONFIRMED && order.orderNumber === null
         ? await this.nextOrderNumber(transaction)
@@ -344,6 +347,27 @@ export class OrderService {
     });
 
     return this.toOrderResult(updatedOrder, items);
+  }
+
+  private async assertProductsAvailable(
+    transaction: TransactionClient,
+    items: PersistedOrderItem[],
+  ): Promise<void> {
+    const productIds = items.map((item) => item.productId);
+    const availableProducts = await transaction.product.findMany({
+      where: {
+        id: { in: productIds },
+        active: true,
+        availableForOrdering: true,
+      },
+      select: { id: true },
+    });
+    const availableProductIds = new Set(availableProducts.map((product) => product.id));
+    const unavailableItem = items.find((item) => !availableProductIds.has(item.productId));
+
+    if (unavailableItem) {
+      throw new OrderProductNotAvailableError(unavailableItem.productId);
+    }
   }
 
   private findActiveOrder(

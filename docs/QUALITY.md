@@ -1,7 +1,12 @@
 # Quality and Evaluations
 
-This document separates deterministic software verification from live model evaluation. The two
-groups answer different questions and intentionally run through different commands.
+This document explains how the reusable AI chatbot backend is verified. It separates deterministic
+software verification from live model evaluation because the two groups answer different questions
+and intentionally run through different commands.
+
+The quality strategy treats the LLM as one component inside a larger system: model output may vary,
+but catalog facts, prices, totals, order transitions, persistence, and safety boundaries must remain
+under application control.
 
 ## Deterministic quality gate
 
@@ -41,6 +46,7 @@ Testcontainers starts disposable PostgreSQL 17 instances with pgvector. The suit
 - Applied Prisma migrations.
 - Order draft creation, modification, review, customer identity collection, numbered confirmation,
   and cancellation.
+- Product ordering availability when adding items and immediately before confirmation.
 - Exact persisted products, quantities, price snapshots, and totals.
 
 Integration tests do not call OpenAI.
