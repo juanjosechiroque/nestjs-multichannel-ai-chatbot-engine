@@ -67,6 +67,7 @@ that are not implemented.
 
 - Backend-created public sessions through `POST /api/conversations`.
 - Chat through `POST /api/chat`.
+- Interactive Swagger UI and machine-readable OpenAPI JSON for the HTTP adapter.
 - Durable message idempotency: safe retries reuse the completed response without calling OpenAI or tools again.
 - Five conversation creations per hour per IP.
 - Ten chat messages per minute per public session.
@@ -115,6 +116,11 @@ npm run start:dev
 The API starts at `http://localhost:3000/api` by default. The seed is safe to run again: stable
 slugs update the Café Nube records without creating duplicates. Run `knowledge:ingest` whenever
 products, promotions, or FAQs change.
+
+HTTP documentation is available after startup:
+
+- Swagger UI: `http://localhost:3000/api/docs`
+- OpenAPI JSON: `http://localhost:3000/api/docs-json`
 
 ## API usage
 

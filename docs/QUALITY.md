@@ -61,6 +61,7 @@ The HTTP suites start the real NestJS application with disposable PostgreSQL inf
 generation and embeddings are replaced by deterministic test doubles. They cover:
 
 - Global DTO validation and controlled errors.
+- Swagger/OpenAPI route coverage, schemas, operations, and documented HTTP responses.
 - Backend-managed conversations and persistent history.
 - Completed-message replay, conflicting IDs, failed retries, and concurrent duplicate rejection.
 - Catalog endpoints, typed catalog search, and menu documents.

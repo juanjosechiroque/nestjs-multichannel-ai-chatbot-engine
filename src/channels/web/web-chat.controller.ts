@@ -8,6 +8,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOperation,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+  ApiTooManyRequestsResponse,
+} from '@nestjs/swagger';
 import { ChatService } from '../../chat/chat.service';
 import type { ChatResult } from '../../chat/chat.types';
 import {
@@ -15,11 +25,14 @@ import {
   ChatTurnMessageConflictError,
   ChatTurnPreviouslyFailedError,
 } from '../../chat/chat-turn.errors';
+import { ApiErrorResponseDto } from '../../common/api-error-response.dto';
 import { ConversationService } from '../../conversation/conversation.service';
 import { WebChatMessageDto } from './dto/web-chat-message.dto';
+import { WebChatResponseDto } from './dto/web-chat-response.dto';
 import { CONVERSATION_RATE_LIMIT_NAME } from './web-rate-limit';
 import { WebResponseAdapter, type WebChatResponse } from './web-response.adapter';
 
+@ApiTags('Web chat')
 @SkipThrottle({ [CONVERSATION_RATE_LIMIT_NAME]: true })
 @UseGuards(ThrottlerGuard)
 @Controller('chat')
@@ -31,6 +44,13 @@ export class WebChatController {
   ) {}
 
   @Post()
+  @ApiOperation({ summary: 'Send an idempotent message to the web chatbot' })
+  @ApiCreatedResponse({ type: WebChatResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  @ApiTooManyRequestsResponse({ type: ApiErrorResponseDto })
+  @ApiServiceUnavailableResponse({ type: ApiErrorResponseDto })
   async chat(@Body() input: WebChatMessageDto): Promise<WebChatResponse> {
     const requestId = randomUUID();
     const conversation = await this.conversations.findBySession(
