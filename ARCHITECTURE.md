@@ -227,9 +227,15 @@ draft when products change.
 - Product batches are validated before mutation, so a rejected multi-item change is atomic.
 - Every selected product must remain active and available for ordering at confirmation time.
 
-There is no payment, kitchen, or delivery side effect yet. When those integrations are added, the
-same database transaction must also persist an outbox event or idempotency key. Returning the same
-database order alone cannot make an external provider idempotent.
+### Operational closure
+
+`CONFIRMED` means that the customer accepted the reviewed order and the engine persisted its final
+data and public order number. It does not mean that payment, kitchen dispatch, or delivery occurred;
+those operational workflows remain outside this repository's scope.
+
+A production extension can publish an idempotent `order.confirmed` event through a transactional
+outbox for payment, point-of-sale, kitchen, or delivery systems without expanding the conversational
+state machine.
 
 ### Checkout data
 
@@ -295,24 +301,25 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 
 ## Decisions and trade-offs
 
-| Decision                      | Reason                                                          | Accepted cost                                      |
-| ----------------------------- | --------------------------------------------------------------- | -------------------------------------------------- |
-| NestJS with strict TypeScript | Explicit modules, dependency injection, and contracts           | More structure than an Express-only application    |
-| OpenAI Responses API          | Structured output and direct tool calling                       | External provider dependency                       |
-| PostgreSQL with Prisma        | Typed catalog, memory, and transactional order persistence      | Requires migrations and local infrastructure       |
-| pgvector for RAG              | Keeps structured and semantic data in one database              | Exact search needs indexing at larger scale        |
-| Hybrid RAG and typed tools    | Uses the appropriate access pattern for each question           | More explicit routing than sending all data to LLM |
-| One tool per message          | Bounds orchestration, latency, and failure modes                | Complex requests may require another customer turn |
-| Backend-created sessions      | Rejects unknown conversations and controls lifecycle            | Requires a session-creation request                |
-| PostgreSQL message ledger     | Makes channel retries durable across restarts                   | Adds one small row per attempted message           |
-| Last ten history messages     | Bounds prompt growth and cost                                   | Older context is not sent to the model             |
-| PostgreSQL order drafts       | Keeps order state independent from model memory                 | Abandoned drafts need lifecycle cleanup            |
-| Product price snapshots       | Preserves historical order totals                               | Duplicates selected catalog data                   |
-| Boolean ordering availability | Separates temporary availability from catalog publication       | Does not track exact stock quantities              |
-| Conversation-scoped locking   | Makes order changes and confirmation replay deterministic       | PostgreSQL-specific advisory lock                  |
-| In-memory web rate limiting   | Simple protection for the current single instance               | Multi-instance deployments require Redis           |
-| PDF as presentation only      | Supports rich channel delivery without bloating model context   | Demo PDF must be synchronized with the catalog     |
-| Live evals outside CI         | Measures real model behavior without making CI nondeterministic | Requires intentional execution and API cost        |
+| Decision                        | Reason                                                          | Accepted cost                                       |
+| ------------------------------- | --------------------------------------------------------------- | --------------------------------------------------- |
+| NestJS with strict TypeScript   | Explicit modules, dependency injection, and contracts           | More structure than an Express-only application     |
+| OpenAI Responses API            | Structured output and direct tool calling                       | External provider dependency                        |
+| PostgreSQL with Prisma          | Typed catalog, memory, and transactional order persistence      | Requires migrations and local infrastructure        |
+| pgvector for RAG                | Keeps structured and semantic data in one database              | Exact search needs indexing at larger scale         |
+| Hybrid RAG and typed tools      | Uses the appropriate access pattern for each question           | More explicit routing than sending all data to LLM  |
+| One tool per message            | Bounds orchestration, latency, and failure modes                | Complex requests may require another customer turn  |
+| Backend-created sessions        | Rejects unknown conversations and controls lifecycle            | Requires a session-creation request                 |
+| PostgreSQL message ledger       | Makes channel retries durable across restarts                   | Adds one small row per attempted message            |
+| Last ten history messages       | Bounds prompt growth and cost                                   | Older context is not sent to the model              |
+| PostgreSQL order drafts         | Keeps order state independent from model memory                 | Abandoned drafts need lifecycle cleanup             |
+| Product price snapshots         | Preserves historical order totals                               | Duplicates selected catalog data                    |
+| Confirmation closes this engine | Gives the chatbot a precise, testable success boundary          | Payment, kitchen, and delivery need later workflows |
+| Boolean ordering availability   | Separates temporary availability from catalog publication       | Does not track exact stock quantities               |
+| Conversation-scoped locking     | Makes order changes and confirmation replay deterministic       | PostgreSQL-specific advisory lock                   |
+| In-memory web rate limiting     | Simple protection for the current single instance               | Multi-instance deployments require Redis            |
+| PDF as presentation only        | Supports rich channel delivery without bloating model context   | Demo PDF must be synchronized with the catalog      |
+| Live evals outside CI           | Measures real model behavior without making CI nondeterministic | Requires intentional execution and API cost         |
 
 ## Project structure
 
