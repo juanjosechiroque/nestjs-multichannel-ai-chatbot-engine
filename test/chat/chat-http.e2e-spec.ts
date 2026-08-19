@@ -40,6 +40,7 @@ const TEST_ENVIRONMENT = {
   RAG_MIN_SIMILARITY: '0.5',
   RATE_LIMIT_CONVERSATIONS_PER_HOUR: '100',
   RATE_LIMIT_MESSAGES_PER_MINUTE: '100',
+  WHATSAPP_VERIFY_TOKEN: 'whatsapp-e2e-verify-token-32-chars',
   BUSINESS_NAME: 'Café Nube',
   BUSINESS_TIME_ZONE: 'America/Lima',
 } as const;
@@ -169,6 +170,38 @@ describe('HTTP conversation flow', () => {
 
   it('returns application health through the global API prefix', async () => {
     await request(server).get('/api/health').expect(200, { status: 'ok' });
+  });
+
+  it('returns the exact challenge for a valid WhatsApp webhook verification', async () => {
+    await request(server)
+      .get('/api/webhook/whatsapp')
+      .query({
+        'hub.mode': 'subscribe',
+        'hub.verify_token': TEST_ENVIRONMENT.WHATSAPP_VERIFY_TOKEN,
+        'hub.challenge': '123456789',
+      })
+      .expect(200, '123456789');
+  });
+
+  it('rejects an invalid WhatsApp webhook verification token', async () => {
+    await request(server)
+      .get('/api/webhook/whatsapp')
+      .query({
+        'hub.mode': 'subscribe',
+        'hub.verify_token': 'invalid-token',
+        'hub.challenge': '123456789',
+      })
+      .expect(403);
+  });
+
+  it('validates required WhatsApp webhook verification parameters', async () => {
+    await request(server)
+      .get('/api/webhook/whatsapp')
+      .query({
+        'hub.mode': 'subscribe',
+        'hub.verify_token': TEST_ENVIRONMENT.WHATSAPP_VERIFY_TOKEN,
+      })
+      .expect(400);
   });
 
   it('applies global security headers without exposing the Express signature', async () => {

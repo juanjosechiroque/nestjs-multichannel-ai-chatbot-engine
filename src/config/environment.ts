@@ -10,6 +10,7 @@ import {
   IsTimeZone,
   IsUrl,
   Max,
+  MinLength,
   Min,
   validateSync,
 } from 'class-validator';
@@ -104,6 +105,11 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   DATABASE_URL!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(32)
+  WHATSAPP_VERIFY_TOKEN!: string;
 
   @IsString()
   @IsNotEmpty()

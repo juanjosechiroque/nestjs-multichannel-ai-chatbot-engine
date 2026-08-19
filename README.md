@@ -25,12 +25,13 @@ confirmation guarantees.
 ## Scope and current boundaries
 
 This repository is a reusable backend engine with one configured Café Nube example, not a hosted
-multi-tenant SaaS product. The implemented path is the Web HTTP adapter backed by PostgreSQL and
-OpenAI.
+multi-tenant SaaS product. The implemented customer-chat path is the Web HTTP adapter backed by
+PostgreSQL and OpenAI. WhatsApp currently exposes callback verification only; message ingestion and
+delivery are not implemented yet.
 
 The current release does not claim to provide:
 
-- WhatsApp, Messenger, or other production channel adapters.
+- Inbound or outbound WhatsApp messaging, Instagram, Messenger, or other production channel adapters.
 - Payment processing, kitchen dispatch, delivery orchestration, or real-time inventory.
 - Authentication, tenant isolation, billing, or an administrative catalog panel.
 - Distributed rate limiting, a worker queue, or a deployed application image.
@@ -77,6 +78,14 @@ that are not implemented.
 - Token and latency telemetry without exposing it in the public response.
 - Global HTTP security headers through Helmet.
 - Graceful shutdown hooks that close Prisma connections on process termination.
+
+### WhatsApp integration foundation
+
+- `GET /api/webhook/whatsapp` implements Meta's callback verification handshake.
+- Verification requires a private, validated token and never logs the supplied credential.
+- The endpoint returns Meta's challenge exactly when mode and token are valid.
+- No incoming message processing, background queue, Graph API delivery, or chatbot invocation is
+  claimed in this increment.
 
 ### Quality
 
@@ -204,6 +213,22 @@ The public HTTP contract uses controlled status codes:
 |  `429` | Web conversation or message rate limit exceeded         |
 |  `503` | Required OpenAI or PostgreSQL operation unavailable     |
 
+### Verify a WhatsApp webhook callback
+
+Meta calls this endpoint while registering a callback URL. `WHATSAPP_VERIFY_TOKEN` must contain the
+same private value entered in the Meta application dashboard.
+
+```bash
+curl --get http://localhost:3000/api/webhook/whatsapp \
+  --data-urlencode "hub.mode=subscribe" \
+  --data-urlencode "hub.verify_token=YOUR_PRIVATE_VERIFY_TOKEN" \
+  --data-urlencode "hub.challenge=123456789"
+```
+
+A valid request returns the challenge as plain text. Missing parameters return `400`; an invalid
+mode or token returns `403`. This handshake does not require the WhatsApp access token and does not
+process customer messages.
+
 ### Catalog and menu
 
 ```bash
@@ -244,6 +269,7 @@ Important controls include:
 | `RATE_LIMIT_CONVERSATIONS_PER_HOUR` | `5`                      |
 | `RATE_LIMIT_MESSAGES_PER_MINUTE`    | `10`                     |
 | `BUSINESS_TIME_ZONE`                | `America/Lima`           |
+| `WHATSAPP_VERIFY_TOKEN`             | Required, 32+ characters |
 
 The current rate-limit store is in memory and intentionally targets one application instance. A
 distributed deployment requires shared Redis storage. A reverse proxy must also be trusted
