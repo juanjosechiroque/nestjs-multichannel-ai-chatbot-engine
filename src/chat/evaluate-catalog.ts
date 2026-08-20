@@ -30,6 +30,7 @@ async function evaluateCatalog(): Promise<void> {
         message: result.message,
         answer: result.answer,
         usedTools: result.usedTools,
+        appliedFilters: result.appliedFilters,
         usedSourceKeys: result.usedSourceKeys,
         passed: result.passed,
         reason: result.reason,

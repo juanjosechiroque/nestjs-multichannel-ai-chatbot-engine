@@ -1,8 +1,18 @@
 import type { CatalogService } from '../../catalog/catalog.service';
 import { ProductCategory } from '../../generated/prisma/enums';
-import { CatalogSearchTool } from './catalog-search.tool';
+import { CatalogSearchTool, type CatalogSearchArguments } from './catalog-search.tool';
 
 describe('CatalogSearchTool', () => {
+  const noPreferenceFilters: Pick<
+    CatalogSearchArguments,
+    'dietaryTags' | 'excludedAllergens' | 'containsCoffee' | 'decaffeinated' | 'caffeineFree'
+  > = {
+    dietaryTags: [],
+    excludedAllergens: [],
+    containsCoffee: null,
+    decaffeinated: null,
+    caffeineFree: null,
+  };
   const context = {
     requestId: 'request-1',
     conversationId: 'conversation-1',
@@ -35,6 +45,11 @@ describe('CatalogSearchTool', () => {
       productName: 'cappuccino',
       category: ProductCategory.HOT_DRINK,
       maxPrice: 15,
+      dietaryTags: ['VEGETARIAN'],
+      excludedAllergens: ['TREE_NUTS'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
       context,
     });
 
@@ -43,6 +58,11 @@ describe('CatalogSearchTool', () => {
         productName: 'cappuccino',
         category: ProductCategory.HOT_DRINK,
         maxPrice: 15,
+        dietaryTags: ['VEGETARIAN'],
+        excludedAllergens: ['TREE_NUTS'],
+        containsCoffee: true,
+        decaffeinated: false,
+        caffeineFree: false,
         limit: 20,
       },
       context,
@@ -74,7 +94,13 @@ describe('CatalogSearchTool', () => {
     const tool = new CatalogSearchTool({ searchProducts });
 
     await expect(
-      tool.execute({ productName: null, category: null, maxPrice: null, context }),
+      tool.execute({
+        productName: null,
+        category: null,
+        maxPrice: null,
+        ...noPreferenceFilters,
+        context,
+      }),
     ).resolves.toBe('{"catalogStatus":"no_results","products":[]}');
     expect(searchProducts).toHaveBeenCalledWith({ limit: 20 }, context);
   });
@@ -97,6 +123,7 @@ describe('CatalogSearchTool', () => {
       productName: 'Cappuccino Nube',
       category: null,
       maxPrice: null,
+      ...noPreferenceFilters,
       context,
     });
 
@@ -133,7 +160,13 @@ describe('CatalogSearchTool', () => {
     const tool = new CatalogSearchTool({ searchProducts });
 
     const output = JSON.parse(
-      await tool.execute({ productName: null, category: null, maxPrice: null, context }),
+      await tool.execute({
+        productName: null,
+        category: null,
+        maxPrice: null,
+        ...noPreferenceFilters,
+        context,
+      }),
     ) as { products: unknown[] };
 
     expect(output.products).toEqual([

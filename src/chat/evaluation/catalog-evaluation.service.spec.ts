@@ -8,6 +8,7 @@ describe('CatalogEvaluationService', () => {
     name: 'vegan preference',
     category: 'preference',
     message: 'Quiero comida vegana.',
+    expectedFilters: { category: 'FOOD', dietaryTags: ['VEGAN'] },
     expectedSourceKeys: ['vegan-cookie'],
     forbiddenSourceKeys: ['butter-croissant'],
   };
@@ -16,13 +17,28 @@ describe('CatalogEvaluationService', () => {
   it('passes when the catalog tool attributes all expected and no forbidden sources', async () => {
     const generate = jest
       .fn<Promise<GenerateResponseResult>, [GenerateResponseInput]>()
-      .mockResolvedValue({
-        answer: 'Tenemos una galleta vegana.',
-        usedTools: ['search_catalog'],
-        usedSources: [{ sourceId: 'product-1', sourceKey: 'vegan-cookie', sourceType: 'product' }],
-        llmCalls: 2,
+      .mockImplementation(async (input) => {
+        await input.searchCatalog({
+          productName: null,
+          category: 'FOOD',
+          maxPrice: null,
+          dietaryTags: ['VEGAN'],
+          excludedAllergens: [],
+          containsCoffee: null,
+          decaffeinated: null,
+          caffeineFree: null,
+        });
+
+        return {
+          answer: 'Tenemos una galleta vegana.',
+          usedTools: ['search_catalog'],
+          usedSources: [
+            { sourceId: 'product-1', sourceKey: 'vegan-cookie', sourceType: 'product' },
+          ],
+          llmCalls: 2,
+        };
       });
-    const execute = jest.fn();
+    const execute = jest.fn().mockResolvedValue('{"catalogStatus":"results_found"}');
     const service = new CatalogEvaluationService({ generate }, { execute }, config);
 
     const report = await service.evaluate([evaluationCase]);
@@ -37,6 +53,16 @@ describe('CatalogEvaluationService', () => {
         usedSourceKeys: ['vegan-cookie'],
       }),
     );
+    expect(report.results[0]?.appliedFilters).toEqual({
+      productName: null,
+      category: 'FOOD',
+      maxPrice: null,
+      dietaryTags: ['VEGAN'],
+      excludedAllergens: [],
+      containsCoffee: null,
+      decaffeinated: null,
+      caffeineFree: null,
+    });
     const receivedInput = generate.mock.calls[0]?.[0];
     expect(receivedInput).toBeDefined();
     if (!receivedInput) {
@@ -68,6 +94,9 @@ describe('CatalogEvaluationService', () => {
       expect.objectContaining({ total: 1, passed: 0, failed: 1, passRate: 0 }),
     );
     expect(report.results[0]?.reason).toContain('Expected search_catalog');
+    expect(report.results[0]?.reason).toContain(
+      'Expected filter category="FOOD" but received undefined',
+    );
     expect(report.results[0]?.reason).toContain('Missing expected sources: vegan-cookie');
     expect(report.results[0]?.reason).toContain('Used forbidden sources: butter-croissant');
   });

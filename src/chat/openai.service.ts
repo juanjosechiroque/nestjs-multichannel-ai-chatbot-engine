@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import { PRODUCT_ALLERGENS, PRODUCT_DIETARY_TAGS } from '../catalog/catalog-preferences';
 import {
   ApplicationServiceUnavailableException,
   OpenAiEmptyResponseException,
@@ -99,8 +100,46 @@ const CATALOG_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
         minimum: 0,
         maximum: 10_000,
       },
+      dietaryTags: {
+        type: 'array',
+        description:
+          'Dietary tags every returned product must contain. Use an empty array when not requested.',
+        items: { type: 'string', enum: [...PRODUCT_DIETARY_TAGS] },
+        maxItems: PRODUCT_DIETARY_TAGS.length,
+      },
+      excludedAllergens: {
+        type: 'array',
+        description:
+          'Declared allergens that returned products must not contain. Use an empty array when not requested. This does not guarantee absence of cross-contamination.',
+        items: { type: 'string', enum: [...PRODUCT_ALLERGENS] },
+        maxItems: PRODUCT_ALLERGENS.length,
+      },
+      containsCoffee: {
+        type: ['boolean', 'null'],
+        description:
+          'True for products containing coffee, false for coffee-free products, or null when not requested.',
+      },
+      decaffeinated: {
+        type: ['boolean', 'null'],
+        description:
+          'True for explicitly decaffeinated products, false when decaffeinated products must be excluded, or null when not requested.',
+      },
+      caffeineFree: {
+        type: ['boolean', 'null'],
+        description:
+          'True for explicitly caffeine-free products, false for products not declared caffeine-free, or null when not requested.',
+      },
     },
-    required: ['productName', 'category', 'maxPrice'],
+    required: [
+      'productName',
+      'category',
+      'maxPrice',
+      'dietaryTags',
+      'excludedAllergens',
+      'containsCoffee',
+      'decaffeinated',
+      'caffeineFree',
+    ],
     additionalProperties: false,
   },
   strict: true,
@@ -428,8 +467,21 @@ export class OpenAiService {
       !('productName' in parsed) ||
       !('category' in parsed) ||
       !('maxPrice' in parsed) ||
+      !('dietaryTags' in parsed) ||
+      !('excludedAllergens' in parsed) ||
+      !('containsCoffee' in parsed) ||
+      !('decaffeinated' in parsed) ||
+      !('caffeineFree' in parsed) ||
       Object.keys(parsed).some(
-        (key) => key !== 'productName' && key !== 'category' && key !== 'maxPrice',
+        (key) =>
+          key !== 'productName' &&
+          key !== 'category' &&
+          key !== 'maxPrice' &&
+          key !== 'dietaryTags' &&
+          key !== 'excludedAllergens' &&
+          key !== 'containsCoffee' &&
+          key !== 'decaffeinated' &&
+          key !== 'caffeineFree',
       )
     ) {
       throw new Error('OpenAI returned invalid search_catalog arguments');
@@ -438,8 +490,29 @@ export class OpenAiService {
     const productName = parsed.productName;
     const category = parsed.category;
     const maxPrice = parsed.maxPrice;
+    const dietaryTags = parsed.dietaryTags;
+    const excludedAllergens = parsed.excludedAllergens;
+    const containsCoffee = parsed.containsCoffee;
+    const decaffeinated = parsed.decaffeinated;
+    const caffeineFree = parsed.caffeineFree;
     const validCategory =
       category === null || Object.values(ProductCategory).some((value) => value === category);
+    const validDietaryTags =
+      Array.isArray(dietaryTags) &&
+      dietaryTags.length <= PRODUCT_DIETARY_TAGS.length &&
+      dietaryTags.every(
+        (value) =>
+          typeof value === 'string' && PRODUCT_DIETARY_TAGS.some((allowed) => allowed === value),
+      ) &&
+      new Set(dietaryTags).size === dietaryTags.length;
+    const validExcludedAllergens =
+      Array.isArray(excludedAllergens) &&
+      excludedAllergens.length <= PRODUCT_ALLERGENS.length &&
+      excludedAllergens.every(
+        (value) =>
+          typeof value === 'string' && PRODUCT_ALLERGENS.some((allowed) => allowed === value),
+      ) &&
+      new Set(excludedAllergens).size === excludedAllergens.length;
 
     if (
       !(
@@ -455,7 +528,12 @@ export class OpenAiService {
           Number.isFinite(maxPrice) &&
           maxPrice >= 0 &&
           maxPrice <= 10_000)
-      )
+      ) ||
+      !validDietaryTags ||
+      !validExcludedAllergens ||
+      !(containsCoffee === null || typeof containsCoffee === 'boolean') ||
+      !(decaffeinated === null || typeof decaffeinated === 'boolean') ||
+      !(caffeineFree === null || typeof caffeineFree === 'boolean')
     ) {
       throw new Error('OpenAI returned invalid search_catalog arguments');
     }
@@ -464,6 +542,11 @@ export class OpenAiService {
       productName: productName === null ? null : productName.trim(),
       category: category as ProductCategory | null,
       maxPrice,
+      dietaryTags: dietaryTags as CatalogSearchArguments['dietaryTags'],
+      excludedAllergens: excludedAllergens as CatalogSearchArguments['excludedAllergens'],
+      containsCoffee,
+      decaffeinated,
+      caffeineFree,
     };
   }
 

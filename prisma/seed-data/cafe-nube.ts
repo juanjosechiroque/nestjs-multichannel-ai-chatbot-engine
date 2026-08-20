@@ -1,8 +1,6 @@
 import { ProductCategory } from '../../src/generated/prisma/enums';
 import type { Prisma } from '../../src/generated/prisma/client';
-
-type ProductAllergen = 'GLUTEN' | 'MILK' | 'EGG' | 'TREE_NUTS' | 'SESAME';
-type ProductDietaryTag = 'VEGETARIAN' | 'VEGAN';
+import type { ProductAllergen, ProductDietaryTag } from '../../src/catalog/catalog-preferences';
 
 interface ProductMetadata extends Prisma.InputJsonObject {
   allergens: ProductAllergen[];

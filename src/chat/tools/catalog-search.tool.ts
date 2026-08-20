@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CatalogService } from '../../catalog/catalog.service';
+import type { ProductAllergen, ProductDietaryTag } from '../../catalog/catalog-preferences';
 import type { RequestContext } from '../../common/request-context';
 import type { ProductCategory } from '../../generated/prisma/enums';
 
@@ -17,6 +18,11 @@ export interface CatalogSearchArguments {
   productName: string | null;
   category: ProductCategory | null;
   maxPrice: number | null;
+  dietaryTags: ProductDietaryTag[];
+  excludedAllergens: ProductAllergen[];
+  containsCoffee: boolean | null;
+  decaffeinated: boolean | null;
+  caffeineFree: boolean | null;
 }
 
 export interface CatalogSearchInput extends CatalogSearchArguments {
@@ -30,11 +36,26 @@ export class CatalogSearchTool {
     private readonly catalog: Pick<CatalogService, 'searchProducts'>,
   ) {}
 
-  async execute({ productName, category, maxPrice, context }: CatalogSearchInput): Promise<string> {
+  async execute({
+    productName,
+    category,
+    maxPrice,
+    dietaryTags,
+    excludedAllergens,
+    containsCoffee,
+    decaffeinated,
+    caffeineFree,
+    context,
+  }: CatalogSearchInput): Promise<string> {
     const filters = {
       ...(productName ? { productName } : {}),
       ...(category ? { category } : {}),
       ...(maxPrice !== null ? { maxPrice } : {}),
+      ...(dietaryTags.length > 0 ? { dietaryTags } : {}),
+      ...(excludedAllergens.length > 0 ? { excludedAllergens } : {}),
+      ...(containsCoffee !== null ? { containsCoffee } : {}),
+      ...(decaffeinated !== null ? { decaffeinated } : {}),
+      ...(caffeineFree !== null ? { caffeineFree } : {}),
       limit: CATALOG_RESULT_LIMIT,
     };
     let products = await this.catalog.searchProducts(filters, context);
