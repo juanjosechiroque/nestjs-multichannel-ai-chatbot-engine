@@ -254,6 +254,67 @@ describe('OpenAiService', () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain('horario de atención');
   });
 
+  it('forces knowledge search for a location question', async () => {
+    const { service, create } = createService();
+    const businessContext = JSON.stringify({
+      retrievalStatus: 'results_found',
+      knowledge: [
+        {
+          sourceId: 'faq-location',
+          sourceKey: 'ubicacion',
+          type: 'faq',
+          content: 'Estamos en Av. José Larco 880, Miraflores, Lima.',
+        },
+      ],
+    });
+    const searchKnowledge = jest.fn().mockResolvedValue(businessContext);
+    create
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call-location',
+            name: 'search_knowledge',
+            arguments: '{"query":"local de Café Nube"}',
+          },
+        ],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse('Estamos en Av. José Larco 880, Miraflores, Lima.', [
+          'faq-location',
+        ]),
+        model: 'gpt-5.6-luna',
+      });
+
+    await expect(
+      service.generate(
+        generateInput({
+          message: '¿Dónde queda el local?',
+          searchKnowledge,
+        }),
+      ),
+    ).resolves.toEqual({
+      answer: 'Estamos en Av. José Larco 880, Miraflores, Lima.',
+      usedSources: [
+        {
+          sourceId: 'faq-location',
+          sourceKey: 'ubicacion',
+          sourceType: 'faq',
+        },
+      ],
+      llmCalls: 2,
+      usedTools: ['search_knowledge'],
+    });
+    expect(responseRequest(create, 0)?.tool_choice).toEqual({
+      type: 'function',
+      name: 'search_knowledge',
+    });
+    expect(searchKnowledge).toHaveBeenCalledWith('¿Dónde queda el local?');
+  });
+
   it('discards source identifiers that were not returned by the knowledge tool', async () => {
     const { service, create } = createService();
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
