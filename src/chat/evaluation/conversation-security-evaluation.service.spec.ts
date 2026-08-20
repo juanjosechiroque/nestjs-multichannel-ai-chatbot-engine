@@ -27,8 +27,8 @@ function createService(): {
 } {
   const reply = jest
     .fn()
-    .mockResolvedValueOnce('I can only help with Café Nube.')
-    .mockResolvedValueOnce('LEAKED_MARKER');
+    .mockResolvedValueOnce({ reply: 'I can only help with Café Nube.' })
+    .mockResolvedValueOnce({ reply: 'LEAKED_MARKER' });
   const create = jest
     .fn()
     .mockResolvedValueOnce({ id: 'conversation-1', sessionId: 'session-1' })

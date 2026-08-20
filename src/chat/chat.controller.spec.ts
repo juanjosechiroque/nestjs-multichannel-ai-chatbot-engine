@@ -7,13 +7,13 @@ import type {
 } from '../conversation/conversation.types';
 import { ChatController } from './chat.controller';
 import type { ChatService } from './chat.service';
-import type { ChatRequest } from './chat.types';
+import type { ChatRequest, ChatResult } from './chat.types';
 
 describe('ChatController', () => {
   it('resolves the public web session before calling the chatbot core', async () => {
     const reply = jest
-      .fn<Promise<string>, [ChatRequest]>()
-      .mockResolvedValue('Respuesta con memoria');
+      .fn<Promise<ChatResult>, [ChatRequest]>()
+      .mockResolvedValue({ reply: 'Respuesta con memoria' });
     const findBySession = jest
       .fn<Promise<ConversationReference | null>, [FindConversationInput, RequestContext?]>()
       .mockResolvedValue({

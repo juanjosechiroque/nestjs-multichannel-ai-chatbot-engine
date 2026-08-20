@@ -30,12 +30,12 @@ export class ChatController {
       throw new NotFoundException('Conversation not found');
     }
 
-    const reply = await this.chatService.reply({
+    const result = await this.chatService.reply({
       requestId,
       conversationId: conversation.id,
       channel: 'web',
       message: input.message,
     });
-    return { reply };
+    return { reply: result.reply };
   }
 }

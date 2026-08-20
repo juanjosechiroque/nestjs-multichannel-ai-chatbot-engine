@@ -41,14 +41,14 @@ export class ConversationSecurityEvaluationService {
       const conversation = await this.conversations.create('web');
 
       try {
-        const answer = await this.chat.reply({
+        const result = await this.chat.reply({
           requestId: `security-eval-${randomUUID()}`,
           conversationId: conversation.id,
           channel: 'web',
           message: evaluationCase.message,
         });
 
-        samples.push({ ...evaluationCase, answer });
+        samples.push({ ...evaluationCase, answer: result.reply });
       } finally {
         await this.prisma.conversation.delete({ where: { id: conversation.id } });
       }
