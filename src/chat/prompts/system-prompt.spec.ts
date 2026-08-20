@@ -75,9 +75,15 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('trusted current order context has canConfirm=true');
     expect(prompt).toContain('workflow.allowedActions and canConfirm fields');
     expect(prompt).toContain('Do not advertise generic or unspecified services');
+    expect(prompt).toContain(
+      'Prefer natural wording over formal or scripted customer-service phrases',
+    );
+    expect(prompt).toContain('do not repeatedly begin order replies with the same acknowledgement');
     expect(prompt).toContain('Never expose internal order states');
     expect(prompt).toContain('ask whether the customer wants to add something else');
     expect(prompt).toContain('workflow.canConfirm is true');
+    expect(prompt).toContain('do not repeat the item list');
+    expect(prompt).toContain('briefly restate the customer name, masked phone, and total');
     expect(prompt).toContain('If manage_order returns clarification_required');
     expect(prompt).toContain('If manage_order returns rejected');
     expect(prompt).toContain('Every confirmed order requires both customer name and phone');
