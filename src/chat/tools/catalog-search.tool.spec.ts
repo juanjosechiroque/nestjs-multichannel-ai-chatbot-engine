@@ -19,6 +19,13 @@ describe('CatalogSearchTool', () => {
         price: { toString: () => '13.00' },
         currency: 'PEN',
         category: ProductCategory.HOT_DRINK,
+        metadata: {
+          allergens: ['MILK'],
+          dietaryTags: ['VEGETARIAN'],
+          containsCoffee: true,
+          decaffeinated: false,
+          caffeineFree: false,
+        },
       },
     ]);
     const catalog: Pick<CatalogService, 'searchProducts'> = { searchProducts };
@@ -52,6 +59,11 @@ describe('CatalogSearchTool', () => {
           price: '13.00',
           currency: 'PEN',
           category: 'HOT_DRINK',
+          allergens: ['MILK'],
+          dietaryTags: ['VEGETARIAN'],
+          containsCoffee: true,
+          decaffeinated: false,
+          caffeineFree: false,
         },
       ],
     });
@@ -76,6 +88,7 @@ describe('CatalogSearchTool', () => {
       price: { toString: () => '12.00' },
       currency: 'PEN',
       category: ProductCategory.HOT_DRINK,
+      metadata: {},
     };
     const searchProducts = jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([product]);
     const tool = new CatalogSearchTool({ searchProducts });
@@ -98,5 +111,39 @@ describe('CatalogSearchTool', () => {
       context,
     );
     expect(JSON.parse(output)).toEqual(expect.objectContaining({ catalogStatus: 'results_found' }));
+  });
+
+  it('does not infer undeclared preferences from malformed metadata', async () => {
+    const searchProducts = jest.fn().mockResolvedValue([
+      {
+        id: 'product-1',
+        slug: 'mystery-drink',
+        name: 'Mystery drink',
+        description: 'Description.',
+        price: { toString: () => '10.00' },
+        currency: 'PEN',
+        category: ProductCategory.COLD_DRINK,
+        metadata: {
+          allergens: 'MILK',
+          dietaryTags: [42],
+          containsCoffee: 'false',
+        },
+      },
+    ]);
+    const tool = new CatalogSearchTool({ searchProducts });
+
+    const output = JSON.parse(
+      await tool.execute({ productName: null, category: null, maxPrice: null, context }),
+    ) as { products: unknown[] };
+
+    expect(output.products).toEqual([
+      expect.objectContaining({
+        allergens: [],
+        dietaryTags: [],
+        containsCoffee: null,
+        decaffeinated: null,
+        caffeineFree: null,
+      }),
+    ]);
   });
 });

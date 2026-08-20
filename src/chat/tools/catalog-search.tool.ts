@@ -5,6 +5,14 @@ import type { ProductCategory } from '../../generated/prisma/enums';
 
 const CATALOG_RESULT_LIMIT = 20;
 
+interface CatalogProductPreferences {
+  allergens: string[];
+  dietaryTags: string[];
+  containsCoffee: boolean | null;
+  decaffeinated: boolean | null;
+  caffeineFree: boolean | null;
+}
+
 export interface CatalogSearchArguments {
   productName: string | null;
   category: ProductCategory | null;
@@ -50,8 +58,43 @@ export class CatalogSearchTool {
         price: product.price.toString(),
         currency: product.currency,
         category: product.category,
+        ...this.getProductPreferences(product.metadata),
       })),
     });
+  }
+
+  private getProductPreferences(metadata: unknown): CatalogProductPreferences {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return this.emptyProductPreferences();
+    }
+
+    const values = metadata as Record<string, unknown>;
+
+    return {
+      allergens: this.getStringArray(values.allergens),
+      dietaryTags: this.getStringArray(values.dietaryTags),
+      containsCoffee: this.getBooleanOrNull(values.containsCoffee),
+      decaffeinated: this.getBooleanOrNull(values.decaffeinated),
+      caffeineFree: this.getBooleanOrNull(values.caffeineFree),
+    };
+  }
+
+  private emptyProductPreferences(): CatalogProductPreferences {
+    return {
+      allergens: [],
+      dietaryTags: [],
+      containsCoffee: null,
+      decaffeinated: null,
+      caffeineFree: null,
+    };
+  }
+
+  private getStringArray(value: unknown): string[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : [];
+  }
+
+  private getBooleanOrNull(value: unknown): boolean | null {
+    return typeof value === 'boolean' ? value : null;
   }
 
   private getFallbackProductName(productName: string | null): string | undefined {

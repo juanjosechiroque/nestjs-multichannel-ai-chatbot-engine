@@ -32,6 +32,13 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain(
       'Use search_catalog for current product names, descriptions, categories, exact prices',
     );
+    expect(prompt).toContain(
+      'declared allergens, dietary tags, and caffeine or coffee preferences',
+    );
+    expect(prompt).toContain(
+      'Treat allergens as declared ingredients, not as a guarantee against cross-contamination',
+    );
+    expect(prompt).toContain('only when its catalog fields explicitly support that claim');
     expect(prompt).toContain('Use search_knowledge for other factual questions about Café Nube');
     expect(prompt).toContain('Do not use business tools for greetings');
     expect(prompt).toContain('Use at most one business tool');

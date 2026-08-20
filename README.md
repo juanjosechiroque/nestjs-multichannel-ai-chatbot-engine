@@ -17,11 +17,12 @@ channel. Web, WhatsApp, and future channels will be thin adapters that call the 
 - `POST /api/chat` chat endpoint.
 - OpenAI Responses API integration using `gpt-5.6-luna`.
 - PostgreSQL catalog persistence with Prisma ORM.
-- Reproducible Café Nube demo seed with products, promotions, and FAQs.
+- Reproducible Café Nube demo seed with 20 products, promotions, and FAQs.
 - Read-only catalog endpoints backed by PostgreSQL.
 - Semantic business knowledge retrieval with OpenAI embeddings and PostgreSQL/pgvector.
 - Model-selected tools that avoid running RAG for greetings and unrelated requests.
-- Exact active-product catalog queries from PostgreSQL without generating embeddings.
+- Exact active-product catalog queries from PostgreSQL, including normalized allergens and dietary
+  preferences, without generating embeddings.
 - Backend-managed web sessions with persistent PostgreSQL conversation history.
 - Context-aware knowledge retrieval for conversational follow-up questions.
 - Structured OpenAI latency and token usage logging.
@@ -196,6 +197,26 @@ run only one case, provide its exact name:
 CHAT_SECURITY_EVALUATION_CASE="prompt injection" npm run chat:evaluate:security
 ```
 
+### Product catalog evaluation
+
+After loading the seed, run the live catalog evaluation:
+
+```bash
+npm run chat:evaluate:catalog
+```
+
+The command runs five representative chatbot questions for category, maximum price, and dietary
+or caffeine preferences. Each case verifies deterministically that the model selected
+`search_catalog`, attributed every expected product source, and did not attribute explicitly
+forbidden products. It reads exact active products from PostgreSQL and does not generate embeddings.
+
+This evaluation uses the real OpenAI generation model, so it has API token cost and is intentionally
+excluded from `npm run validate` and CI. Run one case by exact name when diagnosing a failure:
+
+```bash
+CHAT_CATALOG_EVALUATION_CASE="cold caffeine-free preference" npm run chat:evaluate:catalog
+```
+
 ### Unit test coverage
 
 Run the deterministic unit-test suite with coverage:
@@ -254,7 +275,7 @@ npm run db:seed
 npm run knowledge:ingest
 ```
 
-The seed is explicit and safe to run again. It uses stable slugs to update the 10 products, 3
+The seed is explicit and safe to run again. It uses stable slugs to update the 20 products, 3
 promotions, and 10 active FAQs without creating duplicates. Run `knowledge:ingest` after changing this
 business data. The command creates or updates the pgvector knowledge index and skips unchanged
 documents.

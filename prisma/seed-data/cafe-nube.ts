@@ -1,4 +1,20 @@
 import { ProductCategory } from '../../src/generated/prisma/enums';
+import type { Prisma } from '../../src/generated/prisma/client';
+
+type ProductAllergen = 'GLUTEN' | 'MILK' | 'EGG' | 'TREE_NUTS' | 'SESAME';
+type ProductDietaryTag = 'VEGETARIAN' | 'VEGAN';
+
+interface ProductMetadata extends Prisma.InputJsonObject {
+  allergens: ProductAllergen[];
+  dietaryTags: ProductDietaryTag[];
+  containsCoffee: boolean;
+  decaffeinated: boolean;
+  caffeineFree: boolean;
+}
+
+function productMetadata(metadata: ProductMetadata): ProductMetadata {
+  return metadata;
+}
 
 export const cafeNubeProducts = [
   {
@@ -10,11 +26,14 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.HOT_DRINK,
     active: true,
-    metadata: {
-      size: 'Único',
+    metadata: productMetadata({
       allergens: [],
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
       notes: ['El origen del café cambia según la temporada'],
-    },
+    }),
   },
   {
     slug: 'americano',
@@ -24,11 +43,13 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.HOT_DRINK,
     active: true,
-    metadata: {
-      size: 'Único',
+    metadata: productMetadata({
       allergens: [],
-      extras: [{ name: 'Shot adicional de espresso', price: '4.00' }],
-    },
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
   },
   {
     slug: 'cappuccino',
@@ -38,12 +59,13 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.HOT_DRINK,
     active: true,
-    metadata: {
-      size: 'Único',
-      allergens: ['leche'],
-      alternativeMilks: ['avena', 'almendras'],
-      alternativeMilkPrice: '3.00',
-    },
+    metadata: productMetadata({
+      allergens: ['MILK'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
   },
   {
     slug: 'latte',
@@ -53,12 +75,13 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.HOT_DRINK,
     active: true,
-    metadata: {
-      size: 'Único',
-      allergens: ['leche'],
-      alternativeMilks: ['avena', 'almendras'],
-      alternativeMilkPrice: '3.00',
-    },
+    metadata: productMetadata({
+      allergens: ['MILK'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
   },
   {
     slug: 'moca-cacao-peruano',
@@ -68,12 +91,46 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.HOT_DRINK,
     active: true,
-    metadata: {
-      size: 'Único',
-      allergens: ['leche'],
-      alternativeMilks: ['avena', 'almendras'],
-      alternativeMilkPrice: '3.00',
-    },
+    metadata: productMetadata({
+      allergens: ['MILK'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
+  },
+  {
+    slug: 'chocolate-caliente-cacao-peruano',
+    name: 'Chocolate caliente de cacao peruano',
+    description: 'Chocolate preparado con cacao peruano, leche y un toque de panela.',
+    price: '14.00',
+    currency: 'PEN',
+    category: ProductCategory.HOT_DRINK,
+    active: true,
+    metadata: productMetadata({
+      allergens: ['MILK'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
+  },
+  {
+    slug: 'cafe-filtrado-descafeinado',
+    name: 'Café filtrado descafeinado',
+    description: 'Café descafeinado preparado al momento con método filtrado.',
+    price: '11.00',
+    currency: 'PEN',
+    category: ProductCategory.HOT_DRINK,
+    active: true,
+    metadata: productMetadata({
+      allergens: [],
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: true,
+      caffeineFree: false,
+      notes: ['El café descafeinado puede conservar una pequeña cantidad de cafeína'],
+    }),
   },
   {
     slug: 'cold-brew-citrico',
@@ -83,11 +140,14 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.COLD_DRINK,
     active: true,
-    metadata: {
-      size: 'Único',
+    metadata: productMetadata({
       allergens: [],
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
       extractionHours: 16,
-    },
+    }),
   },
   {
     slug: 'frappe-nube',
@@ -97,11 +157,77 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.COLD_DRINK,
     active: true,
-    metadata: {
-      size: 'Único',
-      allergens: ['leche'],
-      options: ['con crema batida', 'sin crema batida'],
-    },
+    metadata: productMetadata({
+      allergens: ['MILK'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
+  },
+  {
+    slug: 'iced-latte',
+    name: 'Iced latte',
+    description: 'Espresso con leche fría y hielo.',
+    price: '15.00',
+    currency: 'PEN',
+    category: ProductCategory.COLD_DRINK,
+    active: true,
+    metadata: productMetadata({
+      allergens: ['MILK'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
+  },
+  {
+    slug: 'te-helado-maracuya',
+    name: 'Té helado de maracuyá',
+    description: 'Té negro frío con maracuyá y un toque de hierbaluisa.',
+    price: '12.00',
+    currency: 'PEN',
+    category: ProductCategory.COLD_DRINK,
+    active: true,
+    metadata: productMetadata({
+      allergens: [],
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
+  },
+  {
+    slug: 'espresso-tonic',
+    name: 'Espresso tonic',
+    description: 'Espresso servido con agua tónica, hielo y piel de limón.',
+    price: '16.00',
+    currency: 'PEN',
+    category: ProductCategory.COLD_DRINK,
+    active: true,
+    metadata: productMetadata({
+      allergens: [],
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: true,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
+  },
+  {
+    slug: 'chicha-morada-especiada',
+    name: 'Chicha morada especiada',
+    description: 'Bebida fría preparada con maíz morado, piña, canela y clavo de olor.',
+    price: '10.00',
+    currency: 'PEN',
+    category: ProductCategory.COLD_DRINK,
+    active: true,
+    metadata: productMetadata({
+      allergens: [],
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: true,
+    }),
   },
   {
     slug: 'croissant-mantequilla',
@@ -111,10 +237,14 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.FOOD,
     active: true,
-    metadata: {
-      allergens: ['gluten', 'leche', 'huevo'],
-      availability: 'Hasta agotar stock',
-    },
+    metadata: productMetadata({
+      allergens: ['GLUTEN', 'MILK', 'EGG'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: true,
+      availabilityNote: 'Hasta agotar stock',
+    }),
   },
   {
     slug: 'toston-palteado',
@@ -124,10 +254,13 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.FOOD,
     active: true,
-    metadata: {
-      allergens: ['gluten', 'sésamo'],
-      dietaryTags: ['vegetariano'],
-    },
+    metadata: productMetadata({
+      allergens: ['GLUTEN', 'SESAME'],
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: true,
+    }),
   },
   {
     slug: 'carrot-cake',
@@ -137,10 +270,78 @@ export const cafeNubeProducts = [
     currency: 'PEN',
     category: ProductCategory.FOOD,
     active: true,
-    metadata: {
-      allergens: ['gluten', 'leche', 'huevo', 'frutos secos'],
-      availability: 'Hasta agotar stock',
-    },
+    metadata: productMetadata({
+      allergens: ['GLUTEN', 'MILK', 'EGG', 'TREE_NUTS'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: true,
+      availabilityNote: 'Hasta agotar stock',
+    }),
+  },
+  {
+    slug: 'panini-caprese',
+    name: 'Panini caprese',
+    description: 'Pan ciabatta con mozzarella, tomate, albahaca y pesto.',
+    price: '19.00',
+    currency: 'PEN',
+    category: ProductCategory.FOOD,
+    active: true,
+    metadata: productMetadata({
+      allergens: ['GLUTEN', 'MILK', 'TREE_NUTS'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: true,
+    }),
+  },
+  {
+    slug: 'brownie-cacao',
+    name: 'Brownie de cacao',
+    description: 'Brownie húmedo preparado con cacao peruano y chocolate.',
+    price: '11.00',
+    currency: 'PEN',
+    category: ProductCategory.FOOD,
+    active: true,
+    metadata: productMetadata({
+      allergens: ['GLUTEN', 'MILK', 'EGG'],
+      dietaryTags: ['VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
+  },
+  {
+    slug: 'galleta-vegana-avena-cacao',
+    name: 'Galleta vegana de avena y cacao',
+    description: 'Galleta de avena, cacao y plátano, preparada sin ingredientes de origen animal.',
+    price: '9.00',
+    currency: 'PEN',
+    category: ProductCategory.FOOD,
+    active: true,
+    metadata: productMetadata({
+      allergens: ['GLUTEN'],
+      dietaryTags: ['VEGAN', 'VEGETARIAN'],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: false,
+    }),
+  },
+  {
+    slug: 'sandwich-pollo-pesto',
+    name: 'Sándwich de pollo al pesto',
+    description: 'Pan de masa madre con pollo, pesto, tomate y queso.',
+    price: '21.00',
+    currency: 'PEN',
+    category: ProductCategory.FOOD,
+    active: true,
+    metadata: productMetadata({
+      allergens: ['GLUTEN', 'MILK', 'TREE_NUTS'],
+      dietaryTags: [],
+      containsCoffee: false,
+      decaffeinated: false,
+      caffeineFree: true,
+    }),
   },
 ] as const;
 
@@ -298,7 +499,7 @@ export const cafeNubeFaqs = [
     category: 'DIETARY_OPTIONS',
     question: '¿Tienen opciones vegetarianas o leches vegetales?',
     answer:
-      'Sí. El tostón palteado es vegetariano. Las bebidas con leche pueden prepararse con leche de avena o almendras por S/ 3 adicionales, sujeto a disponibilidad.',
+      'Sí. La carta incluye opciones vegetarianas y veganas identificadas por producto. Entre las opciones veganas están el tostón palteado y la galleta vegana de avena y cacao. Las bebidas con leche pueden prepararse con leche de avena o almendras por S/ 3 adicionales, sujeto a disponibilidad.',
     active: true,
     metadata: {
       alternativeMilks: ['avena', 'almendras'],
@@ -310,7 +511,7 @@ export const cafeNubeFaqs = [
     category: 'ALLERGENS',
     question: '¿Tienen productos sin gluten?',
     answer:
-      'El Espresso Nube, el Americano y el Cold Brew cítrico no contienen gluten entre sus ingredientes. Sin embargo, todos los productos se preparan en espacios compartidos, por lo que no podemos garantizar que estén libres de contaminación cruzada.',
+      'Varias bebidas no incluyen gluten entre sus ingredientes, como el Espresso Nube, el Americano, el café filtrado descafeinado, el Cold Brew cítrico, el Espresso tonic y la chicha morada especiada. Sin embargo, todos los productos se preparan en espacios compartidos, por lo que no podemos garantizar que estén libres de contaminación cruzada.',
     active: true,
     metadata: {
       allergens: ['leche', 'gluten', 'huevo', 'frutos secos', 'sésamo'],
