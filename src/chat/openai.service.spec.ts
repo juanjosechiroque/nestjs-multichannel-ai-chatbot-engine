@@ -6,6 +6,7 @@ import {
   OpenAiEmptyResponseException,
   OpenAiRequestFailedException,
 } from '../common/application-error';
+import { ProductCategory } from '../generated/prisma/enums';
 import { OpenAiService, type GenerateResponseInput } from './openai.service';
 
 interface ResponsesClientStub {
@@ -24,6 +25,7 @@ function generateInput(overrides: Partial<GenerateResponseInput> = {}): Generate
     message: 'Hola',
     instructions: 'Only answer questions about Café Nube.',
     history: [],
+    searchCatalog: jest.fn(),
     searchKnowledge: jest.fn(),
     ...overrides,
   };
@@ -123,13 +125,24 @@ describe('OpenAiService', () => {
         max_output_tokens: 500,
       }),
     );
-    expect(initialRequest?.tools).toHaveLength(1);
-    expect(initialRequest?.tools?.[0]).toEqual(
-      expect.objectContaining({
-        type: 'function',
-        name: 'search_knowledge',
-        strict: true,
-      }),
+    expect(initialRequest?.tools).toHaveLength(2);
+    expect(initialRequest?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'function',
+          name: 'search_catalog',
+          strict: true,
+        }),
+      ]),
+    );
+    expect(initialRequest?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'function',
+          name: 'search_knowledge',
+          strict: true,
+        }),
+      ]),
     );
     const tool = initialRequest?.tools?.[0];
     expect(tool?.type === 'function' ? tool.parameters : undefined).toEqual(
@@ -268,6 +281,81 @@ describe('OpenAiService', () => {
     });
   });
 
+  it('executes search_catalog with validated filters and attributes returned products', async () => {
+    const { service, create } = createService();
+    const catalogOutput = JSON.stringify({
+      catalogStatus: 'results_found',
+      products: [
+        {
+          sourceId: 'product-1',
+          sourceKey: 'cappuccino-nube',
+          type: 'product',
+          name: 'Cappuccino Nube',
+          description: 'Espresso con leche vaporizada.',
+          price: '13.00',
+          currency: 'PEN',
+          category: 'HOT_DRINK',
+        },
+      ],
+    });
+    const searchCatalog = jest.fn().mockResolvedValue(catalogOutput);
+    const functionCall = {
+      type: 'function_call',
+      call_id: 'call-catalog',
+      name: 'search_catalog',
+      arguments: JSON.stringify({
+        productName: 'cappuccino',
+        category: 'HOT_DRINK',
+        maxPrice: 15,
+      }),
+    };
+    create
+      .mockResolvedValueOnce({
+        output: [functionCall],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse('Cuesta S/ 13.00.', ['product-1']),
+        model: 'gpt-5.6-luna',
+      });
+
+    await expect(
+      service.generate(
+        generateInput({
+          message: '¿Cuánto cuesta el cappuccino?',
+          searchCatalog,
+        }),
+      ),
+    ).resolves.toEqual({
+      answer: 'Cuesta S/ 13.00.',
+      usedSources: [
+        {
+          sourceId: 'product-1',
+          sourceKey: 'cappuccino-nube',
+          sourceType: 'product',
+        },
+      ],
+      llmCalls: 2,
+      usedTools: ['search_catalog'],
+    });
+    expect(searchCatalog).toHaveBeenCalledWith({
+      productName: 'cappuccino',
+      category: ProductCategory.HOT_DRINK,
+      maxPrice: 15,
+    });
+    expect(responseRequest(create, 1)?.input).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'function_call_output',
+          call_id: 'call-catalog',
+          output: catalogOutput,
+        },
+      ]),
+    );
+  });
+
   it('rejects invalid tool arguments without executing application code', async () => {
     const { service, create } = createService();
     const searchKnowledge = jest.fn();
@@ -288,6 +376,32 @@ describe('OpenAiService', () => {
       new OpenAiRequestFailedException(),
     );
     expect(searchKnowledge).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid catalog filters without querying PostgreSQL', async () => {
+    const { service, create } = createService();
+    const searchCatalog = jest.fn();
+    create.mockResolvedValue({
+      output: [
+        {
+          type: 'function_call',
+          call_id: 'call-invalid-catalog',
+          name: 'search_catalog',
+          arguments: JSON.stringify({
+            productName: null,
+            category: 'UNKNOWN_CATEGORY',
+            maxPrice: -1,
+          }),
+        },
+      ],
+      output_text: '',
+      model: 'gpt-5.6-luna',
+    });
+
+    await expect(service.generate(generateInput({ searchCatalog }))).rejects.toEqual(
+      new OpenAiRequestFailedException(),
+    );
+    expect(searchCatalog).not.toHaveBeenCalled();
   });
 
   it('preserves a database failure raised by the knowledge tool', async () => {

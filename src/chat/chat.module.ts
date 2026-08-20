@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CatalogModule } from '../catalog/catalog.module';
 import { ConversationModule } from '../conversation/conversation.module';
 import { MemoryModule } from '../memory/memory.module';
 import { RagModule } from '../rag/rag.module';
@@ -7,13 +8,15 @@ import { ChatService } from './chat.service';
 import { ConversationSecurityEvaluationService } from './evaluation/conversation-security-evaluation.service';
 import { ConversationSecurityJudgeService } from './evaluation/conversation-security-judge.service';
 import { OpenAiService } from './openai.service';
+import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 
 @Module({
-  imports: [ConversationModule, MemoryModule, RagModule],
+  imports: [CatalogModule, ConversationModule, MemoryModule, RagModule],
   controllers: [ChatController],
   providers: [
     ChatService,
+    CatalogSearchTool,
     ConversationSecurityEvaluationService,
     ConversationSecurityJudgeService,
     KnowledgeSearchTool,

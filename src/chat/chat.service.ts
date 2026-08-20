@@ -5,6 +5,7 @@ import type { RequestContext } from '../common/request-context';
 import { MemoryService } from '../memory/memory.service';
 import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
+import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 import type { ChatRequest } from './chat.types';
 
@@ -17,6 +18,8 @@ export class ChatService {
     @Inject(OpenAiService)
     private readonly openAi: Pick<OpenAiService, 'generate'>,
     private readonly config: ConfigService,
+    @Inject(CatalogSearchTool)
+    private readonly catalogSearch: Pick<CatalogSearchTool, 'execute'>,
     @Inject(KnowledgeSearchTool)
     private readonly knowledgeSearch: Pick<KnowledgeSearchTool, 'execute'>,
     @Inject(MemoryService)
@@ -39,6 +42,7 @@ export class ChatService {
         message,
         instructions: this.instructions,
         history,
+        searchCatalog: (filters) => this.catalogSearch.execute({ ...filters, context }),
         searchKnowledge: (query) => this.knowledgeSearch.execute({ query, history, context }),
       });
 

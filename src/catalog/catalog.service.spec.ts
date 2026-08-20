@@ -1,5 +1,6 @@
 import type { PrismaService } from '../database/prisma.service';
 import { DatabaseUnavailableException } from '../common/application-error';
+import { ProductCategory } from '../generated/prisma/enums';
 import { CatalogService } from './catalog.service';
 
 describe('CatalogService', () => {
@@ -26,6 +27,40 @@ describe('CatalogService', () => {
     expect(findMany).toHaveBeenCalledWith({
       where: { active: true },
       orderBy: { name: 'asc' },
+    });
+  });
+
+  it('searches active products with exact structured filters', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new CatalogService({
+      product: { findMany },
+    } as unknown as PrismaService);
+    const context = {
+      requestId: 'request-1',
+      conversationId: 'conversation-1',
+      channel: 'web' as const,
+    };
+
+    await expect(
+      service.searchProducts(
+        {
+          productName: 'cappuccino',
+          category: ProductCategory.HOT_DRINK,
+          maxPrice: 15,
+          limit: 20,
+        },
+        context,
+      ),
+    ).resolves.toEqual([]);
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        active: true,
+        name: { contains: 'cappuccino', mode: 'insensitive' },
+        category: ProductCategory.HOT_DRINK,
+        price: { lte: 15 },
+      },
+      orderBy: { name: 'asc' },
+      take: 20,
     });
   });
 

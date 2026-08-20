@@ -317,6 +317,7 @@ describe('HTTP conversation flow', () => {
       }),
     );
     expect(typeof generationInput?.searchKnowledge).toBe('function');
+    expect(typeof generationInput?.searchCatalog).toBe('function');
 
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { channel_sessionId: { channel: 'web', sessionId } },
@@ -327,6 +328,77 @@ describe('HTTP conversation flow', () => {
       expect.objectContaining({ role: 'USER', content: 'Hola' }),
       expect.objectContaining({ role: 'ASSISTANT', content: 'Respuesta de prueba' }),
     ]);
+  });
+
+  it('queries the active product catalog without running embeddings', async () => {
+    const productId = randomUUID();
+    await prisma.product.createMany({
+      data: [
+        {
+          id: productId,
+          slug: 'cappuccino-nube',
+          name: 'Cappuccino Nube',
+          description: 'Espresso con leche vaporizada.',
+          price: '13.00',
+          category: ProductCategory.HOT_DRINK,
+          active: true,
+        },
+        {
+          id: randomUUID(),
+          slug: 'cappuccino-inactivo',
+          name: 'Cappuccino Inactivo',
+          description: 'No debe devolverse.',
+          price: '10.00',
+          category: ProductCategory.HOT_DRINK,
+          active: false,
+        },
+      ],
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    let toolOutput: string | undefined;
+    generate.mockImplementationOnce(async (input) => {
+      toolOutput = await input.searchCatalog({
+        productName: 'cappuccino',
+        category: ProductCategory.HOT_DRINK,
+        maxPrice: 15,
+      });
+      return {
+        answer: 'El Cappuccino Nube cuesta S/ 13.00.',
+        usedSources: [
+          {
+            sourceId: productId,
+            sourceKey: 'cappuccino-nube',
+            sourceType: 'product',
+          },
+        ],
+        llmCalls: 2,
+        usedTools: ['search_catalog'],
+      };
+    });
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: '¿Cuánto cuesta el cappuccino?' })
+      .expect(201, { reply: 'El Cappuccino Nube cuesta S/ 13.00.' });
+
+    expect(JSON.parse(toolOutput ?? '')).toEqual({
+      catalogStatus: 'results_found',
+      products: [
+        {
+          sourceId: productId,
+          sourceKey: 'cappuccino-nube',
+          type: 'product',
+          name: 'Cappuccino Nube',
+          description: 'Espresso con leche vaporizada.',
+          price: '13',
+          currency: 'PEN',
+          category: 'HOT_DRINK',
+        },
+      ],
+    });
+    expect(embed).not.toHaveBeenCalled();
+    await expect(prisma.conversationMessage.count()).resolves.toBe(2);
   });
 
   it('retrieves matching pgvector knowledge before generating and persisting a reply', async () => {

@@ -7,14 +7,17 @@ import {
   OpenAiRequestFailedException,
 } from '../common/application-error';
 import type { RequestContext } from '../common/request-context';
+import { ProductCategory } from '../generated/prisma/enums';
 import type { ChatHistoryMessage } from '../memory/memory.types';
 import type { KnowledgeSourceType, RagSourceReference } from '../rag/rag.types';
+import type { CatalogSearchArguments } from './tools/catalog-search.tool';
 
 export interface GenerateResponseInput {
   context: RequestContext;
   message: string;
   instructions: string;
   history: ChatHistoryMessage[];
+  searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
   searchKnowledge: (query: string) => Promise<string>;
 }
 
@@ -35,6 +38,7 @@ interface KnowledgeSearchArguments {
 }
 
 const KNOWLEDGE_SEARCH_TOOL_NAME = 'search_knowledge';
+const CATALOG_SEARCH_TOOL_NAME = 'search_catalog';
 const EMPTY_BUSINESS_CONTEXT = JSON.stringify({
   retrievalStatus: 'no_results',
   knowledge: [],
@@ -45,7 +49,8 @@ const KNOWLEDGE_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
   name: KNOWLEDGE_SEARCH_TOOL_NAME,
   description: [
     "Search the current business's confirmed knowledge base.",
-    'Use it before answering factual questions about products, prices, promotions, FAQs, location, hours, policies, availability, or services.',
+    'Use it before answering factual questions about promotions, FAQs, location, hours, policies, or published services.',
+    'Use search_catalog instead for products, product descriptions, categories, exact prices, or product lists.',
     'Do not use it for greetings, thanks, brief social messages, or requests outside the business scope.',
     'Write a concise search query that preserves the customer intent.',
   ].join(' '),
@@ -65,6 +70,44 @@ const KNOWLEDGE_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
   strict: true,
 };
 
+const CATALOG_SEARCH_TOOL: OpenAI.Responses.FunctionTool = {
+  type: 'function',
+  name: CATALOG_SEARCH_TOOL_NAME,
+  description: [
+    "Search the current business's active product catalog in its database.",
+    'Use it for product names, descriptions, categories, exact prices, complete product lists, and price filters.',
+    'Do not use it for FAQs, policies, location, hours, services, or promotions.',
+    'A catalog product being active does not confirm real-time stock availability.',
+  ].join(' '),
+  parameters: {
+    type: 'object',
+    properties: {
+      productName: {
+        type: ['string', 'null'],
+        description: 'Full or partial product name, or null when no name filter is needed.',
+        minLength: 1,
+        maxLength: 100,
+      },
+      category: {
+        type: ['string', 'null'],
+        description: 'Product category filter, or null when all categories are acceptable.',
+        enum: [...Object.values(ProductCategory), null],
+      },
+      maxPrice: {
+        type: ['number', 'null'],
+        description: 'Maximum price in the catalog currency, or null when there is no price limit.',
+        minimum: 0,
+        maximum: 10_000,
+      },
+    },
+    required: ['productName', 'category', 'maxPrice'],
+    additionalProperties: false,
+  },
+  strict: true,
+};
+
+const CHAT_TOOLS: OpenAI.Responses.FunctionTool[] = [KNOWLEDGE_SEARCH_TOOL, CATALOG_SEARCH_TOOL];
+
 const CHAT_RESPONSE_FORMAT = {
   type: 'json_schema' as const,
   name: 'chat_response',
@@ -78,7 +121,7 @@ const CHAT_RESPONSE_FORMAT = {
       },
       usedSourceIds: {
         type: 'array',
-        description: 'Identifiers of retrieved knowledge items that directly support the answer.',
+        description: 'Identifiers of business-tool items that directly support the answer.',
         items: { type: 'string' },
       },
     },
@@ -111,6 +154,7 @@ export class OpenAiService {
     message,
     instructions,
     history,
+    searchCatalog,
     searchKnowledge,
   }: GenerateResponseInput): Promise<GenerateResponseResult> {
     const startedAt = Date.now();
@@ -148,11 +192,6 @@ export class OpenAiService {
       if (!toolCall) {
         throw new Error('OpenAI did not provide the requested tool call');
       }
-      if (toolCall.name !== KNOWLEDGE_SEARCH_TOOL_NAME) {
-        throw new Error(`OpenAI requested an unsupported tool: ${toolCall.name}`);
-      }
-
-      const { query } = this.parseKnowledgeSearchArguments(toolCall.arguments);
       this.logger.log({
         event: 'openai.tool.requested',
         ...context,
@@ -165,7 +204,11 @@ export class OpenAiService {
         totalTokens: initialResponse.usage?.total_tokens,
       });
 
-      const businessContext = await searchKnowledge(query);
+      const toolOutput = await this.executeToolCall({
+        toolCall,
+        searchCatalog,
+        searchKnowledge,
+      });
       // The Responses API requires replaying every output item. The SDK models a few
       // output-only status variants more broadly than its input union, so bridge them via unknown.
       const continuationItems = initialResponse.output as unknown as OpenAI.Responses.ResponseInput;
@@ -175,7 +218,7 @@ export class OpenAiService {
         {
           type: 'function_call_output',
           call_id: toolCall.call_id,
-          output: businessContext,
+          output: toolOutput,
         },
       ];
       const finalCallStartedAt = Date.now();
@@ -191,13 +234,13 @@ export class OpenAiService {
 
       return this.completeGeneration({
         response: finalResponse,
-        businessContext,
+        businessContext: toolOutput,
         context,
         phase: 'final',
         callStartedAt: finalCallStartedAt,
         totalStartedAt: startedAt,
         llmCalls: 2,
-        usedTools: [KNOWLEDGE_SEARCH_TOOL_NAME],
+        usedTools: [toolCall.name],
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown OpenAI error';
@@ -256,7 +299,7 @@ export class OpenAiService {
       model: this.config.get<string>('OPENAI_MODEL', 'gpt-5.6-luna'),
       instructions,
       input,
-      tools: [KNOWLEDGE_SEARCH_TOOL],
+      tools: CHAT_TOOLS,
       tool_choice: toolChoice,
       parallel_tool_calls: false,
       store: false,
@@ -337,6 +380,27 @@ export class OpenAiService {
     };
   }
 
+  private executeToolCall({
+    toolCall,
+    searchCatalog,
+    searchKnowledge,
+  }: {
+    toolCall: OpenAI.Responses.ResponseFunctionToolCall;
+    searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
+    searchKnowledge: (query: string) => Promise<string>;
+  }): Promise<string> {
+    switch (toolCall.name) {
+      case KNOWLEDGE_SEARCH_TOOL_NAME: {
+        const { query } = this.parseKnowledgeSearchArguments(toolCall.arguments);
+        return searchKnowledge(query);
+      }
+      case CATALOG_SEARCH_TOOL_NAME:
+        return searchCatalog(this.parseCatalogSearchArguments(toolCall.arguments));
+      default:
+        throw new Error(`OpenAI requested an unsupported tool: ${toolCall.name}`);
+    }
+  }
+
   private parseKnowledgeSearchArguments(argumentsJson: string): KnowledgeSearchArguments {
     const parsed: unknown = JSON.parse(argumentsJson);
 
@@ -353,6 +417,54 @@ export class OpenAiService {
     }
 
     return { query: parsed.query.trim() };
+  }
+
+  private parseCatalogSearchArguments(argumentsJson: string): CatalogSearchArguments {
+    const parsed: unknown = JSON.parse(argumentsJson);
+
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !('productName' in parsed) ||
+      !('category' in parsed) ||
+      !('maxPrice' in parsed) ||
+      Object.keys(parsed).some(
+        (key) => key !== 'productName' && key !== 'category' && key !== 'maxPrice',
+      )
+    ) {
+      throw new Error('OpenAI returned invalid search_catalog arguments');
+    }
+
+    const productName = parsed.productName;
+    const category = parsed.category;
+    const maxPrice = parsed.maxPrice;
+    const validCategory =
+      category === null || Object.values(ProductCategory).some((value) => value === category);
+
+    if (
+      !(
+        productName === null ||
+        (typeof productName === 'string' &&
+          productName.trim().length > 0 &&
+          productName.length <= 100)
+      ) ||
+      !validCategory ||
+      !(
+        maxPrice === null ||
+        (typeof maxPrice === 'number' &&
+          Number.isFinite(maxPrice) &&
+          maxPrice >= 0 &&
+          maxPrice <= 10_000)
+      )
+    ) {
+      throw new Error('OpenAI returned invalid search_catalog arguments');
+    }
+
+    return {
+      productName: productName === null ? null : productName.trim(),
+      category: category as ProductCategory | null,
+      maxPrice,
+    };
   }
 
   private parseResponse(outputText: string): StructuredChatResponse {
@@ -382,16 +494,20 @@ export class OpenAiService {
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
-      !('knowledge' in parsed) ||
-      !Array.isArray(parsed.knowledge)
+      (!('knowledge' in parsed) && !('products' in parsed)) ||
+      ('knowledge' in parsed && !Array.isArray(parsed.knowledge)) ||
+      ('products' in parsed && !Array.isArray(parsed.products))
     ) {
       throw new Error('Business context has an invalid structure');
     }
 
-    const knowledge: unknown[] = parsed.knowledge;
+    const knowledge: unknown[] =
+      'knowledge' in parsed && Array.isArray(parsed.knowledge) ? parsed.knowledge : [];
+    const products: unknown[] =
+      'products' in parsed && Array.isArray(parsed.products) ? parsed.products : [];
 
     return new Map<string, RagSourceReference>(
-      knowledge.flatMap((item): Array<[string, RagSourceReference]> => {
+      [...knowledge, ...products].flatMap((item): Array<[string, RagSourceReference]> => {
         if (
           typeof item === 'object' &&
           item !== null &&
