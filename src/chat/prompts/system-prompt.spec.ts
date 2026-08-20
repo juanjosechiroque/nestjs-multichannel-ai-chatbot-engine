@@ -79,12 +79,21 @@ describe('buildSystemPrompt', () => {
       'Prefer natural wording over formal or scripted customer-service phrases',
     );
     expect(prompt).toContain('do not repeatedly begin order replies with the same acknowledgement');
+    expect(prompt).toContain('do not use the inverted opening marks');
+    expect(prompt).toContain('do not append an ISO currency code');
     expect(prompt).toContain('Never expose internal order states');
     expect(prompt).toContain('ask whether the customer wants to add something else');
     expect(prompt).toContain('workflow.canConfirm is true');
-    expect(prompt).toContain('do not repeat the item list');
-    expect(prompt).toContain('briefly restate the customer name, masked phone, and total');
+    expect(prompt).toContain('never repeat the item list');
+    expect(prompt).toContain('the phone as "teléfono terminado en"');
+    expect(prompt).toContain('Never present those digits as a standalone phone number');
     expect(prompt).toContain('If manage_order returns clarification_required');
+    expect(prompt).toContain('invalid_customer_phone_length');
+    expect(prompt).toContain('invalid_customer_phone_format');
+    expect(prompt).toContain('invalid_customer_name');
+    expect(prompt).toContain('every field still listed in workflow.missingCustomerFields');
+    expect(prompt).toContain('do not claim that any supplied field was saved');
+    expect(prompt).toContain('Never describe these validation rejections as temporary failures');
     expect(prompt).toContain('If manage_order returns rejected');
     expect(prompt).toContain('Every confirmed order requires both customer name and phone');
     expect(prompt).toContain('Use set_order_customer when the customer provides');

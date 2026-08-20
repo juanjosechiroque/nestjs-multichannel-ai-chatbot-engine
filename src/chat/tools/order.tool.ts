@@ -4,6 +4,10 @@ import { ApplicationServiceUnavailableException } from '../../common/application
 import type { RequestContext } from '../../common/request-context';
 import {
   ActiveOrderNotFoundError,
+  CustomerDetailsRequiredError,
+  CustomerNameValidationError,
+  CustomerPhoneFormatError,
+  CustomerPhoneLengthError,
   OrderCurrencyMismatchError,
   OrderError,
   OrderItemNotFoundError,
@@ -176,7 +180,37 @@ export class OrderTool {
       if (error instanceof ApplicationServiceUnavailableException) {
         throw error;
       }
+      await this.preserveValidCustomerDetail(details, error, conversationId, context);
       return this.rejected(OrderAction.SET_CUSTOMER_DETAILS, error, conversationId, context);
+    }
+  }
+
+  private async preserveValidCustomerDetail(
+    details: OrderCustomerDetailsArguments,
+    error: unknown,
+    conversationId: string,
+    context: RequestContext,
+  ): Promise<void> {
+    const validCompanionDetail =
+      (error instanceof CustomerPhoneFormatError || error instanceof CustomerPhoneLengthError) &&
+      details.customerName !== null
+        ? { customerName: details.customerName }
+        : error instanceof CustomerNameValidationError && details.customerPhone !== null
+          ? { customerPhone: details.customerPhone }
+          : null;
+    if (validCompanionDetail === null) return;
+
+    try {
+      await this.orders.setCustomerDetails({ conversationId, ...validCompanionDetail }, context);
+    } catch (companionError: unknown) {
+      if (companionError instanceof ApplicationServiceUnavailableException) throw companionError;
+      if (
+        !(companionError instanceof OrderError) &&
+        !(companionError instanceof InvalidOrderTransitionError) &&
+        !(companionError instanceof RangeError)
+      ) {
+        throw companionError;
+      }
     }
   }
 
@@ -333,27 +367,50 @@ export class OrderTool {
     conversationId: string,
     context: RequestContext,
   ): Promise<string> {
-    let reason = 'invalid_order_operation';
+    let issue: { reason: string; [key: string]: string | number } = {
+      reason: 'invalid_order_operation',
+    };
 
-    if (error instanceof ActiveOrderNotFoundError) reason = 'no_active_order';
-    else if (error instanceof OrderProductNotAvailableError) reason = 'product_not_available';
-    else if (error instanceof OrderItemNotFoundError) reason = 'item_not_in_order';
-    else if (error instanceof OrderItemQuantityExceededError) reason = 'quantity_exceeds_order';
-    else if (error instanceof OrderCurrencyMismatchError) reason = 'currency_mismatch';
-    else if (error instanceof InvalidOrderTransitionError) reason = 'invalid_transition';
-    else if (!(error instanceof OrderError) && !(error instanceof RangeError)) throw error;
+    if (error instanceof ActiveOrderNotFoundError) issue = { reason: 'no_active_order' };
+    else if (error instanceof OrderProductNotAvailableError) {
+      issue = { reason: 'product_not_available' };
+    } else if (error instanceof OrderItemNotFoundError) issue = { reason: 'item_not_in_order' };
+    else if (error instanceof OrderItemQuantityExceededError) {
+      issue = { reason: 'quantity_exceeds_order' };
+    } else if (error instanceof OrderCurrencyMismatchError) issue = { reason: 'currency_mismatch' };
+    else if (error instanceof InvalidOrderTransitionError) issue = { reason: 'invalid_transition' };
+    else if (error instanceof CustomerDetailsRequiredError) {
+      issue = { reason: 'customer_details_required' };
+    } else if (error instanceof CustomerNameValidationError) {
+      issue = {
+        reason: 'invalid_customer_name',
+        minimumCharacters: error.minimumCharacters,
+        maximumCharacters: error.maximumCharacters,
+      };
+    } else if (error instanceof CustomerPhoneFormatError) {
+      issue = { reason: 'invalid_customer_phone_format' };
+    } else if (error instanceof CustomerPhoneLengthError) {
+      issue = {
+        reason: 'invalid_customer_phone_length',
+        minimumDigits: error.minimumDigits,
+        maximumDigits: error.maximumDigits,
+      };
+    } else if (!(error instanceof OrderError) && !(error instanceof RangeError)) throw error;
 
-    const activeOrder =
-      reason === 'invalid_transition'
-        ? await this.orders.getActiveOrder(conversationId, context)
-        : null;
+    const shouldReturnCurrentOrder =
+      issue.reason === 'invalid_transition' ||
+      issue.reason === 'customer_details_required' ||
+      issue.reason.startsWith('invalid_customer_');
+    const activeOrder = shouldReturnCurrentOrder
+      ? await this.orders.getActiveOrder(conversationId, context)
+      : null;
 
     return JSON.stringify({
       orderOperationStatus: 'rejected',
       action,
       order: activeOrder ? this.serializeOrder(activeOrder) : null,
       workflow: activeOrder ? this.getWorkflow(activeOrder) : null,
-      issues: [{ reason }],
+      issues: [issue],
     });
   }
 

@@ -5,6 +5,10 @@ import { OrderStatus as PrismaOrderStatus } from '../generated/prisma/enums';
 import type { PrismaService } from '../database/prisma.service';
 import {
   ActiveOrderNotFoundError,
+  CustomerDetailsRequiredError,
+  CustomerNameValidationError,
+  CustomerPhoneFormatError,
+  CustomerPhoneLengthError,
   OrderCurrencyMismatchError,
   OrderItemNotFoundError,
   OrderItemQuantityExceededError,
@@ -524,17 +528,17 @@ describe('OrderService', () => {
   });
 
   it.each([
-    { customerName: 'A' },
-    { customerName: '12345678' },
-    { customerPhone: '1234' },
-    { customerPhone: 'call987654321' },
-    {},
-  ])('rejects invalid customer details before opening a transaction: %j', (details) => {
+    { details: { customerName: 'A' }, errorType: CustomerNameValidationError },
+    { details: { customerName: '12345678' }, errorType: CustomerNameValidationError },
+    { details: { customerPhone: '1234' }, errorType: CustomerPhoneLengthError },
+    { details: { customerPhone: 'call987654321' }, errorType: CustomerPhoneFormatError },
+    { details: {}, errorType: CustomerDetailsRequiredError },
+  ])('rejects invalid customer details before opening a transaction: $details', (testCase) => {
     const { service, transaction } = createService();
 
     expect(() =>
-      service.setCustomerDetails({ conversationId: CONVERSATION_ID, ...details }),
-    ).toThrow(RangeError);
+      service.setCustomerDetails({ conversationId: CONVERSATION_ID, ...testCase.details }),
+    ).toThrow(testCase.errorType);
     expect(transaction).not.toHaveBeenCalled();
   });
 

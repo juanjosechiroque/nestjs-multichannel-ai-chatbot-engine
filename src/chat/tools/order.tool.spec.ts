@@ -1,6 +1,13 @@
 import { DatabaseUnavailableException } from '../../common/application-error';
 import { Prisma } from '../../generated/prisma/client';
-import { ActiveOrderNotFoundError, OrderProductNotAvailableError } from '../../order/order.errors';
+import {
+  ActiveOrderNotFoundError,
+  CustomerDetailsRequiredError,
+  CustomerNameValidationError,
+  CustomerPhoneFormatError,
+  CustomerPhoneLengthError,
+  OrderProductNotAvailableError,
+} from '../../order/order.errors';
 import { InvalidOrderTransitionError, OrderStateMachine } from '../../order/order-state-machine';
 import type { OrderService } from '../../order/order.service';
 import { OrderAction, OrderStatus, type OrderResult } from '../../order/order.types';
@@ -444,6 +451,119 @@ describe('OrderTool', () => {
     expect(result.workflow).toEqual(
       expect.objectContaining({ canConfirm: true, missingCustomerFields: [] }),
     );
+  });
+
+  it.each([
+    {
+      error: new CustomerPhoneLengthError(),
+      expectedIssue: {
+        reason: 'invalid_customer_phone_length',
+        minimumDigits: 8,
+        maximumDigits: 15,
+      },
+    },
+    {
+      error: new CustomerPhoneFormatError(),
+      expectedIssue: { reason: 'invalid_customer_phone_format' },
+    },
+    {
+      error: new CustomerNameValidationError(),
+      expectedIssue: {
+        reason: 'invalid_customer_name',
+        minimumCharacters: 2,
+        maximumCharacters: 100,
+      },
+    },
+    {
+      error: new CustomerDetailsRequiredError(),
+      expectedIssue: { reason: 'customer_details_required' },
+    },
+  ])('returns a specific customer validation issue for $expectedIssue.reason', async (testCase) => {
+    const { tool, orders } = createTool();
+    orders.setCustomerDetails.mockRejectedValue(testCase.error);
+
+    await expect(
+      tool.setCustomerDetails(
+        { customerName: 'Ana', customerPhone: '1234' },
+        'conversation-1',
+        context,
+      ),
+    ).resolves.toBe(
+      JSON.stringify({
+        orderOperationStatus: 'rejected',
+        action: OrderAction.SET_CUSTOMER_DETAILS,
+        order: null,
+        workflow: null,
+        issues: [testCase.expectedIssue],
+      }),
+    );
+  });
+
+  it('returns the unchanged order so the assistant can request every missing customer field', async () => {
+    const { tool, orders } = createTool();
+    orders.setCustomerDetails.mockRejectedValue(new CustomerPhoneLengthError());
+    orders.getActiveOrder.mockResolvedValue(
+      order({
+        status: OrderStatus.COLLECTING_CUSTOMER_DATA,
+        customerName: null,
+        customerPhone: null,
+      }),
+    );
+
+    const result = JSON.parse(
+      await tool.setCustomerDetails(
+        { customerName: 'Juan José', customerPhone: '998877' },
+        'conversation-1',
+        context,
+      ),
+    ) as {
+      order: { customer: { name: string | null; maskedPhone: string | null } };
+      workflow: { missingCustomerFields: string[] };
+      issues: Array<{ reason: string; minimumDigits: number; maximumDigits: number }>;
+    };
+
+    expect(orders.getActiveOrder).toHaveBeenCalledWith('conversation-1', context);
+    expect(result.order.customer).toEqual({ name: null, maskedPhone: null });
+    expect(result.workflow.missingCustomerFields).toEqual(['customerName', 'customerPhone']);
+    expect(result.issues).toEqual([
+      { reason: 'invalid_customer_phone_length', minimumDigits: 8, maximumDigits: 15 },
+    ]);
+  });
+
+  it('keeps a valid name when the supplied phone is rejected', async () => {
+    const { tool, orders } = createTool();
+    const orderWithName = order({
+      status: OrderStatus.COLLECTING_CUSTOMER_DATA,
+      customerName: 'Juan José',
+      customerPhone: null,
+    });
+    orders.setCustomerDetails
+      .mockRejectedValueOnce(new CustomerPhoneLengthError())
+      .mockResolvedValueOnce(orderWithName);
+    orders.getActiveOrder.mockResolvedValue(orderWithName);
+
+    const result = JSON.parse(
+      await tool.setCustomerDetails(
+        { customerName: 'Juan José', customerPhone: '998877' },
+        'conversation-1',
+        context,
+      ),
+    ) as {
+      order: { customer: { name: string | null; maskedPhone: string | null } };
+      workflow: { missingCustomerFields: string[] };
+      issues: Array<{ reason: string }>;
+    };
+
+    expect(orders.setCustomerDetails).toHaveBeenNthCalledWith(
+      2,
+      { conversationId: 'conversation-1', customerName: 'Juan José' },
+      context,
+    );
+    expect(result.order.customer).toEqual({ name: 'Juan José', maskedPhone: null });
+    expect(result.workflow.missingCustomerFields).toEqual(['customerPhone']);
+    expect(result.issues).toEqual([
+      expect.objectContaining({ reason: 'invalid_customer_phone_length' }),
+    ]);
   });
 
   it('turns a domain rejection into data the assistant can explain', async () => {
