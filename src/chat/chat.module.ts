@@ -4,7 +4,6 @@ import { ConversationModule } from '../conversation/conversation.module';
 import { MemoryModule } from '../memory/memory.module';
 import { OrderModule } from '../order/order.module';
 import { RagModule } from '../rag/rag.module';
-import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { CatalogEvaluationService } from './evaluation/catalog-evaluation.service';
 import { ConversationSecurityEvaluationService } from './evaluation/conversation-security-evaluation.service';
@@ -17,7 +16,6 @@ import { OrderTool } from './tools/order.tool';
 
 @Module({
   imports: [CatalogModule, ConversationModule, MemoryModule, OrderModule, RagModule],
-  controllers: [ChatController],
   providers: [
     ChatService,
     CatalogEvaluationService,
@@ -29,5 +27,6 @@ import { OrderTool } from './tools/order.tool';
     OrderTool,
     OpenAiService,
   ],
+  exports: [ChatService],
 })
 export class ChatModule {}
