@@ -12,9 +12,19 @@ import {
 } from '../../order/order.errors';
 import { InvalidOrderTransitionError, OrderStateMachine } from '../../order/order-state-machine';
 import { OrderService } from '../../order/order.service';
-import { OrderAction, OrderStatus, type OrderResult } from '../../order/order.types';
+import {
+  OrderAction,
+  OrderStatus,
+  type OrderConfirmationResult,
+  type OrderResult,
+} from '../../order/order.types';
 
 const ORDER_PRODUCT_CANDIDATE_LIMIT = 5;
+const ACTIVE_ORDER_STATUSES = new Set([
+  OrderStatus.STARTED,
+  OrderStatus.SELECTING_PRODUCTS,
+  OrderStatus.CONFIRMING_ORDER,
+]);
 
 export type CustomerOrderAction = Exclude<OrderAction, OrderAction.EXPIRE>;
 
@@ -67,6 +77,7 @@ export interface OrderConversationContext {
     order: CustomerOrderSnapshot;
     workflow: OrderWorkflowGuidance;
   } | null;
+  confirmationReplayAvailable: boolean;
 }
 
 @Injectable()
@@ -77,7 +88,13 @@ export class OrderTool {
     @Inject(OrderService)
     private readonly orders: Pick<
       OrderService,
-      'addItems' | 'removeItems' | 'review' | 'confirm' | 'cancel' | 'getActiveOrder'
+      | 'addItems'
+      | 'removeItems'
+      | 'review'
+      | 'confirm'
+      | 'cancel'
+      | 'getActiveOrder'
+      | 'getLatestOrder'
     >,
     private readonly stateMachine: OrderStateMachine,
   ) {}
@@ -86,7 +103,9 @@ export class OrderTool {
     conversationId: string,
     context: RequestContext,
   ): Promise<OrderConversationContext> {
-    const activeOrder = await this.orders.getActiveOrder(conversationId, context);
+    const latestOrder = await this.orders.getLatestOrder(conversationId, context);
+    const activeOrder =
+      latestOrder && ACTIVE_ORDER_STATUSES.has(latestOrder.status) ? latestOrder : null;
 
     return {
       activeOrder: activeOrder
@@ -95,6 +114,7 @@ export class OrderTool {
             workflow: this.getWorkflow(activeOrder),
           }
         : null,
+      confirmationReplayAvailable: latestOrder?.status === OrderStatus.CONFIRMED,
     };
   }
 
@@ -108,7 +128,7 @@ export class OrderTool {
         case OrderAction.REVIEW:
           return this.success(action, await this.orders.review(conversationId, context));
         case OrderAction.CONFIRM:
-          return this.success(action, await this.orders.confirm(conversationId, context));
+          return await this.confirm(conversationId, context);
         case OrderAction.CANCEL:
           return this.success(action, await this.orders.cancel(conversationId, context));
       }
@@ -119,6 +139,13 @@ export class OrderTool {
 
       return this.rejected(action, error, conversationId, context);
     }
+  }
+
+  private async confirm(conversationId: string, context: RequestContext): Promise<string> {
+    const result = await this.orders.confirm(conversationId, context);
+    return this.success(OrderAction.CONFIRM, result, {
+      idempotentReplay: result.idempotentReplay,
+    });
   }
 
   private async addItems(
@@ -246,10 +273,15 @@ export class OrderTool {
       .trim();
   }
 
-  private success(action: CustomerOrderAction, order: OrderResult): string {
+  private success(
+    action: CustomerOrderAction,
+    order: OrderResult,
+    metadata: Pick<OrderConfirmationResult, 'idempotentReplay'> | null = null,
+  ): string {
     return JSON.stringify({
       orderOperationStatus: 'completed',
       action,
+      ...(metadata ?? {}),
       order: this.serializeOrder(order),
       workflow: this.getWorkflow(order),
       issues: [],

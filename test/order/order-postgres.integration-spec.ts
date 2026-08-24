@@ -8,6 +8,7 @@ import {
   OrderStatus as PrismaOrderStatus,
 } from '../../src/generated/prisma/enums';
 import {
+  ActiveOrderNotFoundError,
   OrderCurrencyMismatchError,
   OrderItemQuantityExceededError,
   OrderProductNotAvailableError,
@@ -142,6 +143,78 @@ describe('OrderService with PostgreSQL', () => {
     ]);
   });
 
+  it('returns the same confirmed order when confirmation is repeated concurrently', async () => {
+    const draft = await orders.addItem({
+      conversationId,
+      productId: cappuccinoId,
+      quantity: 1,
+    });
+    await orders.review(conversationId);
+
+    const confirmations = await Promise.all([
+      orders.confirm(conversationId),
+      orders.confirm(conversationId),
+    ]);
+
+    expect(confirmations.map(({ id }) => id)).toEqual([draft.id, draft.id]);
+    expect(confirmations.map(({ idempotentReplay }) => idempotentReplay).sort()).toEqual([
+      false,
+      true,
+    ]);
+    await expect(orders.confirm(conversationId)).resolves.toEqual(
+      expect.objectContaining({
+        id: draft.id,
+        status: OrderStatus.CONFIRMED,
+        idempotentReplay: true,
+      }),
+    );
+    await expect(prisma.order.count({ where: { conversationId } })).resolves.toBe(1);
+  });
+
+  it('does not replay an older confirmation after a newer order is cancelled', async () => {
+    await orders.addItem({ conversationId, productId: cappuccinoId, quantity: 1 });
+    await orders.review(conversationId);
+    const confirmed = await orders.confirm(conversationId);
+    await orders.addItem({ conversationId, productId: croissantId, quantity: 1 });
+    await orders.cancel(conversationId);
+
+    await expect(orders.confirm(conversationId)).rejects.toBeInstanceOf(ActiveOrderNotFoundError);
+    await expect(orders.getLatestOrder(conversationId)).resolves.toEqual(
+      expect.objectContaining({ status: OrderStatus.CANCELLED }),
+    );
+    await expect(prisma.order.findUniqueOrThrow({ where: { id: confirmed.id } })).resolves.toEqual(
+      expect.objectContaining({ status: PrismaOrderStatus.CONFIRMED }),
+    );
+  });
+
+  it('merges repeated products in one operation and uses one persisted item', async () => {
+    const result = await orders.addItems({
+      conversationId,
+      items: [
+        { productId: cappuccinoId, quantity: 1 },
+        { productId: cappuccinoId, quantity: 2 },
+      ],
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        total: 39,
+        items: [expect.objectContaining({ quantity: 3, lineTotal: 39 })],
+      }),
+    );
+    await expect(prisma.orderItem.count({ where: { orderId: result.id } })).resolves.toBe(1);
+  });
+
+  it.each([0, -1, 1.5])(
+    'rejects invalid quantity %s without creating an order',
+    async (quantity) => {
+      await expect(
+        orders.addItem({ conversationId, productId: cappuccinoId, quantity }),
+      ).rejects.toBeInstanceOf(RangeError);
+      await expect(prisma.order.count({ where: { conversationId } })).resolves.toBe(0);
+    },
+  );
+
   it('keeps terminal orders and starts a new draft for the next purchase', async () => {
     const firstOrder = await orders.addItem({
       conversationId,
@@ -209,6 +282,55 @@ describe('OrderService with PostgreSQL', () => {
     expect(persisted.items).toEqual([
       expect.objectContaining({ quantity: 1, lineTotal: new Prisma.Decimal(13) }),
     ]);
+  });
+
+  it('rejects an invalid batch change atomically', async () => {
+    const draft = await orders.addItems({
+      conversationId,
+      items: [
+        { productId: cappuccinoId, quantity: 2 },
+        { productId: croissantId, quantity: 1 },
+      ],
+    });
+
+    await expect(
+      orders.removeItems({
+        conversationId,
+        items: [
+          { productId: cappuccinoId, quantity: 1 },
+          { productId: croissantId, quantity: 2 },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(OrderItemQuantityExceededError);
+
+    const activeOrder = await orders.getActiveOrder(conversationId);
+    expect(activeOrder?.id).toBe(draft.id);
+    expect(activeOrder?.total).toBe(35);
+    expect(activeOrder?.items.map(({ productId, quantity }) => ({ productId, quantity }))).toEqual([
+      { productId: cappuccinoId, quantity: 2 },
+      { productId: croissantId, quantity: 1 },
+    ]);
+  });
+
+  it('cancels a reviewed order without deleting its items', async () => {
+    const draft = await orders.addItem({
+      conversationId,
+      productId: croissantId,
+      quantity: 2,
+    });
+    await orders.review(conversationId);
+
+    const cancelled = await orders.cancel(conversationId);
+
+    expect(cancelled).toEqual(
+      expect.objectContaining({
+        id: draft.id,
+        status: OrderStatus.CANCELLED,
+        total: 18,
+        items: [expect.objectContaining({ quantity: 2 })],
+      }),
+    );
+    await expect(orders.getActiveOrder(conversationId)).resolves.toBeNull();
   });
 
   it('keeps an empty draft in STARTED and prevents review until it has items', async () => {

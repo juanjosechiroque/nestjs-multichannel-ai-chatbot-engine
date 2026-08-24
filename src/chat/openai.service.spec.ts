@@ -27,7 +27,7 @@ function generateInput(overrides: Partial<GenerateResponseInput> = {}): Generate
     message: 'Hola',
     instructions: 'Only answer questions about Café Nube.',
     history: [],
-    orderContext: { activeOrder: null },
+    orderContext: { activeOrder: null, confirmationReplayAvailable: false },
     manageOrder: jest.fn(),
     getMenuDocument: jest.fn(),
     searchCatalog: jest.fn(),
@@ -57,8 +57,8 @@ function noOrderContextInput() {
         type: 'input_text',
         text: [
           'Trusted current order context from the application:',
-          '{"activeOrder":null}',
-          'Use only its allowedActions. If canConfirm=true and the customer explicitly agrees to the preceding confirmation question, call manage_order with CONFIRM.',
+          '{"activeOrder":null,"confirmationReplayAvailable":false}',
+          'Use only the actions exposed by manage_order. If canConfirm=true and the customer explicitly agrees to the preceding confirmation question, call manage_order with CONFIRM. If confirmationReplayAvailable=true, repeat CONFIRM only for an explicit confirmation replay immediately following the successful confirmation.',
         ].join('\n'),
       },
     ],
@@ -743,6 +743,7 @@ describe('OpenAiService', () => {
                 nextAction: OrderAction.CONFIRM,
               },
             },
+            confirmationReplayAvailable: false,
           },
           manageOrder,
         }),
@@ -766,6 +767,64 @@ describe('OpenAiService', () => {
       OrderAction.REMOVE_ITEMS,
       OrderAction.CONFIRM,
       OrderAction.CANCEL,
+    ]);
+    expect(manageOrder).toHaveBeenCalledWith({ action: OrderAction.CONFIRM, items: [] });
+  });
+
+  it('allows an explicit confirmation replay without exposing other terminal actions', async () => {
+    const { service, create } = createService();
+    const confirmedOrder = {
+      total: 13,
+      currency: 'PEN',
+      items: [{ productName: 'Latte', unitPrice: 13, quantity: 1, lineTotal: 13 }],
+    };
+    const manageOrder = jest.fn().mockResolvedValue(
+      JSON.stringify({
+        orderOperationStatus: 'completed',
+        action: OrderAction.CONFIRM,
+        idempotentReplay: true,
+        order: confirmedOrder,
+        workflow: { allowedActions: [], canConfirm: false, nextAction: null },
+        issues: [],
+      }),
+    );
+    create
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call-replay-confirmation',
+            name: 'manage_order',
+            arguments: JSON.stringify({ action: OrderAction.CONFIRM, items: [] }),
+          },
+        ],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse('Ese pedido ya estaba confirmado; no se duplicó.'),
+        model: 'gpt-5.6-luna',
+      });
+
+    await service.generate(
+      generateInput({
+        message: 'Sí, confirma de nuevo.',
+        history: [{ role: 'assistant', content: 'Tu pedido fue confirmado. Total: S/ 13.' }],
+        orderContext: { activeOrder: null, confirmationReplayAvailable: true },
+        manageOrder,
+      }),
+    );
+
+    const orderTool = responseRequest(create, 0)?.tools?.find(
+      (tool) => tool.type === 'function' && tool.name === 'manage_order',
+    );
+    const orderParameters = (orderTool?.type === 'function'
+      ? orderTool.parameters
+      : undefined) as unknown as { properties?: { action?: { enum?: string[] } } };
+    expect(orderParameters.properties?.action?.enum).toEqual([
+      OrderAction.ADD_ITEMS,
+      OrderAction.CONFIRM,
     ]);
     expect(manageOrder).toHaveBeenCalledWith({ action: OrderAction.CONFIRM, items: [] });
   });

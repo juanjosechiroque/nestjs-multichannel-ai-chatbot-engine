@@ -123,7 +123,7 @@ CHAT_SECURITY_EVALUATION_CASE="prompt injection" npm run chat:evaluate:security
 
 The order evaluator runs representative conversations for additions, contextual references,
 review, confirmation, modification, cancellation, unknown products, price manipulation, repeated
-confirmation, and new orders after a terminal state.
+products, excessive removal, idempotent confirmation, and new orders after a terminal state.
 
 Each case receives a new backend-managed conversation in a disposable database. The evaluator
 checks state after every turn and verifies final products, quantities, totals, status, and persisted

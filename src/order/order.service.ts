@@ -17,6 +17,7 @@ import {
   OrderAction,
   OrderStatus,
   type AddOrderItemInput,
+  type OrderConfirmationResult,
   type MutateOrderItemsInput,
   type OrderResult,
   type RemoveOrderItemInput,
@@ -64,6 +65,18 @@ export class OrderService {
         where: { conversationId, status: { in: [...ACTIVE_ORDER_STATUSES] } },
         include: { items: { orderBy: { createdAt: 'asc' } } },
         orderBy: { updatedAt: 'desc' },
+      });
+
+      return order ? this.toOrderResult(order, order.items) : null;
+    });
+  }
+
+  getLatestOrder(conversationId: string, context?: RequestContext): Promise<OrderResult | null> {
+    return this.execute('order.latest.read', context, async () => {
+      const order = await this.prisma.order.findFirst({
+        where: { conversationId },
+        include: { items: { orderBy: { createdAt: 'asc' } } },
+        orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
       });
 
       return order ? this.toOrderResult(order, order.items) : null;
@@ -212,8 +225,39 @@ export class OrderService {
     return this.applyStatusAction(conversationId, OrderAction.REVIEW, 'order.review', context);
   }
 
-  confirm(conversationId: string, context?: RequestContext): Promise<OrderResult> {
-    return this.applyStatusAction(conversationId, OrderAction.CONFIRM, 'order.confirm', context);
+  confirm(conversationId: string, context?: RequestContext): Promise<OrderConfirmationResult> {
+    return this.executeAction('order.confirm', OrderAction.CONFIRM, context, () =>
+      this.prisma.$transaction(async (transaction) => {
+        await this.lockConversation(transaction, conversationId);
+        const activeOrder = await this.findActiveOrder(transaction, conversationId);
+
+        if (activeOrder) {
+          const confirmedOrder = await this.applyAction(
+            transaction,
+            activeOrder,
+            OrderAction.CONFIRM,
+          );
+          return { ...confirmedOrder, idempotentReplay: false };
+        }
+
+        const confirmedOrder = await transaction.order.findFirst({
+          where: { conversationId },
+          orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
+        });
+        if (confirmedOrder?.status !== PrismaOrderStatus.CONFIRMED) {
+          throw new ActiveOrderNotFoundError();
+        }
+        const items = await transaction.orderItem.findMany({
+          where: { orderId: confirmedOrder.id },
+          orderBy: { createdAt: 'asc' },
+        });
+
+        return {
+          ...this.toOrderResult(confirmedOrder, items),
+          idempotentReplay: true,
+        };
+      }),
+    );
   }
 
   cancel(conversationId: string, context?: RequestContext): Promise<OrderResult> {
@@ -344,12 +388,12 @@ export class OrderService {
     return [...quantitiesByProductId].map(([productId, quantity]) => ({ productId, quantity }));
   }
 
-  private async executeAction(
+  private async executeAction<T extends OrderResult>(
     operation: string,
     action: OrderAction,
     context: RequestContext | undefined,
-    execute: () => Promise<OrderResult>,
-  ): Promise<OrderResult> {
+    execute: () => Promise<T>,
+  ): Promise<T> {
     try {
       const result = await this.execute(operation, context, execute);
       this.logger.log({
@@ -361,6 +405,7 @@ export class OrderService {
         status: result.status,
         total: result.total,
         currency: result.currency,
+        ...('idempotentReplay' in result ? { idempotentReplay: result.idempotentReplay } : {}),
       });
       return result;
     } catch (error: unknown) {

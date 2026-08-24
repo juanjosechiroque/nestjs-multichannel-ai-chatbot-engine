@@ -204,10 +204,17 @@ const MENU_DOCUMENT_TOOL: OpenAI.Responses.FunctionTool = {
 };
 
 const NO_ACTIVE_ORDER_ACTIONS: CustomerOrderAction[] = [OrderAction.ADD_ITEMS];
+const CONFIRMATION_REPLAY_ACTIONS: CustomerOrderAction[] = [
+  OrderAction.ADD_ITEMS,
+  OrderAction.CONFIRM,
+];
 
 function buildOrderTool(orderContext: OrderConversationContext): OpenAI.Responses.FunctionTool {
   const allowedActions =
-    orderContext.activeOrder?.workflow.allowedActions ?? NO_ACTIVE_ORDER_ACTIONS;
+    orderContext.activeOrder?.workflow.allowedActions ??
+    (orderContext.confirmationReplayAvailable
+      ? CONFIRMATION_REPLAY_ACTIONS
+      : NO_ACTIVE_ORDER_ACTIONS);
 
   return {
     type: 'function',
@@ -217,7 +224,9 @@ function buildOrderTool(orderContext: OrderConversationContext): OpenAI.Response
       `The actions currently allowed by the application are: ${allowedActions.join(', ')}. Never request another action.`,
       'Use ADD_ITEMS only when the customer explicitly asks to add or order products; do not use it when they are only browsing or asking what is available.',
       'Use REMOVE_ITEMS to remove quantities. Use REVIEW when the customer asks to see the current order or total, says the selected/current/listed items are the ones they want, or wants to proceed to confirmation.',
-      'Use CONFIRM when the trusted current order context has canConfirm=true and the customer explicitly agrees to the preceding confirmation question. Use CANCEL when explicitly requested.',
+      'Use CONFIRM when the trusted current order context has canConfirm=true and the customer explicitly agrees to the preceding confirmation question.',
+      'When confirmationReplayAvailable=true, CONFIRM is allowed only if the customer explicitly repeats the confirmation of the order that the assistant just confirmed. This is an idempotent replay, not a new order.',
+      'Use CANCEL when explicitly requested.',
       'Provide product names and positive integer quantities exactly as expressed or identified in the conversation.',
       'The application resolves products, uses database prices, calculates totals, and validates every state transition.',
     ].join(' '),
@@ -496,7 +505,7 @@ export class OpenAiService {
             text: [
               'Trusted current order context from the application:',
               JSON.stringify(orderContext),
-              'Use only its allowedActions. If canConfirm=true and the customer explicitly agrees to the preceding confirmation question, call manage_order with CONFIRM.',
+              'Use only the actions exposed by manage_order. If canConfirm=true and the customer explicitly agrees to the preceding confirmation question, call manage_order with CONFIRM. If confirmationReplayAvailable=true, repeat CONFIRM only for an explicit confirmation replay immediately following the successful confirmation.',
             ].join('\n'),
           },
         ],

@@ -247,4 +247,33 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
     },
     expectedOrderCount: 1,
   },
+  {
+    name: 'merge a repeated product in one message',
+    category: 'add',
+    turns: [
+      {
+        message: 'Agrega un latte y después agrega otro latte al mismo pedido.',
+        expectedStatus: OrderStatus.SELECTING_PRODUCTS,
+      },
+    ],
+    expectedOrder: {
+      status: OrderStatus.SELECTING_PRODUCTS,
+      total: 26,
+      items: [{ productName: 'Latte', quantity: 2 }],
+    },
+    expectedOrderCount: 1,
+  },
+  {
+    name: 'reject removal above the selected quantity',
+    category: 'clarification',
+    turns: [
+      { message: 'Agrega un latte.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
+      {
+        message: 'Quita dos lattes de mi pedido.',
+        expectedStatus: OrderStatus.SELECTING_PRODUCTS,
+      },
+    ],
+    expectedOrder: { status: OrderStatus.SELECTING_PRODUCTS, total: 13, items: [latte] },
+    expectedOrderCount: 1,
+  },
 ];

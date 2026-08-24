@@ -170,6 +170,40 @@ stateDiagram-v2
 cancelled, and expired orders are terminal. Product changes after review deliberately return the
 order to product selection before another review and confirmation.
 
+### Confirmation guarantees
+
+- Order mutations take a PostgreSQL advisory transaction lock scoped to the conversation.
+- The first valid `CONFIRM` transitions the active order to `CONFIRMED`.
+- A concurrent or repeated `CONFIRM` returns the latest confirmed order with
+  `idempotentReplay=true`; it does not create or update another order.
+- Adding a product after a terminal order intentionally creates a new draft.
+- Product batches are validated before mutation, so a rejected multi-item change is atomic.
+
+There is no payment, kitchen, or delivery side effect yet. When those integrations are added, the
+same database transaction must also persist an outbox event or idempotency key. Returning the same
+database order alone cannot make an external provider idempotent.
+
+### Planned checkout data
+
+The current confirmation closes only the product-selection flow. A real checkout increment should
+collect these normalized fields before enabling final confirmation:
+
+| Field              | Requirement                                                              |
+| ------------------ | ------------------------------------------------------------------------ |
+| Customer name      | Required for pickup and delivery                                         |
+| Fulfillment method | Required enum such as `PICKUP` or `DELIVERY`                             |
+| Delivery address   | Required only for `DELIVERY`; absent for `PICKUP`                        |
+| Payment method     | Required business-defined option; never raw card credentials             |
+| Contact reference  | Reuse trusted channel identity when available; otherwise request contact |
+
+These fields should belong to the order domain, not conversation memory or a channel adapter. A
+channel may provide a trusted contact reference, but the core must receive it in a normalized
+contract. Supported fulfillment and payment options must come from business configuration or the
+database rather than from the system prompt.
+
+Until this checkout increment is implemented, the chatbot must not claim that it collected an
+address, charged a payment method, sent an order to a store, or arranged delivery.
+
 ## Multichannel boundary
 
 ```mermaid
@@ -221,6 +255,7 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 | Last ten history messages     | Bounds prompt growth and cost                                   | Older context is not sent to the model             |
 | PostgreSQL order drafts       | Keeps order state independent from model memory                 | Abandoned drafts need lifecycle cleanup            |
 | Product price snapshots       | Preserves historical order totals                               | Duplicates selected catalog data                   |
+| Conversation-scoped locking   | Makes order changes and confirmation replay deterministic       | PostgreSQL-specific advisory lock                  |
 | In-memory web rate limiting   | Simple protection for the current single instance               | Multi-instance deployments require Redis           |
 | PDF as presentation only      | Supports rich channel delivery without bloating model context   | Demo PDF must be synchronized with the catalog     |
 | Live evals outside CI         | Measures real model behavior without making CI nondeterministic | Requires intentional execution and API cost        |

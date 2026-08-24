@@ -14,7 +14,9 @@ import type { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 function orderToolMock() {
   return {
     execute: jest.fn(),
-    getContext: jest.fn().mockResolvedValue({ activeOrder: null }),
+    getContext: jest
+      .fn()
+      .mockResolvedValue({ activeOrder: null, confirmationReplayAvailable: false }),
   };
 }
 
@@ -99,7 +101,10 @@ describe('ChatService', () => {
       conversationId: 'conversation-1',
       channel: 'web',
     });
-    expect(receivedInput?.orderContext).toEqual({ activeOrder: null });
+    expect(receivedInput?.orderContext).toEqual({
+      activeOrder: null,
+      confirmationReplayAvailable: false,
+    });
     expect(generate).toHaveBeenCalledTimes(1);
     expect(receivedInput?.message).toBe('¿Cuál es la más barata?');
     expect(receivedInput?.history).toEqual([
