@@ -35,6 +35,8 @@ describe('validateEnvironment', () => {
     expect(environment.OPENAI_EMBEDDING_TIMEOUT_MS).toBe(8_000);
     expect(environment.OPENAI_EMBEDDING_MAX_RETRIES).toBe(1);
     expect(environment.RAG_MIN_SIMILARITY).toBe(0.5);
+    expect(environment.RATE_LIMIT_CONVERSATIONS_PER_HOUR).toBe(5);
+    expect(environment.RATE_LIMIT_MESSAGES_PER_MINUTE).toBe(10);
   });
 
   it.each([
@@ -46,6 +48,16 @@ describe('validateEnvironment', () => {
     ['an empty database URL', { DATABASE_URL: '' }, 'DATABASE_URL'],
     ['a similarity below zero', { RAG_MIN_SIMILARITY: '-0.1' }, 'RAG_MIN_SIMILARITY'],
     ['a similarity above one', { RAG_MIN_SIMILARITY: '1.1' }, 'RAG_MIN_SIMILARITY'],
+    [
+      'zero conversations per hour',
+      { RATE_LIMIT_CONVERSATIONS_PER_HOUR: '0' },
+      'RATE_LIMIT_CONVERSATIONS_PER_HOUR',
+    ],
+    [
+      'zero messages per minute',
+      { RATE_LIMIT_MESSAGES_PER_MINUTE: '0' },
+      'RATE_LIMIT_MESSAGES_PER_MINUTE',
+    ],
     ['zero output tokens', { OPENAI_MAX_OUTPUT_TOKENS: '0' }, 'OPENAI_MAX_OUTPUT_TOKENS'],
     [
       'a generation timeout below one second',
