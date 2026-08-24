@@ -271,6 +271,13 @@ exact name when diagnosing a failure:
 CHAT_ORDER_EVALUATION_CASE="modify after reviewing" npm run chat:evaluate:orders
 ```
 
+Every run writes a detailed JSON report to `output/evaluations/orders/`. It includes each turn,
+assertion failures, persisted order snapshots, aggregate token usage, and an estimated USD cost.
+Generated reports are local artifacts and are ignored by Git. Cost estimation is available for
+documented models only; unknown models report the cost as unavailable instead of applying an
+incorrect rate. The `gpt-5.6-luna` rates are versioned as of 2026-08-12 and link to the official
+OpenAI model page inside the report.
+
 ### Unit test coverage
 
 Run the deterministic unit-test suite with coverage:

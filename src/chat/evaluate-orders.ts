@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { ORDER_CONVERSATION_EVALUATION_CASES } from './evaluation/order-conversation-evaluation.cases';
 import { OrderConversationEvaluationService } from './evaluation/order-conversation-evaluation.service';
 import { startOrderEvaluationDatabase } from './evaluation/order-evaluation-database';
+import { writeOrderEvaluationReport } from './evaluation/order-evaluation-report';
 
 async function evaluateOrders(): Promise<void> {
   const logger = new Logger('OrderConversationEvaluation');
@@ -36,6 +37,7 @@ async function evaluateOrders(): Promise<void> {
       .get(OrderConversationEvaluationService)
       .evaluate(evaluationCases);
     const model = application.get(ConfigService).getOrThrow<string>('OPENAI_MODEL');
+    const writtenReport = await writeOrderEvaluationReport(report, model);
 
     for (const result of report.results) {
       logger.log({
@@ -48,6 +50,7 @@ async function evaluateOrders(): Promise<void> {
         actualOrder: result.actualOrder,
         expectedOrderCount: result.expectedOrderCount,
         actualOrderCount: result.actualOrderCount,
+        tokenUsage: result.tokenUsage,
         passed: result.passed,
         failures: result.failures,
       });
@@ -62,6 +65,9 @@ async function evaluateOrders(): Promise<void> {
       passRate: report.passRate,
       totalTurns: report.totalTurns,
       totalDurationMs: report.totalDurationMs,
+      tokenUsage: report.tokenUsage,
+      estimatedCost: writtenReport.report.summary.estimatedCost,
+      reportPath: writtenReport.path,
     });
     if (report.failed > 0) process.exitCode = 1;
   } finally {

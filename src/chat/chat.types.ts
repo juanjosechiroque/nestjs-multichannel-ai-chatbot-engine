@@ -1,3 +1,5 @@
+import type { TokenUsage } from './token-usage';
+
 export type ChatChannel = 'web' | 'whatsapp';
 
 export interface ChatRequest {
@@ -19,4 +21,5 @@ export type ChatContent = DocumentChatContent;
 export interface ChatResult {
   reply: string;
   content?: ChatContent[];
+  tokenUsage?: TokenUsage;
 }

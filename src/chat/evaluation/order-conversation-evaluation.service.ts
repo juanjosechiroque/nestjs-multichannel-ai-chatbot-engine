@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { OrderStatus as PersistedOrderStatus } from '../../generated/prisma/enums';
 import { OrderStatus } from '../../order/order.types';
 import { ChatService } from '../chat.service';
+import { addTokenUsage, emptyTokenUsage } from '../token-usage';
 import type {
   ExpectedOrderSnapshot,
   OrderConversationEvaluationCase,
@@ -53,6 +54,7 @@ export class OrderConversationEvaluationService {
       passRate: Number(((passed / results.length) * 100).toFixed(2)),
       totalTurns: results.reduce((total, result) => total + result.turns.length, 0),
       totalDurationMs: Date.now() - startedAt,
+      tokenUsage: addTokenUsage(results.map((result) => result.tokenUsage)),
       results,
     };
   }
@@ -89,6 +91,7 @@ export class OrderConversationEvaluationService {
           expectedStatus: turn.expectedStatus,
           actualStatus: actualOrder?.status ?? null,
           durationMs: Date.now() - turnStartedAt,
+          tokenUsage: response.tokenUsage ?? emptyTokenUsage(),
           passed: failures.length === 0,
           failures,
         });
@@ -102,6 +105,7 @@ export class OrderConversationEvaluationService {
           expectedStatus: turn.expectedStatus,
           actualStatus: (await this.findLatestOrder(conversation.id))?.status ?? null,
           durationMs: Date.now() - turnStartedAt,
+          tokenUsage: emptyTokenUsage(),
           passed: false,
           failures: [failure],
         });
@@ -132,6 +136,7 @@ export class OrderConversationEvaluationService {
       actualOrder,
       expectedOrderCount: evaluationCase.expectedOrderCount,
       actualOrderCount,
+      tokenUsage: addTokenUsage(turnResults.map((turn) => turn.tokenUsage)),
       passed: caseFailures.length === 0,
       failures: caseFailures,
     };

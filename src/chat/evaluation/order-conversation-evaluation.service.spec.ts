@@ -68,6 +68,34 @@ describe('OrderConversationEvaluationService', () => {
     expect(count).toHaveBeenCalledWith({ where: { conversationId: 'conversation-1' } });
   });
 
+  it('aggregates token usage from each evaluated conversation turn', async () => {
+    const { service, reply } = createService();
+    reply.mockResolvedValue({
+      reply: 'Agregué un latte.',
+      tokenUsage: {
+        inputTokens: 1_000,
+        cachedInputTokens: 100,
+        cacheWriteTokens: 200,
+        outputTokens: 50,
+        reasoningTokens: 10,
+        totalTokens: 1_050,
+      },
+    });
+
+    const report = await service.evaluate([evaluationCase]);
+
+    expect(report.tokenUsage).toEqual({
+      inputTokens: 1_000,
+      cachedInputTokens: 100,
+      cacheWriteTokens: 200,
+      outputTokens: 50,
+      reasoningTokens: 10,
+      totalTokens: 1_050,
+    });
+    expect(report.results[0]?.tokenUsage).toEqual(report.tokenUsage);
+    expect(report.results[0]?.turns[0]?.tokenUsage).toEqual(report.tokenUsage);
+  });
+
   it('reports state, response vocabulary, totals, items, and order count failures', async () => {
     const { service, reply, findFirst, count } = createService();
     reply.mockResolvedValue({ reply: 'Estado interno: STARTED' });

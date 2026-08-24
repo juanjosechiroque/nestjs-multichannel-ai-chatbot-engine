@@ -1,4 +1,5 @@
 import type { OrderStatus } from '../../order/order.types';
+import type { TokenUsage } from '../token-usage';
 
 export interface ExpectedOrderItem {
   productName: string;
@@ -32,6 +33,7 @@ export interface OrderConversationEvaluationTurnResult {
   expectedStatus: OrderStatus | null;
   actualStatus: OrderStatus | null;
   durationMs: number;
+  tokenUsage: TokenUsage;
   passed: boolean;
   failures: string[];
 }
@@ -45,6 +47,7 @@ export interface OrderConversationEvaluationResult {
   actualOrder: ExpectedOrderSnapshot | null;
   expectedOrderCount: number;
   actualOrderCount: number;
+  tokenUsage: TokenUsage;
   passed: boolean;
   failures: string[];
 }
@@ -56,5 +59,6 @@ export interface OrderConversationEvaluationReport {
   passRate: number;
   totalTurns: number;
   totalDurationMs: number;
+  tokenUsage: TokenUsage;
   results: OrderConversationEvaluationResult[];
 }
