@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { CatalogModule } from '../catalog/catalog.module';
 import { ConversationModule } from '../conversation/conversation.module';
 import { MemoryModule } from '../memory/memory.module';
+import { OrderModule } from '../order/order.module';
 import { RagModule } from '../rag/rag.module';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
@@ -11,9 +12,11 @@ import { ConversationSecurityJudgeService } from './evaluation/conversation-secu
 import { OpenAiService } from './openai.service';
 import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
+import { MenuDocumentTool } from './tools/menu-document.tool';
+import { OrderTool } from './tools/order.tool';
 
 @Module({
-  imports: [CatalogModule, ConversationModule, MemoryModule, RagModule],
+  imports: [CatalogModule, ConversationModule, MemoryModule, OrderModule, RagModule],
   controllers: [ChatController],
   providers: [
     ChatService,
@@ -22,6 +25,8 @@ import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
     ConversationSecurityEvaluationService,
     ConversationSecurityJudgeService,
     KnowledgeSearchTool,
+    MenuDocumentTool,
+    OrderTool,
     OpenAiService,
   ],
 })

@@ -5,8 +5,14 @@ import { CatalogSearchTool, type CatalogSearchArguments } from './catalog-search
 describe('CatalogSearchTool', () => {
   const noPreferenceFilters: Pick<
     CatalogSearchArguments,
-    'dietaryTags' | 'excludedAllergens' | 'containsCoffee' | 'decaffeinated' | 'caffeineFree'
+    | 'maxPriceExclusive'
+    | 'dietaryTags'
+    | 'excludedAllergens'
+    | 'containsCoffee'
+    | 'decaffeinated'
+    | 'caffeineFree'
   > = {
+    maxPriceExclusive: false,
     dietaryTags: [],
     excludedAllergens: [],
     containsCoffee: null,
@@ -45,6 +51,7 @@ describe('CatalogSearchTool', () => {
       productName: 'cappuccino',
       category: ProductCategory.HOT_DRINK,
       maxPrice: 15,
+      maxPriceExclusive: false,
       dietaryTags: ['VEGETARIAN'],
       excludedAllergens: ['TREE_NUTS'],
       containsCoffee: true,
@@ -58,6 +65,7 @@ describe('CatalogSearchTool', () => {
         productName: 'cappuccino',
         category: ProductCategory.HOT_DRINK,
         maxPrice: 15,
+        maxPriceExclusive: false,
         dietaryTags: ['VEGETARIAN'],
         excludedAllergens: ['TREE_NUTS'],
         containsCoffee: true,

@@ -1,12 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
 import type { Server } from 'node:http';
-import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { Client } from 'pg';
 // Supertest uses a CommonJS `export =`, so an import assignment matches its runtime shape.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
@@ -19,12 +16,14 @@ import {
 import { ConversationService } from '../../src/conversation/conversation.service';
 import type { GenerateResponseInput, GenerateResponseResult } from '../../src/chat/openai.service';
 import { OpenAiService } from '../../src/chat/openai.service';
+import type { DocumentChatContent } from '../../src/chat/chat.types';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ProductCategory } from '../../src/generated/prisma/enums';
+import { OrderAction, OrderStatus } from '../../src/order/order.types';
 import { EmbeddingService } from '../../src/rag/embedding.service';
 import { EMBEDDING_DIMENSIONS } from '../../src/rag/rag.types';
 import { toVectorLiteral } from '../../src/rag/vector.util';
-import { assertDisposableTestDatabase } from '../support/test-database';
+import { applyMigrations, assertDisposableTestDatabase } from '../support/test-database';
 
 const TEST_ENVIRONMENT = {
   NODE_ENV: 'test',
@@ -49,6 +48,12 @@ interface ConversationResponse {
 
 interface ChatResponse {
   reply: string;
+  content?: Array<{
+    type: string;
+    title: string;
+    url: string;
+    mimeType: string;
+  }>;
 }
 
 interface CatalogItemResponse {
@@ -60,25 +65,6 @@ function deterministicEmbedding(): number[] {
   const embedding = Array<number>(EMBEDDING_DIMENSIONS).fill(0);
   embedding[0] = 1;
   return embedding;
-}
-
-async function applyMigrations(connectionString: string): Promise<void> {
-  const client = new Client({ connectionString });
-  const migrationsPath = join(process.cwd(), 'prisma', 'migrations');
-  const migrations = (await readdir(migrationsPath, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .sort((left, right) => left.name.localeCompare(right.name));
-  await client.connect();
-
-  try {
-    for (const migration of migrations) {
-      const migrationPath = join(migrationsPath, migration.name, 'migration.sql');
-      const sql = await readFile(migrationPath, 'utf8');
-      await client.query(sql);
-    }
-  } finally {
-    await client.end();
-  }
 }
 
 describe('HTTP conversation flow', () => {
@@ -139,6 +125,7 @@ describe('HTTP conversation flow', () => {
       usedTools: [],
     });
     embed.mockReset().mockResolvedValue(deterministicEmbedding());
+    await prisma.order.deleteMany();
     await prisma.conversationMessage.deleteMany();
     await Promise.all([
       prisma.conversation.deleteMany(),
@@ -318,6 +305,8 @@ describe('HTTP conversation flow', () => {
     );
     expect(typeof generationInput?.searchKnowledge).toBe('function');
     expect(typeof generationInput?.searchCatalog).toBe('function');
+    expect(typeof generationInput?.getMenuDocument).toBe('function');
+    expect(typeof generationInput?.manageOrder).toBe('function');
 
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { channel_sessionId: { channel: 'web', sessionId } },
@@ -328,6 +317,224 @@ describe('HTTP conversation flow', () => {
       expect.objectContaining({ role: 'USER', content: 'Hola' }),
       expect.objectContaining({ role: 'ASSISTANT', content: 'Respuesta de prueba' }),
     ]);
+  });
+
+  it('returns the menu as structured document content and serves its PDF', async () => {
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    generate.mockImplementationOnce(async (input) => {
+      const toolOutput: unknown = JSON.parse(await input.getMenuDocument());
+      const document = (toolOutput as { document: DocumentChatContent }).document;
+
+      return {
+        answer: 'Aquí tienes nuestra carta.',
+        usedSources: [],
+        llmCalls: 2,
+        usedTools: ['get_menu_document'],
+        content: [document],
+      };
+    });
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Quiero ver la carta' })
+      .expect(201, {
+        reply: 'Aquí tienes nuestra carta.',
+        content: [
+          {
+            type: 'document',
+            title: 'Carta de Café Nube',
+            url: '/api/menu',
+            mimeType: 'application/pdf',
+          },
+        ],
+      });
+
+    const menuResponse = await request(server).get('/api/menu').expect(200);
+    expect(menuResponse.headers['content-type']).toContain('application/pdf');
+    expect(menuResponse.headers['content-disposition']).toBe('inline; filename="menu.pdf"');
+    expect(Buffer.isBuffer(menuResponse.body)).toBe(true);
+    expect((menuResponse.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+  });
+
+  it('creates a multi-product order through the same HTTP chat endpoint', async () => {
+    const cappuccinoId = randomUUID();
+    const croissantId = randomUUID();
+    await prisma.product.createMany({
+      data: [
+        {
+          id: cappuccinoId,
+          slug: 'cappuccino-nube',
+          name: 'Cappuccino Nube',
+          description: 'Espresso con leche vaporizada.',
+          price: '13.00',
+          category: ProductCategory.HOT_DRINK,
+          active: true,
+        },
+        {
+          id: croissantId,
+          slug: 'croissant-mantequilla',
+          name: 'Croissant de mantequilla',
+          description: 'Horneado durante la mañana.',
+          price: '9.00',
+          category: ProductCategory.FOOD,
+          active: true,
+        },
+      ],
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    let toolOutput: string | undefined;
+    generate.mockImplementationOnce(async (input) => {
+      toolOutput = await input.manageOrder({
+        action: OrderAction.ADD_ITEMS,
+        items: [
+          { productName: 'cappuccino', quantity: 2 },
+          { productName: 'croissant', quantity: 1 },
+        ],
+      });
+      return {
+        answer: 'Agregué 2 Cappuccino Nube y 1 Croissant de mantequilla. Total: S/ 35.',
+        usedSources: [],
+        llmCalls: 2,
+        usedTools: ['manage_order'],
+      };
+    });
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Agrega dos cappuccinos y un croissant.' })
+      .expect(201, {
+        reply: 'Agregué 2 Cappuccino Nube y 1 Croissant de mantequilla. Total: S/ 35.',
+      });
+
+    const orderToolResult: unknown = JSON.parse(toolOutput ?? '');
+    expect(orderToolResult).toEqual(
+      expect.objectContaining({
+        orderOperationStatus: 'completed',
+        action: 'ADD_ITEMS',
+        issues: [],
+      }),
+    );
+    const typedOrderToolResult = orderToolResult as {
+      order: { items: unknown[] };
+      workflow: { allowedActions: string[]; canConfirm: boolean; nextAction: string };
+    };
+    expect(typedOrderToolResult.workflow).toEqual({
+      allowedActions: ['ADD_ITEMS', 'REMOVE_ITEMS', 'REVIEW', 'CANCEL'],
+      canConfirm: false,
+      nextAction: 'REVIEW',
+    });
+    const completedOrder = typedOrderToolResult.order;
+    expect(completedOrder).toEqual(expect.objectContaining({ total: 35, currency: 'PEN' }));
+    expect(completedOrder.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          productName: 'Cappuccino Nube',
+          unitPrice: 13,
+          quantity: 2,
+          lineTotal: 26,
+        }),
+        expect.objectContaining({
+          productName: 'Croissant de mantequilla',
+          unitPrice: 9,
+          quantity: 1,
+          lineTotal: 9,
+        }),
+      ]),
+    );
+    const persistedOrder = await prisma.order.findFirstOrThrow({
+      include: { items: true },
+    });
+    expect(persistedOrder.total.toNumber()).toBe(35);
+    expect(persistedOrder.items).toHaveLength(2);
+  });
+
+  it('uses the persisted order workflow to confirm an explicit approval', async () => {
+    await prisma.product.create({
+      data: {
+        id: randomUUID(),
+        slug: 'latte',
+        name: 'Latte',
+        description: 'Espresso con leche vaporizada.',
+        price: '13.00',
+        category: ProductCategory.HOT_DRINK,
+        active: true,
+      },
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+
+    generate
+      .mockImplementationOnce(async (input) => {
+        expect(input.orderContext).toEqual({ activeOrder: null });
+        await input.manageOrder({
+          action: OrderAction.ADD_ITEMS,
+          items: [{ productName: 'Latte', quantity: 3 }],
+        });
+        return {
+          answer: 'Agregué 3 lattes. ¿Deseas agregar algo más o revisar tu pedido?',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      })
+      .mockImplementationOnce(async (input) => {
+        expect(input.orderContext.activeOrder?.workflow).toEqual({
+          allowedActions: [
+            OrderAction.ADD_ITEMS,
+            OrderAction.REMOVE_ITEMS,
+            OrderAction.REVIEW,
+            OrderAction.CANCEL,
+          ],
+          canConfirm: false,
+          nextAction: OrderAction.REVIEW,
+        });
+        await input.manageOrder({ action: OrderAction.REVIEW, items: [] });
+        return {
+          answer: 'Llevas 3 lattes por S/ 39. ¿Deseas confirmar el pedido?',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      })
+      .mockImplementationOnce(async (input) => {
+        expect(input.message).toBe('sí');
+        expect(input.orderContext.activeOrder?.workflow).toEqual({
+          allowedActions: [
+            OrderAction.ADD_ITEMS,
+            OrderAction.REMOVE_ITEMS,
+            OrderAction.CONFIRM,
+            OrderAction.CANCEL,
+          ],
+          canConfirm: true,
+          nextAction: OrderAction.CONFIRM,
+        });
+        await input.manageOrder({ action: OrderAction.CONFIRM, items: [] });
+        return {
+          answer: 'Tu pedido fue confirmado. Total: S/ 39.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      });
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Quiero tres lattes.' })
+      .expect(201);
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Revisar pedido.' })
+      .expect(201);
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'sí' })
+      .expect(201, { reply: 'Tu pedido fue confirmado. Total: S/ 39.' });
+
+    const confirmedOrder = await prisma.order.findFirstOrThrow();
+    expect(confirmedOrder.status).toBe(OrderStatus.CONFIRMED);
+    expect(confirmedOrder.total.toNumber()).toBe(39);
   });
 
   it('queries the active product catalog without running embeddings', async () => {
@@ -362,6 +569,7 @@ describe('HTTP conversation flow', () => {
         productName: 'cappuccino',
         category: ProductCategory.HOT_DRINK,
         maxPrice: 15,
+        maxPriceExclusive: false,
         dietaryTags: [],
         excludedAllergens: [],
         containsCoffee: null,
@@ -409,6 +617,70 @@ describe('HTTP conversation flow', () => {
     });
     expect(embed).not.toHaveBeenCalled();
     await expect(prisma.conversationMessage.count()).resolves.toBe(2);
+  });
+
+  it('keeps less-than price searches exclusive in PostgreSQL', async () => {
+    const underLimitId = randomUUID();
+    await prisma.product.createMany({
+      data: [
+        {
+          id: underLimitId,
+          slug: 'producto-catorce',
+          name: 'Producto de catorce soles',
+          description: 'Debe aparecer.',
+          price: '14.00',
+          category: ProductCategory.FOOD,
+          active: true,
+        },
+        {
+          id: randomUUID(),
+          slug: 'producto-quince',
+          name: 'Producto de quince soles',
+          description: 'No debe aparecer en una búsqueda menor que quince.',
+          price: '15.00',
+          category: ProductCategory.FOOD,
+          active: true,
+        },
+      ],
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    let toolOutput: string | undefined;
+    generate.mockImplementationOnce(async (input) => {
+      toolOutput = await input.searchCatalog({
+        productName: null,
+        category: ProductCategory.FOOD,
+        maxPrice: 15,
+        maxPriceExclusive: true,
+        dietaryTags: [],
+        excludedAllergens: [],
+        containsCoffee: null,
+        decaffeinated: null,
+        caffeineFree: null,
+      });
+      return {
+        answer: 'Tenemos una opción por menos de S/ 15.',
+        usedSources: [
+          {
+            sourceId: underLimitId,
+            sourceKey: 'producto-catorce',
+            sourceType: 'product',
+          },
+        ],
+        llmCalls: 2,
+        usedTools: ['search_catalog'],
+      };
+    });
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: '¿Qué tienen por menos de S/ 15?' })
+      .expect(201, { reply: 'Tenemos una opción por menos de S/ 15.' });
+
+    const parsedOutput = JSON.parse(toolOutput ?? '') as {
+      products: Array<{ sourceKey: string }>;
+    };
+    expect(parsedOutput.products.map((product) => product.sourceKey)).toEqual(['producto-catorce']);
   });
 
   it('applies dietary, allergen, and coffee preferences in PostgreSQL', async () => {
@@ -473,6 +745,7 @@ describe('HTTP conversation flow', () => {
         productName: null,
         category: ProductCategory.FOOD,
         maxPrice: 10,
+        maxPriceExclusive: false,
         dietaryTags: ['VEGAN'],
         excludedAllergens: ['MILK'],
         containsCoffee: false,
@@ -621,12 +894,7 @@ describe('HTTP conversation flow', () => {
     const secondGenerationInput = generate.mock.calls[1]?.[0];
     expect(embed).toHaveBeenNthCalledWith(
       2,
-      [
-        'Previous customer message:',
-        '¿Qué bebidas calientes tienen?',
-        'Current customer message:',
-        'la bebida caliente más barata',
-      ].join('\n'),
+      'la bebida caliente más barata',
       secondGenerationInput?.context,
     );
     expect(generate).toHaveBeenNthCalledWith(

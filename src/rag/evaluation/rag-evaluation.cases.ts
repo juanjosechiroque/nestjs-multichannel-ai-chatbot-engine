@@ -47,6 +47,16 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
     expectedSource: { sourceType: 'faq', sourceKey: 'metodos-pago' },
   },
   {
+    name: 'payment methods short paraphrase',
+    query: '¿Cómo lo pago?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'metodos-pago' },
+  },
+  {
+    name: 'business services summary',
+    query: '¿Qué servicios ofrecen?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'servicios' },
+  },
+  {
     name: 'delivery coverage',
     query: '¿Hacen delivery a todo Miraflores?',
     expectedSource: { sourceType: 'faq', sourceKey: 'delivery' },
@@ -67,6 +77,11 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
   {
     name: 'gluten information',
     query: '¿Qué productos no contienen gluten?',
+    expectedSource: { sourceType: 'faq', sourceKey: 'alergenos' },
+  },
+  {
+    name: 'allergen policy',
+    query: 'Explícame su política de alérgenos',
     expectedSource: { sourceType: 'faq', sourceKey: 'alergenos' },
   },
   {

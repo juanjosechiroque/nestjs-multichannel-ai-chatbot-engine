@@ -72,4 +72,43 @@ describe('ChatController', () => {
     ).rejects.toThrow(NotFoundException);
     expect(reply).not.toHaveBeenCalled();
   });
+
+  it('passes channel-neutral document content to the web response', async () => {
+    const reply = jest.fn<Promise<ChatResult>, [ChatRequest]>().mockResolvedValue({
+      reply: 'Aquí tienes nuestra carta.',
+      content: [
+        {
+          type: 'document',
+          title: 'Carta de Café Nube',
+          url: '/api/menu',
+          mimeType: 'application/pdf',
+        },
+      ],
+    });
+    const findBySession = jest.fn().mockResolvedValue({
+      id: 'internal-conversation-id',
+      sessionId: '59ad97ee-f9c0-44d7-8fb8-881b87d21e19',
+    });
+    const controller = new ChatController(
+      { reply } as unknown as ChatService,
+      { findBySession } as unknown as ConversationService,
+    );
+
+    await expect(
+      controller.chat({
+        sessionId: '59ad97ee-f9c0-44d7-8fb8-881b87d21e19',
+        message: 'Quiero ver la carta',
+      }),
+    ).resolves.toEqual({
+      reply: 'Aquí tienes nuestra carta.',
+      content: [
+        {
+          type: 'document',
+          title: 'Carta de Café Nube',
+          url: '/api/menu',
+          mimeType: 'application/pdf',
+        },
+      ],
+    });
+  });
 });

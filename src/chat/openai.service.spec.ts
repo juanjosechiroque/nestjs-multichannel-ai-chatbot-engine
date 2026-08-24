@@ -4,9 +4,11 @@ import type OpenAI from 'openai';
 import {
   DatabaseUnavailableException,
   OpenAiEmptyResponseException,
+  OpenAiIncompleteResponseException,
   OpenAiRequestFailedException,
 } from '../common/application-error';
 import { ProductCategory } from '../generated/prisma/enums';
+import { OrderAction } from '../order/order.types';
 import { OpenAiService, type GenerateResponseInput } from './openai.service';
 
 interface ResponsesClientStub {
@@ -25,6 +27,9 @@ function generateInput(overrides: Partial<GenerateResponseInput> = {}): Generate
     message: 'Hola',
     instructions: 'Only answer questions about Café Nube.',
     history: [],
+    orderContext: { activeOrder: null },
+    manageOrder: jest.fn(),
+    getMenuDocument: jest.fn(),
     searchCatalog: jest.fn(),
     searchKnowledge: jest.fn(),
     ...overrides,
@@ -35,12 +40,28 @@ function structuredResponse(answer: string, usedSourceIds: string[] = []) {
   return JSON.stringify({ answer, usedSourceIds });
 }
 
+function noOrderContextInput() {
+  return {
+    role: 'developer',
+    content: [
+      {
+        type: 'input_text',
+        text: [
+          'Trusted current order context from the application:',
+          '{"activeOrder":null}',
+          'Use only its allowedActions. If canConfirm=true and the customer explicitly agrees to the preceding confirmation question, call manage_order with CONFIRM.',
+        ].join('\n'),
+      },
+    ],
+  };
+}
+
 function createService(): { service: OpenAiService; create: jest.Mock } {
   const service = new OpenAiService(
     new ConfigService({
       OPENAI_API_KEY: 'test-api-key',
       OPENAI_MODEL: 'gpt-5.6-luna',
-      OPENAI_MAX_OUTPUT_TOKENS: 500,
+      OPENAI_MAX_OUTPUT_TOKENS: 1_000,
       OPENAI_GENERATION_TIMEOUT_MS: 20_000,
       OPENAI_GENERATION_MAX_RETRIES: 1,
     }),
@@ -110,6 +131,7 @@ describe('OpenAiService', () => {
         model: 'gpt-5.6-luna',
         instructions: 'Only answer questions about Café Nube.',
         input: [
+          noOrderContextInput(),
           { role: 'user', content: 'Buenos días' },
           { role: 'assistant', content: '¡Buenos días!' },
           {
@@ -122,10 +144,10 @@ describe('OpenAiService', () => {
         store: false,
         prompt_cache_options: { mode: 'explicit' },
         reasoning: { effort: 'low' },
-        max_output_tokens: 500,
+        max_output_tokens: 1_000,
       }),
     );
-    expect(initialRequest?.tools).toHaveLength(2);
+    expect(initialRequest?.tools).toHaveLength(4);
     expect(initialRequest?.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -140,6 +162,15 @@ describe('OpenAiService', () => {
         expect.objectContaining({
           type: 'function',
           name: 'search_knowledge',
+          strict: true,
+        }),
+      ]),
+    );
+    expect(initialRequest?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'function',
+          name: 'manage_order',
           strict: true,
         }),
       ]),
@@ -221,6 +252,7 @@ describe('OpenAiService', () => {
         tool_choice: 'none',
         parallel_tool_calls: false,
         input: [
+          noOrderContextInput(),
           {
             role: 'user',
             content: [{ type: 'input_text', text: 'Customer message:\n¿Cuál es el horario?' }],
@@ -312,7 +344,53 @@ describe('OpenAiService', () => {
       type: 'function',
       name: 'search_knowledge',
     });
-    expect(searchKnowledge).toHaveBeenCalledWith('¿Dónde queda el local?');
+    expect(searchKnowledge).toHaveBeenCalledWith(
+      'dirección exacta, ubicación, cómo llegar y enlace de mapa. Pregunta del cliente: ¿Dónde queda el local?',
+    );
+  });
+
+  it('uses the original query for an explicit services question', async () => {
+    const { service, create } = createService();
+    const businessContext = JSON.stringify({
+      retrievalStatus: 'results_found',
+      knowledge: [
+        {
+          sourceId: 'business-services-summary',
+          sourceKey: 'servicios',
+          type: 'faq',
+          content: 'Servicios confirmados: delivery, recojo, wifi y espacio pet friendly.',
+        },
+      ],
+    });
+    const searchKnowledge = jest.fn().mockResolvedValue(businessContext);
+    create
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call-services',
+            name: 'search_knowledge',
+            arguments: '{"query":"información general del negocio"}',
+          },
+        ],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse('Tenemos delivery, recojo, wifi y terraza pet friendly.', [
+          'business-services-summary',
+        ]),
+        model: 'gpt-5.6-luna',
+      });
+
+    await service.generate(generateInput({ message: '¿Qué servicios ofrecen?', searchKnowledge }));
+
+    expect(responseRequest(create, 0)?.tool_choice).toEqual({
+      type: 'function',
+      name: 'search_knowledge',
+    });
+    expect(searchKnowledge).toHaveBeenCalledWith('¿Qué servicios ofrecen?');
   });
 
   it('discards source identifiers that were not returned by the knowledge tool', async () => {
@@ -368,6 +446,7 @@ describe('OpenAiService', () => {
         productName: 'cappuccino',
         category: 'HOT_DRINK',
         maxPrice: 15,
+        maxPriceExclusive: false,
         dietaryTags: ['VEGETARIAN'],
         excludedAllergens: ['TREE_NUTS'],
         containsCoffee: true,
@@ -410,6 +489,7 @@ describe('OpenAiService', () => {
       productName: 'cappuccino',
       category: ProductCategory.HOT_DRINK,
       maxPrice: 15,
+      maxPriceExclusive: false,
       dietaryTags: ['VEGETARIAN'],
       excludedAllergens: ['TREE_NUTS'],
       containsCoffee: true,
@@ -425,6 +505,264 @@ describe('OpenAiService', () => {
         },
       ]),
     );
+  });
+
+  it('returns the menu document descriptor without sending catalog products to the model', async () => {
+    const { service, create } = createService();
+    const menuOutput = JSON.stringify({
+      documentStatus: 'available',
+      document: {
+        type: 'document',
+        title: 'Carta de Café Nube',
+        url: '/api/menu',
+        mimeType: 'application/pdf',
+      },
+    });
+    const getMenuDocument = jest.fn().mockResolvedValue(menuOutput);
+    create
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call-menu',
+            name: 'get_menu_document',
+            arguments: '{}',
+          },
+        ],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse('Aquí tienes nuestra carta.', []),
+        model: 'gpt-5.6-luna',
+      });
+
+    await expect(
+      service.generate(
+        generateInput({
+          message: 'Quiero ver la carta',
+          getMenuDocument,
+        }),
+      ),
+    ).resolves.toEqual({
+      answer: 'Aquí tienes nuestra carta.',
+      usedSources: [],
+      llmCalls: 2,
+      usedTools: ['get_menu_document'],
+      content: [
+        {
+          type: 'document',
+          title: 'Carta de Café Nube',
+          url: '/api/menu',
+          mimeType: 'application/pdf',
+        },
+      ],
+    });
+    expect(getMenuDocument).toHaveBeenCalledTimes(1);
+    expect(responseRequest(create, 1)?.input).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'function_call_output',
+          call_id: 'call-menu',
+          output: menuOutput,
+        },
+      ]),
+    );
+    expect(menuOutput).not.toContain('products');
+  });
+
+  it('executes manage_order with only an action, product names, and quantities', async () => {
+    const { service, create } = createService();
+    const orderOutput = JSON.stringify({
+      orderOperationStatus: 'completed',
+      action: 'ADD_ITEMS',
+      order: {
+        id: 'order-1',
+        status: 'SELECTING_PRODUCTS',
+        total: 35,
+        currency: 'PEN',
+        items: [
+          { productName: 'Cappuccino Nube', unitPrice: 13, quantity: 2, lineTotal: 26 },
+          { productName: 'Croissant de mantequilla', unitPrice: 9, quantity: 1, lineTotal: 9 },
+        ],
+      },
+      issues: [],
+    });
+    const manageOrder = jest.fn().mockResolvedValue(orderOutput);
+    create
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call-order',
+            name: 'manage_order',
+            arguments: JSON.stringify({
+              action: 'ADD_ITEMS',
+              items: [
+                { productName: 'Cappuccino Nube', quantity: 2 },
+                { productName: 'Croissant de mantequilla', quantity: 1 },
+              ],
+            }),
+          },
+        ],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse('Agregué 2 cappuccinos y 1 croissant. Total: S/ 35.'),
+        model: 'gpt-5.6-luna',
+      });
+
+    await expect(
+      service.generate(
+        generateInput({
+          message: 'Agrega dos cappuccinos y un croissant.',
+          manageOrder,
+        }),
+      ),
+    ).resolves.toEqual({
+      answer: 'Agregué 2 cappuccinos y 1 croissant. Total: S/ 35.',
+      usedSources: [],
+      llmCalls: 2,
+      usedTools: ['manage_order'],
+    });
+    expect(manageOrder).toHaveBeenCalledWith({
+      action: 'ADD_ITEMS',
+      items: [
+        { productName: 'Cappuccino Nube', quantity: 2 },
+        { productName: 'Croissant de mantequilla', quantity: 1 },
+      ],
+    });
+    expect(responseRequest(create, 1)?.input).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'function_call_output',
+          call_id: 'call-order',
+          output: orderOutput,
+        },
+      ]),
+    );
+  });
+
+  it('limits order actions to the trusted workflow and confirms an explicit approval', async () => {
+    const { service, create } = createService();
+    const orderOutput = JSON.stringify({
+      orderOperationStatus: 'completed',
+      action: OrderAction.CONFIRM,
+      order: {
+        total: 54,
+        currency: 'PEN',
+        items: [
+          { productName: 'Latte', unitPrice: 13, quantity: 3, lineTotal: 39 },
+          { productName: 'Carrot cake', unitPrice: 15, quantity: 1, lineTotal: 15 },
+        ],
+      },
+      workflow: { allowedActions: [], canConfirm: false, nextAction: null },
+      issues: [],
+    });
+    const manageOrder = jest.fn().mockResolvedValue(orderOutput);
+    create
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call-confirm-order',
+            name: 'manage_order',
+            arguments: JSON.stringify({ action: OrderAction.CONFIRM, items: [] }),
+          },
+        ],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: structuredResponse('Tu pedido fue confirmado. Total: S/ 54.'),
+        model: 'gpt-5.6-luna',
+      });
+
+    await expect(
+      service.generate(
+        generateInput({
+          message: 'sí',
+          history: [
+            {
+              role: 'assistant',
+              content: 'Total: S/ 54. ¿Deseas confirmar el pedido?',
+            },
+          ],
+          orderContext: {
+            activeOrder: {
+              order: {
+                total: 54,
+                currency: 'PEN',
+                items: [
+                  { productName: 'Latte', unitPrice: 13, quantity: 3, lineTotal: 39 },
+                  { productName: 'Carrot cake', unitPrice: 15, quantity: 1, lineTotal: 15 },
+                ],
+              },
+              workflow: {
+                allowedActions: [
+                  OrderAction.ADD_ITEMS,
+                  OrderAction.REMOVE_ITEMS,
+                  OrderAction.CONFIRM,
+                  OrderAction.CANCEL,
+                ],
+                canConfirm: true,
+                nextAction: OrderAction.CONFIRM,
+              },
+            },
+          },
+          manageOrder,
+        }),
+      ),
+    ).resolves.toEqual({
+      answer: 'Tu pedido fue confirmado. Total: S/ 54.',
+      usedSources: [],
+      llmCalls: 2,
+      usedTools: ['manage_order'],
+    });
+
+    const orderTool = responseRequest(create, 0)?.tools?.find(
+      (tool) => tool.type === 'function' && tool.name === 'manage_order',
+    );
+    const orderParameters = (orderTool?.type === 'function'
+      ? orderTool.parameters
+      : undefined) as unknown as { properties?: { action?: { enum?: string[] } } };
+    expect(orderParameters.properties?.action?.enum).toEqual([
+      OrderAction.ADD_ITEMS,
+      OrderAction.REMOVE_ITEMS,
+      OrderAction.CONFIRM,
+      OrderAction.CANCEL,
+    ]);
+    expect(manageOrder).toHaveBeenCalledWith({ action: OrderAction.CONFIRM, items: [] });
+  });
+
+  it('rejects order arguments that try to supply application-controlled totals', async () => {
+    const { service, create } = createService();
+    const manageOrder = jest.fn();
+    create.mockResolvedValue({
+      output: [
+        {
+          type: 'function_call',
+          call_id: 'call-invalid-order',
+          name: 'manage_order',
+          arguments: JSON.stringify({
+            action: 'CONFIRM',
+            items: [],
+            total: 1,
+          }),
+        },
+      ],
+      output_text: '',
+      model: 'gpt-5.6-luna',
+    });
+
+    await expect(service.generate(generateInput({ manageOrder }))).rejects.toEqual(
+      new OpenAiRequestFailedException(),
+    );
+    expect(manageOrder).not.toHaveBeenCalled();
   });
 
   it('rejects invalid tool arguments without executing application code', async () => {
@@ -462,6 +800,7 @@ describe('OpenAiService', () => {
             productName: null,
             category: 'UNKNOWN_CATEGORY',
             maxPrice: -1,
+            maxPriceExclusive: false,
             dietaryTags: [],
             excludedAllergens: [],
             containsCoffee: null,
@@ -497,6 +836,7 @@ describe('OpenAiService', () => {
             productName: null,
             category: null,
             maxPrice: null,
+            maxPriceExclusive: false,
             dietaryTags: [],
             excludedAllergens: [],
             containsCoffee: null,
@@ -563,6 +903,48 @@ describe('OpenAiService', () => {
     );
   });
 
+  it('classifies a truncated final response before attempting to parse its JSON', async () => {
+    const { service, create } = createService();
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const searchKnowledge = jest
+      .fn()
+      .mockResolvedValue('{"retrievalStatus":"no_results","knowledge":[]}');
+    create
+      .mockResolvedValueOnce({
+        status: 'completed',
+        incomplete_details: null,
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call-truncated',
+            name: 'search_knowledge',
+            arguments: '{"query":"productos disponibles"}',
+          },
+        ],
+        output_text: '',
+        model: 'gpt-5.6-luna',
+      })
+      .mockResolvedValueOnce({
+        status: 'incomplete',
+        incomplete_details: { reason: 'max_output_tokens' },
+        output: [],
+        output_text: '{"answer":"respuesta truncada',
+        model: 'gpt-5.6-luna',
+      });
+
+    await expect(
+      service.generate(generateInput({ message: '¿Qué venden?', searchKnowledge })),
+    ).rejects.toEqual(new OpenAiIncompleteResponseException('max_output_tokens'));
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'openai.response.incomplete',
+        failureCode: 'OPENAI_INCOMPLETE_RESPONSE',
+        message: 'OpenAI response incomplete: max_output_tokens',
+      }),
+    );
+  });
+
   it.each([
     { name: 'an empty API output', outputText: '' },
     {
@@ -583,6 +965,19 @@ describe('OpenAiService', () => {
         requestId: 'request-1',
         failureCode: 'OPENAI_EMPTY_RESPONSE',
       }),
+    );
+  });
+
+  it('normalizes literal newline escapes in the customer-facing answer', async () => {
+    const { service, create } = createService();
+    create.mockResolvedValue({
+      output: [],
+      output_text: structuredResponse('Pedido confirmado.\\nTotal: S/ 30.'),
+      model: 'gpt-5.6-luna',
+    });
+
+    await expect(service.generate(generateInput())).resolves.toEqual(
+      expect.objectContaining({ answer: 'Pedido confirmado.\nTotal: S/ 30.' }),
     );
   });
 });

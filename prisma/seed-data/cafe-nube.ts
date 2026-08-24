@@ -466,6 +466,14 @@ export const cafeNubeFaqs = [
     answer:
       'Aceptamos efectivo, tarjetas Visa, Mastercard y American Express, además de pagos con Yape y Plin.',
     active: true,
+    metadata: {
+      searchPhrases: [
+        'cómo pago mi pedido',
+        'con qué puedo pagar',
+        'aceptan tarjeta',
+        'aceptan Yape o Plin',
+      ],
+    },
   },
   {
     slug: 'delivery',
@@ -478,6 +486,7 @@ export const cafeNubeFaqs = [
       coverage: ['Miraflores'],
       estimatedMinutes: { min: 35, max: 60 },
       orderChannel: 'WHATSAPP',
+      serviceSummary: 'delivery disponible en todo Miraflores',
     },
   },
   {
@@ -490,6 +499,7 @@ export const cafeNubeFaqs = [
     metadata: {
       estimatedMinutes: { min: 15, max: 25 },
       orderChannel: 'WHATSAPP',
+      serviceSummary: 'pedidos para recojo en el local',
     },
   },
   {
@@ -507,13 +517,19 @@ export const cafeNubeFaqs = [
   {
     slug: 'alergenos',
     category: 'ALLERGENS',
-    question: '¿Tienen productos sin gluten?',
+    question: '¿Cuál es su política sobre alérgenos y contaminación cruzada?',
     answer:
-      'Varias bebidas no incluyen gluten entre sus ingredientes, como el Espresso Nube, el Americano, el café filtrado descafeinado, el Cold Brew cítrico, el Espresso tonic y la chicha morada especiada. Sin embargo, todos los productos se preparan en espacios compartidos, por lo que no podemos garantizar que estén libres de contaminación cruzada.',
+      'Los productos pueden contener o entrar en contacto con leche, gluten, huevo, frutos secos y sésamo. Se preparan en espacios compartidos, por lo que no podemos garantizar la ausencia total de trazas o contaminación cruzada. Si tienes una alergia, indícanos cuál antes de ordenar para revisar los ingredientes declarados de cada producto.',
     active: true,
     metadata: {
       allergens: ['leche', 'gluten', 'huevo', 'frutos secos', 'sésamo'],
       crossContaminationPossible: true,
+      searchPhrases: [
+        'política de alérgenos',
+        'información sobre alergias',
+        'qué productos no contienen gluten',
+        'hay riesgo de contaminación cruzada',
+      ],
     },
   },
   {
@@ -525,6 +541,7 @@ export const cafeNubeFaqs = [
     active: true,
     metadata: {
       wifi: true,
+      serviceSummary: 'wifi gratuito para clientes durante su visita',
     },
   },
   {
@@ -537,6 +554,7 @@ export const cafeNubeFaqs = [
     metadata: {
       petFriendlyArea: 'Terraza',
       indoorAccess: 'ASSISTANCE_ANIMALS_ONLY',
+      serviceSummary: 'espacio pet friendly para mascotas en la terraza',
     },
   },
 ] as const;

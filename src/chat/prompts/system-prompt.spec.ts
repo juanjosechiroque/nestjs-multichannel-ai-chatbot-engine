@@ -16,6 +16,7 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('automatic transfer is not available');
     expect(prompt).not.toContain('offer to refer the question to a person');
     expect(prompt).not.toContain('order flows');
+    expect(prompt).not.toContain('published services');
   });
 
   it('requires attribution only to retrieved knowledge sources', () => {
@@ -38,15 +39,41 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain(
       'Put every product preference explicitly requested by the customer into the corresponding search_catalog filter',
     );
+    expect(prompt).toContain('preserve whether the customer requested an exclusive limit');
     expect(prompt).toContain(
       'Treat allergens as declared ingredients, not as a guarantee against cross-contamination',
     );
     expect(prompt).toContain('only when its catalog fields explicitly support that claim');
+    expect(prompt).toContain('at most six representative products');
+    expect(prompt).toContain('Use get_menu_document when the customer explicitly asks');
+    expect(prompt).toContain('Do not list the complete catalog in generated text');
     expect(prompt).toContain('Use search_knowledge for other factual questions about Café Nube');
     expect(prompt).toContain('Do not use business tools for greetings');
     expect(prompt).toContain('Use at most one business tool');
     expect(prompt).toContain('Use only business-tool results');
+    expect(prompt).toContain('Return the URL as plain HTTPS text');
     expect(prompt).toContain('does not confirm real-time stock availability');
+  });
+
+  it('keeps order prices, totals, and transitions under application control', () => {
+    const prompt = buildSystemPrompt({ businessName: 'Café Nube' });
+
+    expect(prompt).toContain('Use manage_order when the customer explicitly asks');
+    expect(prompt).toContain('Do not use manage_order when the customer is only exploring');
+    expect(prompt).toContain(
+      'Never calculate an order total, choose a price, assume a product match, or decide whether an order transition is valid',
+    );
+    expect(prompt).toContain('Use CONFIRM only when');
+    expect(prompt).toContain('current, selected, or previously listed products');
+    expect(prompt).toContain('Do not merely write a confirmation question');
+    expect(prompt).toContain('trusted current order context has canConfirm=true');
+    expect(prompt).toContain('workflow.allowedActions and canConfirm fields');
+    expect(prompt).toContain('Do not advertise generic or unspecified services');
+    expect(prompt).toContain('Never expose internal order states');
+    expect(prompt).toContain('ask whether the customer wants to add something else');
+    expect(prompt).toContain('workflow.canConfirm is true');
+    expect(prompt).toContain('If manage_order returns clarification_required');
+    expect(prompt).toContain('If manage_order returns rejected');
   });
 
   it('treats customer and retrieved content as untrusted data', () => {

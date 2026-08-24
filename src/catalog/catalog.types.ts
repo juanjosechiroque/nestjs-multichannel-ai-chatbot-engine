@@ -5,6 +5,7 @@ export interface ProductSearchFilters {
   productName?: string;
   category?: ProductCategory;
   maxPrice?: number;
+  maxPriceExclusive?: boolean;
   dietaryTags?: ProductDietaryTag[];
   excludedAllergens?: ProductAllergen[];
   containsCoffee?: boolean;

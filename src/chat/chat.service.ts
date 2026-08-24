@@ -7,6 +7,8 @@ import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
 import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
+import { MenuDocumentTool } from './tools/menu-document.tool';
+import { OrderTool } from './tools/order.tool';
 import type { ChatRequest, ChatResult } from './chat.types';
 
 @Injectable()
@@ -22,6 +24,10 @@ export class ChatService {
     private readonly catalogSearch: Pick<CatalogSearchTool, 'execute'>,
     @Inject(KnowledgeSearchTool)
     private readonly knowledgeSearch: Pick<KnowledgeSearchTool, 'execute'>,
+    @Inject(MenuDocumentTool)
+    private readonly menuDocument: Pick<MenuDocumentTool, 'execute'>,
+    @Inject(OrderTool)
+    private readonly orderTool: Pick<OrderTool, 'execute' | 'getContext'>,
     @Inject(MemoryService)
     private readonly memory: Pick<MemoryService, 'getRecentMessages' | 'saveExchange'>,
   ) {
@@ -35,15 +41,21 @@ export class ChatService {
     const context: RequestContext = { requestId, conversationId, channel };
 
     try {
-      const history = await this.memory.getRecentMessages(conversationId, context);
+      const [history, orderContext] = await Promise.all([
+        this.memory.getRecentMessages(conversationId, context),
+        this.orderTool.getContext(conversationId, context),
+      ]);
 
       const generation = await this.openAi.generate({
         context,
         message,
         instructions: this.instructions,
         history,
+        orderContext,
+        manageOrder: (order) => this.orderTool.execute({ ...order, conversationId, context }),
+        getMenuDocument: () => this.menuDocument.execute(),
         searchCatalog: (filters) => this.catalogSearch.execute({ ...filters, context }),
-        searchKnowledge: (query) => this.knowledgeSearch.execute({ query, history, context }),
+        searchKnowledge: (query) => this.knowledgeSearch.execute({ query, context }),
       });
 
       await this.memory.saveExchange(
@@ -64,9 +76,15 @@ export class ChatService {
         llmCalls: generation.llmCalls,
         usedTools: generation.usedTools,
         usedSources: generation.usedSources,
+        contentTypes: generation.content?.map((item) => item.type) ?? [],
       });
 
-      return { reply: generation.answer };
+      return {
+        reply: generation.answer,
+        ...(generation.content && generation.content.length > 0
+          ? { content: generation.content }
+          : {}),
+      };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown chat error';
       this.logger.error({

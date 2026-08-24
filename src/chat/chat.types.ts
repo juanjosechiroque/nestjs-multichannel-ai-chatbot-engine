@@ -7,6 +7,16 @@ export interface ChatRequest {
   message: string;
 }
 
+export interface DocumentChatContent {
+  type: 'document';
+  title: string;
+  url: string;
+  mimeType: 'application/pdf';
+}
+
+export type ChatContent = DocumentChatContent;
+
 export interface ChatResult {
   reply: string;
+  content?: ChatContent[];
 }

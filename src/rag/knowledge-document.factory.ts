@@ -14,7 +14,37 @@ export class KnowledgeDocumentFactory {
       ...products.map((product) => this.createProductDocument(product)),
       ...this.createProductCategoryDocuments(products),
       ...promotions.map((promotion) => this.createPromotionDocument(promotion)),
+      ...this.createServiceSummaryDocuments(faqs),
       ...faqs.flatMap((faq) => this.createFaqDocuments(faq)),
+    ];
+  }
+
+  private createServiceSummaryDocuments(faqs: Faq[]): KnowledgeDocument[] {
+    const services = faqs.flatMap((faq) => {
+      const serviceSummary = this.getMetadataString(faq.metadata, 'serviceSummary');
+      return serviceSummary ? [serviceSummary] : [];
+    });
+
+    if (services.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        sourceType: 'faq',
+        sourceId: 'business-services-summary',
+        chunkIndex: 0,
+        content: [
+          'Tipo: resumen de servicios confirmados del negocio.',
+          'Consultas relacionadas: qué servicios ofrecen; cuáles son sus servicios; servicios disponibles.',
+          `Servicios confirmados: ${services.join('; ')}.`,
+        ].join(' '),
+        metadata: {
+          slug: 'servicios',
+          category: 'SERVICES',
+          purpose: 'service_summary',
+        },
+      },
     ];
   }
 
@@ -141,6 +171,15 @@ export class KnowledgeDocumentFactory {
       (searchPhrase): searchPhrase is string =>
         typeof searchPhrase === 'string' && searchPhrase.trim().length > 0,
     );
+  }
+
+  private getMetadataString(metadata: unknown, key: string): string | undefined {
+    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
+      return undefined;
+    }
+
+    const value: unknown = (metadata as Record<string, unknown>)[key];
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
   }
 
   private getProductCategoryLabel(category: ProductCategory): string {
