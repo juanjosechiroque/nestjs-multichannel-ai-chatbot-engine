@@ -242,6 +242,35 @@ excluded from `npm run validate` and CI. Run one case by exact name when diagnos
 CHAT_CATALOG_EVALUATION_CASE="cold caffeine-free preference" npm run chat:evaluate:catalog
 ```
 
+### Order conversation evaluation
+
+With Docker running and a valid OpenAI API key in `.env`, run the live multi-turn order evaluation:
+
+```bash
+npm run chat:evaluate:orders
+```
+
+The command executes 18 representative conversations against the configured OpenAI model. They
+cover single and multi-product additions, contextual references, review, explicit and natural
+confirmation, modifications, cancellation, partial and complete removal, unknown products,
+browsing without ordering, customer-supplied price manipulation, repeated confirmation, a new
+order after confirmation, and catalog questions during an active order.
+
+Each conversation receives its own backend-managed session. After every turn, the evaluator checks
+the persisted order state and rejects customer-facing responses that expose internal enum names. At
+the end of each case, it verifies the exact products, quantities, database-calculated total, status,
+and number of persisted orders.
+
+The command creates a disposable PostgreSQL Testcontainer whose database name includes `test`,
+applies the real migrations, loads the Café Nube product seed, and removes the container when the
+evaluation ends. It never uses or clears the local development database. The live evaluation has
+OpenAI token cost and is intentionally excluded from `npm run validate` and CI. Run one case by its
+exact name when diagnosing a failure:
+
+```bash
+CHAT_ORDER_EVALUATION_CASE="modify after reviewing" npm run chat:evaluate:orders
+```
+
 ### Unit test coverage
 
 Run the deterministic unit-test suite with coverage:

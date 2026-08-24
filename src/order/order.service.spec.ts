@@ -470,6 +470,57 @@ describe('OrderService', () => {
     },
   );
 
+  it.each([
+    [
+      'addItems',
+      (service: OrderService) => service.addItems({ conversationId: CONVERSATION_ID, items: [] }),
+    ],
+    [
+      'removeItems',
+      (service: OrderService) =>
+        service.removeItems({ conversationId: CONVERSATION_ID, items: [] }),
+    ],
+  ])('rejects an empty %s operation before opening a transaction', async (_name, execute) => {
+    const { service, transaction } = createService();
+
+    await expect(execute(service)).rejects.toThrow(
+      'An order item operation requires at least one item',
+    );
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('merges duplicate products in one request before changing the draft', async () => {
+    const {
+      service,
+      productFindFirst,
+      orderFindFirst,
+      orderCreate,
+      orderUpdate,
+      orderItemFindUnique,
+      orderItemFindMany,
+      orderItemCreate,
+    } = createService();
+    const item = persistedItem({ quantity: 3 });
+    productFindFirst.mockResolvedValue(activeProduct());
+    orderFindFirst.mockResolvedValue(null);
+    orderCreate.mockResolvedValue(persistedOrder(PrismaOrderStatus.STARTED));
+    orderItemFindUnique.mockResolvedValue(null);
+    orderItemCreate.mockResolvedValue(item);
+    orderItemFindMany.mockResolvedValue([item]);
+    orderUpdate.mockResolvedValue(persistedOrder(PrismaOrderStatus.SELECTING_PRODUCTS, 39));
+
+    await service.addItems({
+      conversationId: CONVERSATION_ID,
+      items: [
+        { productId: PRODUCT_ID, quantity: 1 },
+        { productId: PRODUCT_ID, quantity: 2 },
+      ],
+    });
+
+    expect(productFindFirst).toHaveBeenCalledTimes(1);
+    expect(orderItemCreate.mock.calls[0]?.[0].data.quantity).toBe(3);
+  });
+
   it('turns unexpected PostgreSQL errors into a controlled application error', async () => {
     const log = jest.spyOn(Logger.prototype, 'error').mockImplementation();
     const { service, productFindFirst } = createService();

@@ -537,6 +537,219 @@ describe('HTTP conversation flow', () => {
     expect(confirmedOrder.total.toNumber()).toBe(39);
   });
 
+  it('cancels an active order without deleting its audit trail', async () => {
+    await prisma.product.create({
+      data: {
+        slug: 'cancel-latte',
+        name: 'Latte',
+        description: 'Espresso con leche vaporizada.',
+        price: '13.00',
+        category: ProductCategory.HOT_DRINK,
+      },
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    generate
+      .mockImplementationOnce(async (input) => {
+        await input.manageOrder({
+          action: OrderAction.ADD_ITEMS,
+          items: [{ productName: 'Latte', quantity: 1 }],
+        });
+        return {
+          answer: 'Agregué un latte. ¿Deseas algo más o revisar tu pedido?',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      })
+      .mockImplementationOnce(async (input) => {
+        await input.manageOrder({ action: OrderAction.CANCEL, items: [] });
+        return {
+          answer: 'Pedido cancelado.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      });
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Agrega un latte' })
+      .expect(201);
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Cancela el pedido' })
+      .expect(201, { reply: 'Pedido cancelado.' });
+
+    const cancelledOrder = await prisma.order.findFirstOrThrow({ include: { items: true } });
+    expect(cancelledOrder.status).toBe(OrderStatus.CANCELLED);
+    expect(cancelledOrder.items).toHaveLength(1);
+    expect(cancelledOrder.total.toNumber()).toBe(13);
+  });
+
+  it('returns to product selection when the customer modifies a reviewed order', async () => {
+    await prisma.product.create({
+      data: {
+        slug: 'modify-cappuccino',
+        name: 'Cappuccino',
+        description: 'Espresso con leche vaporizada.',
+        price: '12.00',
+        category: ProductCategory.HOT_DRINK,
+      },
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    generate
+      .mockImplementationOnce(async (input) => {
+        await input.manageOrder({
+          action: OrderAction.ADD_ITEMS,
+          items: [{ productName: 'Cappuccino', quantity: 2 }],
+        });
+        return {
+          answer: 'Agregué dos cappuccinos.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      })
+      .mockImplementationOnce(async (input) => {
+        await input.manageOrder({ action: OrderAction.REVIEW, items: [] });
+        return {
+          answer: 'Tu pedido contiene dos cappuccinos. Total: S/ 24. ¿Confirmas?',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      })
+      .mockImplementationOnce(async (input) => {
+        expect(input.orderContext.activeOrder?.workflow.canConfirm).toBe(true);
+        await input.manageOrder({
+          action: OrderAction.REMOVE_ITEMS,
+          items: [{ productName: 'Cappuccino', quantity: 1 }],
+        });
+        return {
+          answer: 'Quité un cappuccino. Ahora el total es S/ 12.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      });
+
+    for (const message of ['Quiero dos cappuccinos', 'Revisa mi pedido', 'Mejor quita uno']) {
+      await request(server).post('/api/chat').send({ sessionId, message }).expect(201);
+    }
+
+    const order = await prisma.order.findFirstOrThrow({ include: { items: true } });
+    expect(order.status).toBe(OrderStatus.SELECTING_PRODUCTS);
+    expect(order.total.toNumber()).toBe(12);
+    expect(order.items).toEqual([expect.objectContaining({ quantity: 1 })]);
+  });
+
+  it('preserves an existing draft when a later OpenAI request fails', async () => {
+    await prisma.product.create({
+      data: {
+        slug: 'resilient-brownie',
+        name: 'Brownie de cacao',
+        description: 'Brownie húmedo con cacao peruano.',
+        price: '11.00',
+        category: ProductCategory.FOOD,
+      },
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    generate.mockImplementationOnce(async (input) => {
+      await input.manageOrder({
+        action: OrderAction.ADD_ITEMS,
+        items: [{ productName: 'Brownie de cacao', quantity: 1 }],
+      });
+      return {
+        answer: 'Agregué un brownie.',
+        usedSources: [],
+        llmCalls: 2,
+        usedTools: ['manage_order'],
+      };
+    });
+
+    await request(server)
+      .post('/api/chat')
+      .send({ sessionId, message: 'Agrega un brownie' })
+      .expect(201);
+    generate.mockRejectedValueOnce(new OpenAiRequestFailedException());
+    await request(server).post('/api/chat').send({ sessionId, message: 'Agrega otro' }).expect(503);
+
+    const order = await prisma.order.findFirstOrThrow({ include: { items: true } });
+    expect(order.status).toBe(OrderStatus.SELECTING_PRODUCTS);
+    expect(order.total.toNumber()).toBe(11);
+    expect(order.items).toEqual([expect.objectContaining({ quantity: 1 })]);
+    await expect(prisma.conversationMessage.count()).resolves.toBe(2);
+  });
+
+  it('keeps the order context while answering an informational message between changes', async () => {
+    await prisma.product.createMany({
+      data: [
+        {
+          slug: 'context-latte',
+          name: 'Latte',
+          description: 'Espresso con leche.',
+          price: '13.00',
+          category: ProductCategory.HOT_DRINK,
+        },
+        {
+          slug: 'context-brownie',
+          name: 'Brownie de cacao',
+          description: 'Brownie de cacao peruano.',
+          price: '11.00',
+          category: ProductCategory.FOOD,
+        },
+      ],
+    });
+    const conversationResponse = await request(server).post('/api/conversations').expect(201);
+    const { sessionId } = conversationResponse.body as ConversationResponse;
+    generate
+      .mockImplementationOnce(async (input) => {
+        await input.manageOrder({
+          action: OrderAction.ADD_ITEMS,
+          items: [{ productName: 'Latte', quantity: 1 }],
+        });
+        return {
+          answer: 'Agregué un latte.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      })
+      .mockImplementationOnce((input) => {
+        expect(input.orderContext.activeOrder?.order.total).toBe(13);
+        return Promise.resolve({
+          answer: 'Sí, tenemos brownies.',
+          usedSources: [],
+          llmCalls: 1,
+          usedTools: [],
+        });
+      })
+      .mockImplementationOnce(async (input) => {
+        expect(input.orderContext.activeOrder?.order.total).toBe(13);
+        await input.manageOrder({
+          action: OrderAction.ADD_ITEMS,
+          items: [{ productName: 'Brownie de cacao', quantity: 1 }],
+        });
+        return {
+          answer: 'También agregué un brownie.',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['manage_order'],
+        };
+      });
+
+    for (const message of ['Agrega un latte', '¿Tienen brownies?', 'Agrega uno']) {
+      await request(server).post('/api/chat').send({ sessionId, message }).expect(201);
+    }
+
+    const order = await prisma.order.findFirstOrThrow({ include: { items: true } });
+    expect(order.total.toNumber()).toBe(24);
+    expect(order.items).toHaveLength(2);
+  });
+
   it('queries the active product catalog without running embeddings', async () => {
     const productId = randomUUID();
     await prisma.product.createMany({
@@ -922,6 +1135,11 @@ describe('HTTP conversation flow', () => {
   it.each([
     ['an invalid UUID', { sessionId: 'not-a-uuid', message: 'Hola' }],
     ['an empty message', { sessionId: randomUUID(), message: '' }],
+    [
+      'a message longer than 2000 characters',
+      { sessionId: randomUUID(), message: 'a'.repeat(2001) },
+    ],
+    ['a non-string message', { sessionId: randomUUID(), message: 123 }],
     ['an unexpected property', { sessionId: randomUUID(), message: 'Hola', internal: true }],
   ])('returns 400 for %s', async (_scenario, payload) => {
     await request(server).post('/api/chat').send(payload).expect(400);
