@@ -150,21 +150,6 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
     expectedSource: { sourceType: 'product_category', sourceKey: 'FOOD' },
   },
   {
-    name: 'frappe promotion',
-    query: '¿Cuándo tienen dos por uno en frappés?',
-    expectedSource: { sourceType: 'promotion', sourceKey: 'frappe-dos-por-uno' },
-  },
-  {
-    name: 'breakfast promotion',
-    query: '¿Qué incluye la promoción Desayuno Nube?',
-    expectedSource: { sourceType: 'promotion', sourceKey: 'desayuno-nube' },
-  },
-  {
-    name: 'friday promotion',
-    query: '¿Hay descuentos en bebidas frías los viernes?',
-    expectedSource: { sourceType: 'promotion', sourceKey: 'viernes-frio' },
-  },
-  {
     name: 'unrelated recipe',
     query: 'Dame una receta para preparar flan',
     expectNoResults: true,

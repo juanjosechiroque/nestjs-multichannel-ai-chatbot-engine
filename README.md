@@ -24,7 +24,8 @@ prompts, retrieval, memory, catalog, or order rules.
 - OpenAI Responses API with structured output and model-selected tools.
 - Persistent PostgreSQL conversation history with a bounded recent-message window.
 - Direct catalog search by category, price, allergens, dietary tags, and caffeine preferences.
-- Semantic FAQ, promotion, location, policy, and service retrieval with pgvector.
+- Semantic FAQ, location, policy, and service retrieval with pgvector.
+- Date- and time-zone-aware promotion queries backed by PostgreSQL.
 - Channel-neutral PDF menu responses.
 - Prompt-injection and unsupported-claim protections.
 
@@ -167,15 +168,17 @@ curl http://localhost:3000/api/menu --output cafe-nube-menu.pdf
 
 ## Information routing
 
-| Customer request                         | Application path                                  |
-| ---------------------------------------- | ------------------------------------------------- |
-| “What do you sell?”                      | Catalog categories and representative examples    |
-| “Show me the menu”                       | Channel-neutral PDF document descriptor           |
-| “What cold drinks cost less than S/ 15?” | Typed PostgreSQL catalog query                    |
-| “Explain your allergen policy”           | Semantic knowledge search through RAG             |
-| “Add two cappuccinos”                    | Order tool, catalog resolution, and state machine |
-| “I am Ana and my phone is 987 654 321”   | Validated order customer-details tool             |
-| Greeting or thanks                       | Direct model response without retrieval           |
+| Customer request                         | Application path                                    |
+| ---------------------------------------- | --------------------------------------------------- |
+| “What do you sell?”                      | Catalog categories and representative examples      |
+| “Show me the menu”                       | Channel-neutral PDF document descriptor             |
+| “What cold drinks cost less than S/ 15?” | Typed PostgreSQL catalog query                      |
+| “Explain your allergen policy”           | Semantic knowledge search through RAG               |
+| “Which promotions apply right now?”      | Structured promotion query in the business timezone |
+| “What promotions do you have?”           | Current and scheduled promotion catalog             |
+| “Add two cappuccinos”                    | Order tool, catalog resolution, and state machine   |
+| “I am Ana and my phone is 987 654 321”   | Validated order customer-details tool               |
+| Greeting or thanks                       | Direct model response without retrieval             |
 
 The model may select at most one tool per customer message. A tool call uses one model response to
 choose the operation and a second response to present the application-controlled result.
@@ -192,6 +195,7 @@ Important controls include:
 | `RAG_MIN_SIMILARITY`                | `0.5`                    |
 | `RATE_LIMIT_CONVERSATIONS_PER_HOUR` | `5`                      |
 | `RATE_LIMIT_MESSAGES_PER_MINUTE`    | `10`                     |
+| `BUSINESS_TIME_ZONE`                | `America/Lima`           |
 
 The current rate-limit store is in memory and intentionally targets one application instance. A
 distributed deployment requires shared Redis storage. A reverse proxy must also be trusted

@@ -30,6 +30,58 @@ describe('CatalogService', () => {
     });
   });
 
+  it('searches only promotions valid within the current date window', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new CatalogService({
+      promotion: { findMany },
+    } as unknown as PrismaService);
+    const evaluatedAt = new Date('2026-08-15T00:30:00.000Z');
+    const context = {
+      requestId: 'request-1',
+      conversationId: 'conversation-1',
+      channel: 'web' as const,
+    };
+
+    await service.searchPromotions(
+      {
+        promotionName: 'Viernes frío',
+        evaluatedAt,
+        includeNotStarted: false,
+      },
+      context,
+    );
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        active: true,
+        name: { contains: 'Viernes frío', mode: 'insensitive' },
+        AND: [
+          { OR: [{ endsAt: null }, { endsAt: { gt: evaluatedAt } }] },
+          { OR: [{ startsAt: null }, { startsAt: { lte: evaluatedAt } }] },
+        ],
+      },
+      orderBy: { name: 'asc' },
+    });
+  });
+
+  it('includes scheduled promotions but excludes ended ones for the published catalog', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new CatalogService({
+      promotion: { findMany },
+    } as unknown as PrismaService);
+    const evaluatedAt = new Date('2026-08-15T00:30:00.000Z');
+
+    await service.searchPromotions({ evaluatedAt, includeNotStarted: true });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        active: true,
+        AND: [{ OR: [{ endsAt: null }, { endsAt: { gt: evaluatedAt } }] }],
+      },
+      orderBy: { name: 'asc' },
+    });
+  });
+
   it('searches active products with exact structured filters', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const service = new CatalogService({

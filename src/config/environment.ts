@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsString,
+  IsTimeZone,
   Max,
   Min,
   validateSync,
@@ -86,6 +87,9 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   BUSINESS_NAME!: string;
+
+  @IsTimeZone()
+  BUSINESS_TIME_ZONE = 'America/Lima';
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

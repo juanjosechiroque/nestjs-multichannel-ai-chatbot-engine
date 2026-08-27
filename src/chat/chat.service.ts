@@ -9,6 +9,7 @@ import { CatalogSearchTool } from './tools/catalog-search.tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 import { MenuDocumentTool } from './tools/menu-document.tool';
 import { OrderTool } from './tools/order.tool';
+import { PromotionSearchTool } from './tools/promotion-search.tool';
 import type { ChatRequest, ChatResult, TrustedCustomerIdentity } from './chat.types';
 
 @Injectable()
@@ -28,6 +29,8 @@ export class ChatService {
     private readonly menuDocument: Pick<MenuDocumentTool, 'execute'>,
     @Inject(OrderTool)
     private readonly orderTool: Pick<OrderTool, 'execute' | 'getContext' | 'setCustomerDetails'>,
+    @Inject(PromotionSearchTool)
+    private readonly promotionSearch: Pick<PromotionSearchTool, 'execute'>,
     @Inject(MemoryService)
     private readonly memory: Pick<MemoryService, 'getRecentMessages' | 'saveExchange'>,
   ) {
@@ -69,6 +72,7 @@ export class ChatService {
           this.orderTool.setCustomerDetails(details, conversationId, context),
         getMenuDocument: () => this.menuDocument.execute(),
         searchCatalog: (filters) => this.catalogSearch.execute({ ...filters, context }),
+        searchPromotions: (filters) => this.promotionSearch.execute({ ...filters, context }),
         searchKnowledge: (query) => this.knowledgeSearch.execute({ query, context }),
       });
 
