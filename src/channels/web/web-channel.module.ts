@@ -6,6 +6,7 @@ import { ConversationModule } from '../../conversation/conversation.module';
 import { WebChatController } from './web-chat.controller';
 import { WebConversationController } from './web-conversation.controller';
 import { createWebRateLimitOptions } from './web-rate-limit';
+import { WebResponseAdapter } from './web-response.adapter';
 
 @Module({
   imports: [
@@ -17,5 +18,6 @@ import { createWebRateLimitOptions } from './web-rate-limit';
     ConversationModule,
   ],
   controllers: [WebChatController, WebConversationController],
+  providers: [WebResponseAdapter],
 })
 export class WebChannelModule {}
