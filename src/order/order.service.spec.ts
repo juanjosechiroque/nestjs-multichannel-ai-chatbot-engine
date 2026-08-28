@@ -34,15 +34,27 @@ interface UpdateOrderItemArguments {
   };
 }
 
-function persistedOrder(status: PrismaOrderStatus, total = 0) {
+function persistedOrder(
+  status: PrismaOrderStatus,
+  total = 0,
+  overrides: Partial<{
+    orderNumber: number | null;
+    customerName: string | null;
+    customerPhone: string | null;
+  }> = {},
+) {
   return {
     id: ORDER_ID,
+    orderNumber: null,
     conversationId: CONVERSATION_ID,
     status,
     total: new Prisma.Decimal(total),
     currency: 'PEN',
+    customerName: null,
+    customerPhone: null,
     createdAt: new Date('2026-08-11T00:00:00.000Z'),
     updatedAt: new Date('2026-08-11T00:00:00.000Z'),
+    ...overrides,
   };
 }
 
@@ -148,10 +160,13 @@ describe('OrderService', () => {
 
     await expect(service.getActiveOrder(CONVERSATION_ID)).resolves.toEqual({
       id: ORDER_ID,
+      orderNumber: null,
       conversationId: CONVERSATION_ID,
       status: OrderStatus.SELECTING_PRODUCTS,
       total: 13,
       currency: 'PEN',
+      customerName: null,
+      customerPhone: null,
       items: [
         {
           productId: PRODUCT_ID,
@@ -169,6 +184,7 @@ describe('OrderService', () => {
           in: [
             PrismaOrderStatus.STARTED,
             PrismaOrderStatus.SELECTING_PRODUCTS,
+            PrismaOrderStatus.COLLECTING_CUSTOMER_DATA,
             PrismaOrderStatus.CONFIRMING_ORDER,
           ],
         },
@@ -411,13 +427,7 @@ describe('OrderService', () => {
     {
       method: 'review' as const,
       currentStatus: PrismaOrderStatus.SELECTING_PRODUCTS,
-      expectedStatus: PrismaOrderStatus.CONFIRMING_ORDER,
-      items: [persistedItem()],
-    },
-    {
-      method: 'confirm' as const,
-      currentStatus: PrismaOrderStatus.CONFIRMING_ORDER,
-      expectedStatus: PrismaOrderStatus.CONFIRMED,
+      expectedStatus: PrismaOrderStatus.COLLECTING_CUSTOMER_DATA,
       items: [persistedItem()],
     },
     {
@@ -453,6 +463,112 @@ describe('OrderService', () => {
     },
   );
 
+  it('normalizes customer details and moves a reviewed order to confirmation', async () => {
+    const { service, orderFindFirst, orderItemFindMany, orderUpdate } = createService();
+    const collectingOrder = persistedOrder(PrismaOrderStatus.COLLECTING_CUSTOMER_DATA, 13);
+    const orderWithCustomer = persistedOrder(PrismaOrderStatus.COLLECTING_CUSTOMER_DATA, 13, {
+      customerName: 'Ana Pérez',
+      customerPhone: '+51987654321',
+    });
+    orderFindFirst.mockResolvedValue(collectingOrder);
+    orderItemFindMany.mockResolvedValue([persistedItem()]);
+    orderUpdate
+      .mockResolvedValueOnce(orderWithCustomer)
+      .mockResolvedValueOnce({ ...orderWithCustomer, status: PrismaOrderStatus.CONFIRMING_ORDER });
+
+    await expect(
+      service.setCustomerDetails({
+        conversationId: CONVERSATION_ID,
+        customerName: '  Ana   Pérez ',
+        customerPhone: '+51 987-654-321',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: OrderStatus.CONFIRMING_ORDER,
+        customerName: 'Ana Pérez',
+        customerPhone: '+51987654321',
+      }),
+    );
+    expect(orderUpdate).toHaveBeenNthCalledWith(1, {
+      where: { id: ORDER_ID },
+      data: { customerName: 'Ana Pérez', customerPhone: '+51987654321' },
+    });
+  });
+
+  it('keeps collecting customer data when only the name is available', async () => {
+    const { service, orderFindFirst, orderItemFindMany, orderUpdate } = createService();
+    const collectingOrder = persistedOrder(PrismaOrderStatus.COLLECTING_CUSTOMER_DATA, 13);
+    const orderWithName = { ...collectingOrder, customerName: 'Ana Pérez' };
+    orderFindFirst.mockResolvedValue(collectingOrder);
+    orderItemFindMany.mockResolvedValue([persistedItem()]);
+    orderUpdate.mockResolvedValueOnce(orderWithName).mockResolvedValueOnce(orderWithName);
+
+    await expect(
+      service.setCustomerDetails({
+        conversationId: CONVERSATION_ID,
+        customerName: 'Ana Pérez',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: OrderStatus.COLLECTING_CUSTOMER_DATA,
+        customerName: 'Ana Pérez',
+        customerPhone: null,
+      }),
+    );
+  });
+
+  it.each([
+    { customerName: 'A' },
+    { customerName: '12345678' },
+    { customerPhone: '1234' },
+    { customerPhone: 'call987654321' },
+    {},
+  ])('rejects invalid customer details before opening a transaction: %j', (details) => {
+    const { service, transaction } = createService();
+
+    expect(() =>
+      service.setCustomerDetails({ conversationId: CONVERSATION_ID, ...details }),
+    ).toThrow(RangeError);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('confirms a complete order and assigns its public number once', async () => {
+    const { service, orderFindFirst, orderItemFindMany, orderUpdate, conversationLock } =
+      createService();
+    const completeOrder = persistedOrder(PrismaOrderStatus.CONFIRMING_ORDER, 13, {
+      customerName: 'Ana Pérez',
+      customerPhone: '+51987654321',
+    });
+    orderFindFirst.mockResolvedValue(completeOrder);
+    orderItemFindMany.mockResolvedValue([persistedItem()]);
+    conversationLock
+      .mockResolvedValueOnce([{ locked: 1 }])
+      .mockResolvedValueOnce([{ value: 1000n }]);
+    orderUpdate.mockResolvedValue({
+      ...completeOrder,
+      status: PrismaOrderStatus.CONFIRMED,
+      orderNumber: 1000,
+    });
+
+    await expect(service.confirm(CONVERSATION_ID)).resolves.toEqual(
+      expect.objectContaining({
+        status: OrderStatus.CONFIRMED,
+        orderNumber: 1000,
+        customerName: 'Ana Pérez',
+        customerPhone: '+51987654321',
+        idempotentReplay: false,
+      }),
+    );
+    expect(orderUpdate).toHaveBeenCalledWith({
+      where: { id: ORDER_ID },
+      data: {
+        status: PrismaOrderStatus.CONFIRMED,
+        total: new Prisma.Decimal(13),
+        orderNumber: 1000,
+      },
+    });
+  });
+
   it('rejects status actions without an active order or from an invalid state', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const missingOrder = createService();
@@ -481,9 +597,13 @@ describe('OrderService', () => {
 
   it('replays the latest confirmation without updating the order again', async () => {
     const { service, orderFindFirst, orderItemFindMany, orderUpdate } = createService();
-    orderFindFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(persistedOrder(PrismaOrderStatus.CONFIRMED, 13));
+    orderFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(
+      persistedOrder(PrismaOrderStatus.CONFIRMED, 13, {
+        orderNumber: 1000,
+        customerName: 'Ana Pérez',
+        customerPhone: '+51987654321',
+      }),
+    );
     orderItemFindMany.mockResolvedValue([persistedItem()]);
 
     await expect(service.confirm(CONVERSATION_ID)).resolves.toEqual(

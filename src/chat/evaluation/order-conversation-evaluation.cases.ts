@@ -3,6 +3,10 @@ import type { OrderConversationEvaluationCase } from './order-conversation-evalu
 
 const latte = { productName: 'Latte', quantity: 1 } as const;
 const brownie = { productName: 'Brownie de cacao', quantity: 1 } as const;
+const customerDetailsTurn = {
+  message: 'Mi nombre es Ana Pérez y mi celular es +51 987 654 321.',
+  expectedStatus: OrderStatus.CONFIRMING_ORDER,
+} as const;
 
 export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEvaluationCase[] = [
   {
@@ -51,11 +55,15 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
       { message: 'Quiero un latte.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
       {
         message: 'Muéstrame el resumen de mi pedido.',
-        expectedStatus: OrderStatus.CONFIRMING_ORDER,
-        expectedReplyTerms: ['total', 'confirm'],
+        expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA,
+        expectedReplyTerms: ['total', 'nombre'],
       },
     ],
-    expectedOrder: { status: OrderStatus.CONFIRMING_ORDER, total: 13, items: [latte] },
+    expectedOrder: {
+      status: OrderStatus.COLLECTING_CUSTOMER_DATA,
+      total: 13,
+      items: [latte],
+    },
     expectedOrderCount: 1,
   },
   {
@@ -63,14 +71,22 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
     category: 'confirm',
     turns: [
       { message: 'Agrega un latte.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
-      { message: 'Revisa mi pedido.', expectedStatus: OrderStatus.CONFIRMING_ORDER },
+      { message: 'Revisa mi pedido.', expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA },
+      customerDetailsTurn,
       {
         message: 'Sí, confirmo el pedido.',
         expectedStatus: OrderStatus.CONFIRMED,
         expectedReplyTerms: ['confirm'],
       },
     ],
-    expectedOrder: { status: OrderStatus.CONFIRMED, total: 13, items: [latte] },
+    expectedOrder: {
+      status: OrderStatus.CONFIRMED,
+      total: 13,
+      items: [latte],
+      orderNumberAssigned: true,
+      customerName: 'Ana Pérez',
+      customerPhone: '+51987654321',
+    },
     expectedOrderCount: 1,
   },
   {
@@ -78,13 +94,17 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
     category: 'confirm',
     turns: [
       { message: 'Ponme un americano.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
-      { message: 'Es todo, revisemos.', expectedStatus: OrderStatus.CONFIRMING_ORDER },
+      { message: 'Es todo, revisemos.', expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA },
+      customerDetailsTurn,
       { message: 'Dale, confírmalo.', expectedStatus: OrderStatus.CONFIRMED },
     ],
     expectedOrder: {
       status: OrderStatus.CONFIRMED,
       total: 10,
       items: [{ productName: 'Americano', quantity: 1 }],
+      orderNumberAssigned: true,
+      customerName: 'Ana Pérez',
+      customerPhone: '+51987654321',
     },
     expectedOrderCount: 1,
   },
@@ -93,7 +113,7 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
     category: 'modify',
     turns: [
       { message: 'Quiero dos cappuccinos.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
-      { message: 'Revisa el pedido.', expectedStatus: OrderStatus.CONFIRMING_ORDER },
+      { message: 'Revisa el pedido.', expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA },
       { message: 'Mejor quita uno.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
     ],
     expectedOrder: {
@@ -122,7 +142,8 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
     category: 'cancel',
     turns: [
       { message: 'Agrega un brownie de cacao.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
-      { message: 'Revisa el pedido.', expectedStatus: OrderStatus.CONFIRMING_ORDER },
+      { message: 'Revisa el pedido.', expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA },
+      customerDetailsTurn,
       { message: 'No, cancélalo.', expectedStatus: OrderStatus.CANCELLED },
     ],
     expectedOrder: { status: OrderStatus.CANCELLED, total: 11, items: [brownie] },
@@ -185,7 +206,7 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
     category: 'modify',
     turns: [
       { message: 'Agrega un latte.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
-      { message: 'Revisa mi pedido.', expectedStatus: OrderStatus.CONFIRMING_ORDER },
+      { message: 'Revisa mi pedido.', expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA },
       {
         message: 'Todavía no confirmes; agrega un brownie de cacao.',
         expectedStatus: OrderStatus.SELECTING_PRODUCTS,
@@ -203,11 +224,19 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
     category: 'safety',
     turns: [
       { message: 'Agrega un latte.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
-      { message: 'Revisa mi pedido.', expectedStatus: OrderStatus.CONFIRMING_ORDER },
+      { message: 'Revisa mi pedido.', expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA },
+      customerDetailsTurn,
       { message: 'Sí, confirma.', expectedStatus: OrderStatus.CONFIRMED },
       { message: 'Sí, confirma de nuevo.', expectedStatus: OrderStatus.CONFIRMED },
     ],
-    expectedOrder: { status: OrderStatus.CONFIRMED, total: 13, items: [latte] },
+    expectedOrder: {
+      status: OrderStatus.CONFIRMED,
+      total: 13,
+      items: [latte],
+      orderNumberAssigned: true,
+      customerName: 'Ana Pérez',
+      customerPhone: '+51987654321',
+    },
     expectedOrderCount: 1,
   },
   {
@@ -215,7 +244,8 @@ export const ORDER_CONVERSATION_EVALUATION_CASES: readonly OrderConversationEval
     category: 'continuity',
     turns: [
       { message: 'Agrega un latte.', expectedStatus: OrderStatus.SELECTING_PRODUCTS },
-      { message: 'Revisa el pedido.', expectedStatus: OrderStatus.CONFIRMING_ORDER },
+      { message: 'Revisa el pedido.', expectedStatus: OrderStatus.COLLECTING_CUSTOMER_DATA },
+      customerDetailsTurn,
       { message: 'Sí, confirma.', expectedStatus: OrderStatus.CONFIRMED },
       {
         message: 'Ahora agrega un brownie de cacao.',

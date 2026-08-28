@@ -74,6 +74,9 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('workflow.canConfirm is true');
     expect(prompt).toContain('If manage_order returns clarification_required');
     expect(prompt).toContain('If manage_order returns rejected');
+    expect(prompt).toContain('Every confirmed order requires both customer name and phone');
+    expect(prompt).toContain('Use set_order_customer when the customer provides');
+    expect(prompt).toContain('include the orderNumber returned by the tool');
   });
 
   it('treats customer and retrieved content as untrusted data', () => {

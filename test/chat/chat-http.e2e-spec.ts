@@ -420,12 +420,18 @@ describe('HTTP conversation flow', () => {
     );
     const typedOrderToolResult = orderToolResult as {
       order: { items: unknown[] };
-      workflow: { allowedActions: string[]; canConfirm: boolean; nextAction: string };
+      workflow: {
+        allowedActions: string[];
+        canConfirm: boolean;
+        nextAction: string;
+        missingCustomerFields: string[];
+      };
     };
     expect(typedOrderToolResult.workflow).toEqual({
       allowedActions: ['ADD_ITEMS', 'REMOVE_ITEMS', 'REVIEW', 'CANCEL'],
       canConfirm: false,
       nextAction: 'REVIEW',
+      missingCustomerFields: ['customerName', 'customerPhone'],
     });
     const completedOrder = typedOrderToolResult.order;
     expect(completedOrder).toEqual(expect.objectContaining({ total: 35, currency: 'PEN' }));
@@ -466,6 +472,7 @@ describe('HTTP conversation flow', () => {
     });
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
+    let publicOrderNumber: number | undefined;
 
     generate
       .mockImplementationOnce(async (input) => {
@@ -494,13 +501,33 @@ describe('HTTP conversation flow', () => {
           ],
           canConfirm: false,
           nextAction: OrderAction.REVIEW,
+          missingCustomerFields: ['customerName', 'customerPhone'],
         });
         await input.manageOrder({ action: OrderAction.REVIEW, items: [] });
         return {
-          answer: 'Llevas 3 lattes por S/ 39. ¿Deseas confirmar el pedido?',
+          answer: 'Llevas 3 lattes por S/ 39. ¿Cuál es tu nombre y número de celular?',
           usedSources: [],
           llmCalls: 2,
           usedTools: ['manage_order'],
+        };
+      })
+      .mockImplementationOnce(async (input) => {
+        expect(input.message).toBe('Soy Ana Pérez, mi celular es +51 987 654 321.');
+        expect(input.orderContext.activeOrder?.workflow).toEqual({
+          allowedActions: [OrderAction.ADD_ITEMS, OrderAction.REMOVE_ITEMS, OrderAction.CANCEL],
+          canConfirm: false,
+          nextAction: null,
+          missingCustomerFields: ['customerName', 'customerPhone'],
+        });
+        await input.setOrderCustomer({
+          customerName: 'Ana Pérez',
+          customerPhone: '+51 987 654 321',
+        });
+        return {
+          answer: 'Ana, llevas 3 lattes por S/ 39. ¿Deseas confirmar el pedido?',
+          usedSources: [],
+          llmCalls: 2,
+          usedTools: ['set_order_customer'],
         };
       })
       .mockImplementationOnce(async (input) => {
@@ -514,10 +541,14 @@ describe('HTTP conversation flow', () => {
           ],
           canConfirm: true,
           nextAction: OrderAction.CONFIRM,
+          missingCustomerFields: [],
         });
-        await input.manageOrder({ action: OrderAction.CONFIRM, items: [] });
+        const result = JSON.parse(
+          await input.manageOrder({ action: OrderAction.CONFIRM, items: [] }),
+        ) as { order: { orderNumber: number } };
+        publicOrderNumber = result.order.orderNumber;
         return {
-          answer: 'Tu pedido fue confirmado. Total: S/ 39.',
+          answer: `Tu pedido #${publicOrderNumber} fue confirmado. Total: S/ 39.`,
           usedSources: [],
           llmCalls: 2,
           usedTools: ['manage_order'],
@@ -549,8 +580,9 @@ describe('HTTP conversation flow', () => {
       .expect(201);
     await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'sí' })
-      .expect(201, { reply: 'Tu pedido fue confirmado. Total: S/ 39.' });
+      .send({ sessionId, message: 'Soy Ana Pérez, mi celular es +51 987 654 321.' })
+      .expect(201, { reply: 'Ana, llevas 3 lattes por S/ 39. ¿Deseas confirmar el pedido?' });
+    await request(server).post('/api/chat').send({ sessionId, message: 'sí' }).expect(201);
 
     const firstConfirmation = await prisma.order.findFirstOrThrow();
     await request(server)
@@ -561,6 +593,9 @@ describe('HTTP conversation flow', () => {
     const confirmedOrder = await prisma.order.findFirstOrThrow();
     expect(confirmedOrder.status).toBe(OrderStatus.CONFIRMED);
     expect(confirmedOrder.total.toNumber()).toBe(39);
+    expect(confirmedOrder.orderNumber).toBe(publicOrderNumber);
+    expect(confirmedOrder.customerName).toBe('Ana Pérez');
+    expect(confirmedOrder.customerPhone).toBe('+51987654321');
     expect(confirmedOrder.id).toBe(firstConfirmation.id);
     expect(confirmedOrder.updatedAt).toEqual(firstConfirmation.updatedAt);
     await expect(prisma.order.count()).resolves.toBe(1);
@@ -644,14 +679,18 @@ describe('HTTP conversation flow', () => {
       .mockImplementationOnce(async (input) => {
         await input.manageOrder({ action: OrderAction.REVIEW, items: [] });
         return {
-          answer: 'Tu pedido contiene dos cappuccinos. Total: S/ 24. ¿Confirmas?',
+          answer: 'Tu pedido contiene dos cappuccinos. Total: S/ 24. ¿Deseas cambiar algo?',
           usedSources: [],
           llmCalls: 2,
           usedTools: ['manage_order'],
         };
       })
       .mockImplementationOnce(async (input) => {
-        expect(input.orderContext.activeOrder?.workflow.canConfirm).toBe(true);
+        expect(input.orderContext.activeOrder?.workflow.canConfirm).toBe(false);
+        expect(input.orderContext.activeOrder?.workflow.missingCustomerFields).toEqual([
+          'customerName',
+          'customerPhone',
+        ]);
         await input.manageOrder({
           action: OrderAction.REMOVE_ITEMS,
           items: [{ productName: 'Cappuccino', quantity: 1 }],

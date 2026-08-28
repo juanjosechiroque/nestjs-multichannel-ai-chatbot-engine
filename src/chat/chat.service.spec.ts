@@ -14,6 +14,7 @@ import type { KnowledgeSearchTool } from './tools/knowledge-search.tool';
 function orderToolMock() {
   return {
     execute: jest.fn(),
+    setCustomerDetails: jest.fn(),
     getContext: jest
       .fn()
       .mockResolvedValue({ activeOrder: null, confirmationReplayAvailable: false }),
@@ -253,6 +254,88 @@ describe('ChatService', () => {
       conversationId: 'conversation-1',
       context,
     });
+  });
+
+  it('applies trusted channel identity to missing order fields before generation', async () => {
+    let receivedInput: GenerateResponseInput | undefined;
+    const generate = jest.fn((input: GenerateResponseInput) => {
+      receivedInput = input;
+      return Promise.resolve(directResult('¿Deseas confirmar tu pedido?'));
+    });
+    const orderTool = orderToolMock();
+    const initialOrderContext = {
+      activeOrder: {
+        order: {
+          orderNumber: null,
+          total: 13,
+          currency: 'PEN',
+          customer: { name: null, maskedPhone: null },
+          items: [{ productName: 'Latte', unitPrice: 13, quantity: 1, lineTotal: 13 }],
+        },
+        workflow: {
+          allowedActions: [OrderAction.ADD_ITEMS, OrderAction.REMOVE_ITEMS, OrderAction.CANCEL],
+          canConfirm: false,
+          nextAction: null,
+          missingCustomerFields: ['customerName', 'customerPhone'],
+        },
+      },
+      confirmationReplayAvailable: false,
+    };
+    const completedOrderContext = {
+      activeOrder: {
+        order: {
+          ...initialOrderContext.activeOrder.order,
+          customer: { name: 'Ana Pérez', maskedPhone: '******321' },
+        },
+        workflow: {
+          allowedActions: [
+            OrderAction.ADD_ITEMS,
+            OrderAction.REMOVE_ITEMS,
+            OrderAction.CONFIRM,
+            OrderAction.CANCEL,
+          ],
+          canConfirm: true,
+          nextAction: OrderAction.CONFIRM,
+          missingCustomerFields: [],
+        },
+      },
+      confirmationReplayAvailable: false,
+    };
+    orderTool.getContext
+      .mockResolvedValueOnce(initialOrderContext)
+      .mockResolvedValueOnce(completedOrderContext);
+    orderTool.setCustomerDetails.mockResolvedValue('{}');
+    const service = new ChatService(
+      { generate },
+      new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+      { execute: jest.fn() },
+      { execute: jest.fn() },
+      { execute: jest.fn() },
+      orderTool,
+      {
+        getRecentMessages: jest.fn().mockResolvedValue([]),
+        saveExchange: jest.fn().mockResolvedValue(undefined),
+      },
+    );
+    const context = {
+      requestId: 'request-channel-identity',
+      conversationId: 'conversation-1',
+      channel: 'whatsapp' as const,
+    };
+
+    await service.reply({
+      ...context,
+      message: 'Quiero revisar mi pedido.',
+      customerIdentity: { name: 'Ana Pérez', phone: '+51987654321' },
+    });
+
+    expect(orderTool.setCustomerDetails).toHaveBeenCalledWith(
+      { customerName: 'Ana Pérez', customerPhone: '+51987654321' },
+      'conversation-1',
+      context,
+    );
+    expect(orderTool.getContext).toHaveBeenCalledTimes(2);
+    expect(receivedInput?.orderContext).toEqual(completedOrderContext);
   });
 
   it('keeps security instructions when the user attempts prompt injection', async () => {

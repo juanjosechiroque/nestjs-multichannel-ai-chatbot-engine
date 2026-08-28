@@ -22,6 +22,7 @@ enum MessageRole {
 enum OrderStatus {
   STARTED
   SELECTING_PRODUCTS
+  COLLECTING_CUSTOMER_DATA
   CONFIRMING_ORDER
   CONFIRMED
   CANCELLED
@@ -116,8 +117,11 @@ model ConversationMessage {
 
 model Order {
   id             String       @id @default(uuid()) @db.Uuid
+  orderNumber    Int?         @unique @map("order_number")
   conversationId String       @map("conversation_id") @db.Uuid
   status         OrderStatus  @default(STARTED)
+  customerName   String?      @map("customer_name") @db.VarChar(100)
+  customerPhone  String?      @map("customer_phone") @db.VarChar(16)
   total          Decimal      @default(0) @db.Decimal(10, 2)
   currency       String       @default("PEN") @db.Char(3)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)

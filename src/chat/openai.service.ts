@@ -19,6 +19,7 @@ import type { CatalogSearchArguments } from './tools/catalog-search.tool';
 import {
   type CustomerOrderAction,
   type OrderConversationContext,
+  type OrderCustomerDetailsArguments,
   type OrderToolArguments,
 } from './tools/order.tool';
 
@@ -29,6 +30,7 @@ export interface GenerateResponseInput {
   history: ChatHistoryMessage[];
   orderContext: OrderConversationContext;
   manageOrder: (order: OrderToolArguments) => Promise<string>;
+  setOrderCustomer: (details: OrderCustomerDetailsArguments) => Promise<string>;
   getMenuDocument: () => Promise<string>;
   searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
   searchKnowledge: (query: string) => Promise<string>;
@@ -74,6 +76,7 @@ const KNOWLEDGE_SEARCH_TOOL_NAME = 'search_knowledge';
 const CATALOG_SEARCH_TOOL_NAME = 'search_catalog';
 const MENU_DOCUMENT_TOOL_NAME = 'get_menu_document';
 const ORDER_TOOL_NAME = 'manage_order';
+const ORDER_CUSTOMER_TOOL_NAME = 'set_order_customer';
 const EMPTY_BUSINESS_CONTEXT = JSON.stringify({
   retrievalStatus: 'no_results',
   knowledge: [],
@@ -271,12 +274,51 @@ function buildOrderTool(orderContext: OrderConversationContext): OpenAI.Response
   };
 }
 
+function buildOrderCustomerTool(
+  orderContext: OrderConversationContext,
+): OpenAI.Responses.FunctionTool | null {
+  const activeOrder = orderContext.activeOrder;
+  if (!activeOrder) return null;
+
+  return {
+    type: 'function',
+    name: ORDER_CUSTOMER_TOOL_NAME,
+    description: [
+      "Save the current order's required customer name or phone number.",
+      `The application still requires: ${activeOrder.workflow.missingCustomerFields.join(', ') || 'no fields'}.`,
+      'Use only details explicitly provided by the customer or supplied as trusted channel identity.',
+      'Use null for a field that the customer did not provide in the current message.',
+      'Never invent, infer, or reuse a phone number from unrelated conversation content.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        customerName: {
+          type: ['string', 'null'],
+          description: 'Customer name explicitly provided for the order, or null.',
+          maxLength: 100,
+        },
+        customerPhone: {
+          type: ['string', 'null'],
+          description: 'Customer phone explicitly provided for the order, or null.',
+          maxLength: 30,
+        },
+      },
+      required: ['customerName', 'customerPhone'],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
 function buildChatTools(orderContext: OrderConversationContext): OpenAI.Responses.FunctionTool[] {
+  const customerTool = buildOrderCustomerTool(orderContext);
   return [
     KNOWLEDGE_SEARCH_TOOL,
     CATALOG_SEARCH_TOOL,
     MENU_DOCUMENT_TOOL,
     buildOrderTool(orderContext),
+    ...(customerTool ? [customerTool] : []),
   ];
 }
 
@@ -354,6 +396,7 @@ export class OpenAiService {
     history,
     orderContext,
     manageOrder,
+    setOrderCustomer,
     getMenuDocument,
     searchCatalog,
     searchKnowledge,
@@ -422,6 +465,7 @@ export class OpenAiService {
       const toolOutput = await this.executeToolCall({
         toolCall,
         manageOrder,
+        setOrderCustomer,
         getMenuDocument,
         searchCatalog,
         searchKnowledge,
@@ -649,6 +693,7 @@ export class OpenAiService {
   private executeToolCall({
     toolCall,
     manageOrder,
+    setOrderCustomer,
     getMenuDocument,
     searchCatalog,
     searchKnowledge,
@@ -656,6 +701,7 @@ export class OpenAiService {
   }: {
     toolCall: OpenAI.Responses.ResponseFunctionToolCall;
     manageOrder: (order: OrderToolArguments) => Promise<string>;
+    setOrderCustomer: (details: OrderCustomerDetailsArguments) => Promise<string>;
     getMenuDocument: () => Promise<string>;
     searchCatalog: (filters: CatalogSearchArguments) => Promise<string>;
     searchKnowledge: (query: string) => Promise<string>;
@@ -673,6 +719,8 @@ export class OpenAiService {
         return getMenuDocument();
       case ORDER_TOOL_NAME:
         return manageOrder(this.parseOrderToolArguments(toolCall.arguments));
+      case ORDER_CUSTOMER_TOOL_NAME:
+        return setOrderCustomer(this.parseOrderCustomerArguments(toolCall.arguments));
       default:
         throw new Error(`OpenAI requested an unsupported tool: ${toolCall.name}`);
     }
@@ -722,6 +770,42 @@ export class OpenAiService {
         productName: item.productName.trim(),
         quantity: item.quantity,
       })),
+    };
+  }
+
+  private parseOrderCustomerArguments(argumentsJson: string): OrderCustomerDetailsArguments {
+    const parsed: unknown = JSON.parse(argumentsJson);
+
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !('customerName' in parsed) ||
+      !('customerPhone' in parsed) ||
+      Object.keys(parsed).some((key) => key !== 'customerName' && key !== 'customerPhone')
+    ) {
+      throw new Error('OpenAI returned invalid set_order_customer arguments');
+    }
+
+    const customerName = parsed.customerName;
+    const customerPhone = parsed.customerPhone;
+    const validName =
+      customerName === null ||
+      (typeof customerName === 'string' &&
+        customerName.trim().length >= 2 &&
+        customerName.length <= 100);
+    const validPhone =
+      customerPhone === null ||
+      (typeof customerPhone === 'string' &&
+        customerPhone.trim().length > 0 &&
+        customerPhone.length <= 30);
+
+    if (!validName || !validPhone || (customerName === null && customerPhone === null)) {
+      throw new Error('OpenAI returned invalid set_order_customer arguments');
+    }
+
+    return {
+      customerName: customerName === null ? null : customerName.trim(),
+      customerPhone: customerPhone === null ? null : customerPhone.trim(),
     };
   }
 

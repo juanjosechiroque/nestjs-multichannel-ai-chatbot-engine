@@ -23,10 +23,19 @@ const ORDER_PRODUCT_CANDIDATE_LIMIT = 5;
 const ACTIVE_ORDER_STATUSES = new Set([
   OrderStatus.STARTED,
   OrderStatus.SELECTING_PRODUCTS,
+  OrderStatus.COLLECTING_CUSTOMER_DATA,
   OrderStatus.CONFIRMING_ORDER,
 ]);
 
-export type CustomerOrderAction = Exclude<OrderAction, OrderAction.EXPIRE>;
+export type CustomerOrderAction = Exclude<
+  OrderAction,
+  OrderAction.EXPIRE | OrderAction.SET_CUSTOMER_DETAILS
+>;
+
+export interface OrderCustomerDetailsArguments {
+  customerName: string | null;
+  customerPhone: string | null;
+}
 
 export interface OrderToolItemArgument {
   productName: string;
@@ -56,8 +65,13 @@ interface ResolutionIssue {
 }
 
 export interface CustomerOrderSnapshot {
+  orderNumber: number | null;
   total: number;
   currency: string;
+  customer: {
+    name: string | null;
+    maskedPhone: string | null;
+  };
   items: Array<{
     productName: string;
     unitPrice: number;
@@ -70,6 +84,7 @@ export interface OrderWorkflowGuidance {
   allowedActions: CustomerOrderAction[];
   canConfirm: boolean;
   nextAction: CustomerOrderAction | null;
+  missingCustomerFields: Array<'customerName' | 'customerPhone'>;
 }
 
 export interface OrderConversationContext {
@@ -95,6 +110,7 @@ export class OrderTool {
       | 'cancel'
       | 'getActiveOrder'
       | 'getLatestOrder'
+      | 'setCustomerDetails'
     >,
     private readonly stateMachine: OrderStateMachine,
   ) {}
@@ -138,6 +154,29 @@ export class OrderTool {
       }
 
       return this.rejected(action, error, conversationId, context);
+    }
+  }
+
+  async setCustomerDetails(
+    details: OrderCustomerDetailsArguments,
+    conversationId: string,
+    context: RequestContext,
+  ): Promise<string> {
+    try {
+      const order = await this.orders.setCustomerDetails(
+        {
+          conversationId,
+          ...(details.customerName === null ? {} : { customerName: details.customerName }),
+          ...(details.customerPhone === null ? {} : { customerPhone: details.customerPhone }),
+        },
+        context,
+      );
+      return this.success(OrderAction.SET_CUSTOMER_DETAILS, order);
+    } catch (error: unknown) {
+      if (error instanceof ApplicationServiceUnavailableException) {
+        throw error;
+      }
+      return this.rejected(OrderAction.SET_CUSTOMER_DETAILS, error, conversationId, context);
     }
   }
 
@@ -274,7 +313,7 @@ export class OrderTool {
   }
 
   private success(
-    action: CustomerOrderAction,
+    action: CustomerOrderAction | OrderAction.SET_CUSTOMER_DETAILS,
     order: OrderResult,
     metadata: Pick<OrderConfirmationResult, 'idempotentReplay'> | null = null,
   ): string {
@@ -289,7 +328,7 @@ export class OrderTool {
   }
 
   private async rejected(
-    action: CustomerOrderAction,
+    action: CustomerOrderAction | OrderAction.SET_CUSTOMER_DETAILS,
     error: unknown,
     conversationId: string,
     context: RequestContext,
@@ -320,8 +359,13 @@ export class OrderTool {
 
   private serializeOrder(order: OrderResult): CustomerOrderSnapshot {
     return {
+      orderNumber: order.orderNumber,
       total: order.total,
       currency: order.currency,
+      customer: {
+        name: order.customerName,
+        maskedPhone: this.maskPhone(order.customerPhone),
+      },
       items: order.items.map((item) => ({
         productName: item.productName,
         unitPrice: item.unitPrice,
@@ -333,9 +377,13 @@ export class OrderTool {
 
   private getWorkflow(order: OrderResult): OrderWorkflowGuidance {
     const itemCount = order.items.reduce((total, item) => total + item.quantity, 0);
+    const customerDetailsComplete = order.customerName !== null && order.customerPhone !== null;
     const allowedActions = this.stateMachine
-      .getAllowedActions(order.status, itemCount)
-      .filter((action): action is CustomerOrderAction => action !== OrderAction.EXPIRE);
+      .getAllowedActions(order.status, itemCount, customerDetailsComplete)
+      .filter(
+        (action): action is CustomerOrderAction =>
+          action !== OrderAction.EXPIRE && action !== OrderAction.SET_CUSTOMER_DETAILS,
+      );
     const canConfirm = allowedActions.includes(OrderAction.CONFIRM);
     const nextAction =
       order.status === OrderStatus.SELECTING_PRODUCTS && itemCount > 0
@@ -344,6 +392,16 @@ export class OrderTool {
           ? OrderAction.CONFIRM
           : null;
 
-    return { allowedActions, canConfirm, nextAction };
+    const missingCustomerFields: OrderWorkflowGuidance['missingCustomerFields'] = [];
+    if (order.customerName === null) missingCustomerFields.push('customerName');
+    if (order.customerPhone === null) missingCustomerFields.push('customerPhone');
+
+    return { allowedActions, canConfirm, nextAction, missingCustomerFields };
+  }
+
+  private maskPhone(phone: string | null): string | null {
+    if (phone === null) return null;
+    const visibleDigits = phone.slice(-3);
+    return `${'*'.repeat(Math.max(0, phone.length - visibleDigits.length))}${visibleDigits}`;
   }
 }
