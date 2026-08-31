@@ -16,7 +16,7 @@ jobs:
   quality:
     name: Quality
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -38,3 +38,9 @@ jobs:
 
       - name: Validate project
         run: npm run validate
+
+      - name: Run PostgreSQL integration tests
+        run: npm run test:integration
+
+      - name: Run HTTP end-to-end tests
+        run: npm run test:e2e
