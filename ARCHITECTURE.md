@@ -171,7 +171,8 @@ telemetry and are not part of the web response contract.
 5. For text messages, the adapter calls the same `ChatService` used by Web, mapping Meta's message
    identifier to the channel-neutral idempotency contract and Meta profile data to trusted identity.
 6. Catalog, RAG, promotions, memory, and order operations execute through the shared typed tools.
-7. `WhatsAppMessageSenderService` translates the generated text into a Graph API message request.
+7. `WhatsAppChatService` sends the generated text through the `WhatsAppProvider` port;
+   `MetaWhatsAppClient` translates it into a Graph API message request.
 8. Unsupported media receives a deterministic text capability response. A controlled chatbot
    failure receives a safe retry message without exposing provider or database details.
 9. If Graph API delivery fails, the receipt reservation is released so Meta can retry. A completed
@@ -302,9 +303,10 @@ flowchart LR
 `WhatsAppController` owns Meta authentication and acknowledgment. `WhatsAppWebhookReceiptService`
 owns payload extraction and the PostgreSQL duplicate ledger. `WhatsAppChatService` maps valid text,
 provider identity, and a hashed stable session to `ChatService`; it contains no prompts, retrieval,
-catalog, or order rules. `WhatsAppMessageSenderService` translates only the resulting text to Meta's
-Graph API contract. New and duplicate valid deliveries both receive an empty `200`, but only the
-first is processed and answered.
+catalog, or order rules. It depends on the `WhatsAppProvider` port instead of Meta HTTP details.
+`MetaWhatsAppClient` implements that port and owns Graph API URLs, credentials, payload translation,
+timeouts, response parsing, and transport-error mapping. New and duplicate valid deliveries both
+receive an empty `200`, but only the first is processed and answered.
 
 A channel adapter may:
 
@@ -326,7 +328,8 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 | WhatsApp webhook controller  | Meta challenge, signature validation, acknowledgment            | Chatbot or business behavior                |
 | WhatsApp receipt service     | Payload extraction and durable message deduplication            | Chatbot invocation or outbound formatting   |
 | WhatsApp chat adapter        | Stable session/identity mapping and `ChatService` invocation    | Prompts, retrieval, catalog, or order rules |
-| WhatsApp message sender      | Text delivery through Meta Graph API                            | Prompts or business behavior                |
+| `WhatsAppProvider` port      | Provider-neutral outbound text contract                         | Meta payloads or business behavior          |
+| `MetaWhatsAppClient`         | Graph API authentication, translation, timeout, and result      | Prompts or conversational behavior          |
 | `ConversationService`        | Conversation creation and channel-session resolution            | Prompt or channel payload interpretation    |
 | `ChatService`                | One complete channel-neutral reply                              | HTTP, WhatsApp, or provider payloads        |
 | `ChatTurnService`            | Message reservation, replay, failure state, atomic memory write | Channel-specific retry policy               |
@@ -355,6 +358,7 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 | PostgreSQL message ledger       | Makes channel retries durable across restarts                   | Adds one small row per attempted message            |
 | Hashed WhatsApp session key     | Preserves customer memory without a raw-phone public session ID | Requires deterministic WABA/customer mapping        |
 | Synchronous WhatsApp processing | Keeps the portfolio deployment operationally small              | Production latency needs a durable worker queue     |
+| Provider port inside Nest       | Isolates Meta without a separately deployed service             | Adds an interface and DI token                      |
 | Last ten history messages       | Bounds prompt growth and cost                                   | Older context is not sent to the model              |
 | PostgreSQL order drafts         | Keeps order state independent from model memory                 | Abandoned drafts need lifecycle cleanup             |
 | Product price snapshots         | Preserves historical order totals                               | Duplicates selected catalog data                    |
@@ -370,7 +374,7 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 ```text
 src/
 ├── channels/web/      # HTTP customer transport adapter and rate limiting
-├── channels/whatsapp/ # Meta transport, durable deduplication, and shared-chat mapping
+├── channels/whatsapp/ # Meta transport, provider port, deduplication, and shared-chat mapping
 ├── chat/             # Conversational orchestration, OpenAI, tools, and evaluations
 ├── catalog/          # Structured business data and menu document
 ├── conversation/     # Backend-managed session lifecycle

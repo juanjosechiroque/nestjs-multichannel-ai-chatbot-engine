@@ -95,6 +95,8 @@ that are not implemented.
   customer data.
 - Generated text is delivered through Meta Graph API using the webhook's `phone_number_id` and
   sender number. Unsupported media receives a text-only capability message.
+- The conversational adapter depends on a provider-neutral `WhatsAppProvider` port. Meta-specific
+  URLs, credentials, payloads, timeouts, and response parsing live in `MetaWhatsAppClient`.
 - Repeated Meta deliveries are acknowledged but neither processed nor answered twice. If outbound
   delivery fails, the webhook reservation is released so Meta can retry the stored chatbot result.
 - Processing is synchronous in the current single-process portfolio deployment; a production
@@ -257,6 +259,11 @@ The current adapter accepts text messages up to 2,000 characters. Images, audio,
 and other unsupported message types receive a short text response explaining that text is currently
 required. The webhook processes the chatbot turn synchronously, so a production deployment should
 introduce a durable job queue before scaling or tightening provider acknowledgment latency.
+
+The current provider implementation is `MetaWhatsAppClient`. It translates the internal text-send
+contract to Graph API, returns Meta's outbound message identifier when available, and maps transport
+or HTTP failures to the channel's controlled delivery error. The rest of the application does not
+depend on Meta's HTTP payload shape.
 
 ### Catalog and menu
 

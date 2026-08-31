@@ -7,7 +7,6 @@ import {
 } from '../../common/application-error';
 import type { ConversationService } from '../../conversation/conversation.service';
 import { WhatsAppChatService } from './whatsapp-chat.service';
-import type { WhatsAppMessageSenderService } from './whatsapp-message-sender.service';
 import type { WhatsAppInboundMessage } from './whatsapp-webhook-receipt.service';
 
 const MESSAGE: WhatsAppInboundMessage = {
@@ -28,7 +27,7 @@ function createService(): WhatsAppChatService {
   return new WhatsAppChatService(
     { reply } as unknown as ChatService,
     { findOrCreateBySession } as unknown as ConversationService,
-    { sendText } as unknown as WhatsAppMessageSenderService,
+    { sendText },
   );
 }
 
@@ -72,10 +71,11 @@ describe('WhatsAppChatService', () => {
         },
       }),
     );
-    expect(sendText).toHaveBeenCalledWith(
-      MESSAGE,
-      'Tenemos bebidas calientes, bebidas frías y alimentos.',
-    );
+    expect(sendText).toHaveBeenCalledWith({
+      phoneNumberId: '1220572421149962',
+      recipientPhoneNumber: '51999999999',
+      text: 'Tenemos bebidas calientes, bebidas frías y alimentos.',
+    });
   });
 
   it('keeps the same session for later messages from the same WABA customer', async () => {
@@ -112,10 +112,11 @@ describe('WhatsAppChatService', () => {
 
     expect(findOrCreateBySession).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
-    expect(sendText).toHaveBeenCalledWith(
-      imageMessage,
-      'Por ahora puedo responder mensajes de texto. Escríbeme tu consulta para ayudarte.',
-    );
+    expect(sendText).toHaveBeenCalledWith({
+      phoneNumberId: '1220572421149962',
+      recipientPhoneNumber: '51999999999',
+      text: 'Por ahora puedo responder mensajes de texto. Escríbeme tu consulta para ayudarte.',
+    });
   });
 
   it('sends a safe fallback when the chatbot is temporarily unavailable', async () => {
@@ -125,10 +126,11 @@ describe('WhatsAppChatService', () => {
 
     await service.handle(MESSAGE);
 
-    expect(sendText).toHaveBeenCalledWith(
-      MESSAGE,
-      'No pude procesar tu consulta en este momento. Inténtalo nuevamente con otro mensaje.',
-    );
+    expect(sendText).toHaveBeenCalledWith({
+      phoneNumberId: '1220572421149962',
+      recipientPhoneNumber: '51999999999',
+      text: 'No pude procesar tu consulta en este momento. Inténtalo nuevamente con otro mensaje.',
+    });
   });
 
   it('propagates Meta delivery failures so the webhook reservation can be retried', async () => {

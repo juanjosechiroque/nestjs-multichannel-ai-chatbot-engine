@@ -17,8 +17,10 @@ import { ConversationService } from '../../src/conversation/conversation.service
 import type { GenerateResponseInput, GenerateResponseResult } from '../../src/chat/openai.service';
 import { OpenAiService } from '../../src/chat/openai.service';
 import type { DocumentChatContent } from '../../src/chat/chat.types';
-import { WhatsAppMessageSenderService } from '../../src/channels/whatsapp/whatsapp-message-sender.service';
-import type { WhatsAppInboundMessage } from '../../src/channels/whatsapp/whatsapp-webhook-receipt.service';
+import {
+  WHATSAPP_PROVIDER,
+  type SendWhatsAppTextInput,
+} from '../../src/channels/whatsapp/providers/whatsapp-provider';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ConversationTurnStatus, ProductCategory } from '../../src/generated/prisma/enums';
 import { OrderAction, OrderStatus } from '../../src/order/order.types';
@@ -97,7 +99,7 @@ describe('HTTP conversation flow', () => {
   const originalEnvironment = new Map<EnvironmentKey, string | undefined>();
   const generate = jest.fn<Promise<GenerateResponseResult>, [GenerateResponseInput]>();
   const embed = jest.fn<Promise<number[]>, [string]>();
-  const sendWhatsAppText = jest.fn<Promise<void>, [WhatsAppInboundMessage, string]>();
+  const sendWhatsAppText = jest.fn<Promise<Record<string, never>>, [SendWhatsAppTextInput]>();
 
   beforeAll(async () => {
     for (const key of [...Object.keys(TEST_ENVIRONMENT), 'DATABASE_URL'] as EnvironmentKey[]) {
@@ -123,7 +125,7 @@ describe('HTTP conversation flow', () => {
       .useValue({ generate })
       .overrideProvider(EmbeddingService)
       .useValue({ embed })
-      .overrideProvider(WhatsAppMessageSenderService)
+      .overrideProvider(WHATSAPP_PROVIDER)
       .useValue({ sendText: sendWhatsAppText })
       .compile();
 
@@ -152,7 +154,7 @@ describe('HTTP conversation flow', () => {
       usedTools: [],
     });
     embed.mockReset().mockResolvedValue(deterministicEmbedding());
-    sendWhatsAppText.mockReset().mockResolvedValue(undefined);
+    sendWhatsAppText.mockReset().mockResolvedValue({});
     await prisma.whatsAppWebhookMessage.deleteMany();
     await prisma.order.deleteMany();
     await prisma.conversationMessage.deleteMany();
@@ -312,18 +314,11 @@ describe('HTTP conversation flow', () => {
     ).resolves.toBe(1);
     expect(generate).toHaveBeenCalledTimes(1);
     expect(sendWhatsAppText).toHaveBeenCalledTimes(1);
-    expect(sendWhatsAppText).toHaveBeenCalledWith(
-      {
-        wabaId: 'waba-e2e',
-        messageId: 'wamid.e2e-duplicate',
-        phoneNumberId: '1220572421149962',
-        recipientPhoneNumber: '51999999999',
-        messageType: 'text',
-        text: '¿Qué productos tienen?',
-        customerName: 'Ana Cliente',
-      },
-      'Tenemos Espresso y otras bebidas calientes.',
-    );
+    expect(sendWhatsAppText).toHaveBeenCalledWith({
+      phoneNumberId: '1220572421149962',
+      recipientPhoneNumber: '51999999999',
+      text: 'Tenemos Espresso y otras bebidas calientes.',
+    });
     await expect(prisma.conversation.count({ where: { channel: 'whatsapp' } })).resolves.toBe(1);
     await expect(
       prisma.conversationMessage.count({
