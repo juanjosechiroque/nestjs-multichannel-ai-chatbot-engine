@@ -183,6 +183,20 @@ describe('HTTP conversation flow', () => {
       .expect(200, '123456789');
   });
 
+  it('accepts the redundant underscore aliases sent by the Meta developer dashboard', async () => {
+    await request(server)
+      .get('/api/webhook/whatsapp')
+      .query({
+        'hub.mode': 'subscribe',
+        'hub.verify_token': TEST_ENVIRONMENT.WHATSAPP_VERIFY_TOKEN,
+        'hub.challenge': '123456789',
+        hub_mode: 'subscribe',
+        hub_verify_token: TEST_ENVIRONMENT.WHATSAPP_VERIFY_TOKEN,
+        hub_challenge: '123456789',
+      })
+      .expect(200, '123456789');
+  });
+
   it('rejects an invalid WhatsApp webhook verification token', async () => {
     await request(server)
       .get('/api/webhook/whatsapp')
