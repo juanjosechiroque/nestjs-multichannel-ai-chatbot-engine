@@ -9,6 +9,7 @@ import {
   IsString,
   IsTimeZone,
   IsUrl,
+  Matches,
   Max,
   MinLength,
   Min,
@@ -110,6 +111,20 @@ class EnvironmentVariables {
   @IsNotEmpty()
   @MinLength(32)
   WHATSAPP_VERIFY_TOKEN!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(32)
+  WHATSAPP_APP_SECRET!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(20)
+  WHATSAPP_ACCESS_TOKEN!: string;
+
+  @IsString()
+  @Matches(/^v\d+\.\d+$/)
+  WHATSAPP_GRAPH_API_VERSION = 'v25.0';
 
   @IsString()
   @IsNotEmpty()

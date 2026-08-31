@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **Multichannel AI Chatbot Engine**  
-Last updated: August 30, 2026
+Last updated: August 31, 2026
 
 ## 1. Scope
 
@@ -17,21 +17,28 @@ When the authorized tester sends a message to the test number, the application m
 receive:
 
 - the sender's WhatsApp phone number or identifier;
+- the sender's WhatsApp profile name, when Meta supplies it;
 - the unique message identifier;
 - the message content and type;
 - the WhatsApp Business Account (WABA) identifier;
 - the receiving phone number identifier; and
 - the date and time of the event.
 
-The sender identifier and message content are used only to process the request and send the test
-response. The webhook deduplication table stores only the WABA identifier, message identifier, and
-reception timestamp. It does not store the sender's phone number or message content.
+The sender identifier and message content are used only to maintain the test conversation, generate
+a relevant response, and send that response. Conversation messages and generated answers are stored
+in PostgreSQL as test history. The webhook deduplication table separately stores only the WABA
+identifier, message identifier, and reception timestamp; it does not store the sender's phone number
+or message content. A one-way hash of the WABA and sender identifier is used as the internal WhatsApp
+conversation session key. If the tester creates an order, Meta-provided name and phone data may be
+stored with that order as checkout identity.
 
 ## 3. Purpose
 
 The data is processed solely to:
 
 - receive and reply to messages sent by the authorized tester;
+- generate responses using the shared chatbot, catalog, knowledge, and order features;
+- preserve limited conversation memory between test messages;
 - verify the webhook and Meta integration;
 - prevent the same message from being processed more than once;
 - diagnose technical errors; and
@@ -42,15 +49,16 @@ purposes.
 
 ## 4. Service providers
 
-Data may be processed by Meta as the provider of the WhatsApp Business API and by the technical
-services required to run the demonstration, such as temporary hosting, development tunnels, or a
-database service.
+Data may be processed by Meta as the provider of the WhatsApp Business API, OpenAI as the provider
+used to generate chatbot responses, and the technical services required to run the demonstration,
+such as temporary hosting, development tunnels, or a database service.
 
 ## 5. Retention
 
-The project retains only the technical message identifiers required for duplicate prevention and
-debugging. These records are removed by the project owner when they are no longer required or when
-the demonstration database is reset.
+The project retains technical message identifiers, test conversation history, generated replies,
+and any test orders required to demonstrate memory, duplicate prevention, and order behavior. These
+records are removed by the project owner when they are no longer required or when the demonstration
+database is reset.
 
 Because this is a closed environment, the project owner controls both the application and the only
 authorized tester number and can delete all associated test records directly.

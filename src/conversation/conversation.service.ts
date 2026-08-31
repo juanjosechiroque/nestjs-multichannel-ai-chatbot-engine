@@ -47,4 +47,28 @@ export class ConversationService {
         }),
     );
   }
+
+  findOrCreateBySession(
+    { sessionId, channel }: FindConversationInput,
+    context?: RequestContext,
+  ): Promise<ConversationReference> {
+    return executeDatabaseOperation(
+      { logger: this.logger, operation: 'conversation.find_or_create_by_session', context },
+      () =>
+        this.prisma.conversation.upsert({
+          where: {
+            channel_sessionId: { channel, sessionId },
+          },
+          create: {
+            channel,
+            sessionId,
+          },
+          update: {},
+          select: {
+            id: true,
+            sessionId: true,
+          },
+        }),
+    );
+  }
 }

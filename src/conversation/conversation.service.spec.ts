@@ -69,6 +69,43 @@ describe('ConversationService', () => {
     });
   });
 
+  it('atomically finds or creates a channel conversation with a stable session ID', async () => {
+    const upsert = jest.fn().mockResolvedValue({
+      id: 'whatsapp-conversation-id',
+      sessionId: 'whatsapp:stable-hash',
+    });
+    const service = new ConversationService({
+      conversation: { upsert },
+    } as unknown as PrismaService);
+
+    await expect(
+      service.findOrCreateBySession({
+        sessionId: 'whatsapp:stable-hash',
+        channel: 'whatsapp',
+      }),
+    ).resolves.toEqual({
+      id: 'whatsapp-conversation-id',
+      sessionId: 'whatsapp:stable-hash',
+    });
+    expect(upsert).toHaveBeenCalledWith({
+      where: {
+        channel_sessionId: {
+          channel: 'whatsapp',
+          sessionId: 'whatsapp:stable-hash',
+        },
+      },
+      create: {
+        channel: 'whatsapp',
+        sessionId: 'whatsapp:stable-hash',
+      },
+      update: {},
+      select: {
+        id: true,
+        sessionId: true,
+      },
+    });
+  });
+
   it('returns a controlled database error when creating a conversation fails', async () => {
     const service = new ConversationService({
       conversation: {

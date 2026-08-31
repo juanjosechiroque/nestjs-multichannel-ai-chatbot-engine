@@ -15,6 +15,9 @@ const VALID_ENVIRONMENT: Record<string, unknown> = {
   OPENAI_MAX_OUTPUT_TOKENS: '500',
   DATABASE_URL: 'postgresql://chatbot:chatbot@localhost:5432/chatbot_engine',
   WHATSAPP_VERIFY_TOKEN: 'whatsapp-test-verify-token-32-chars',
+  WHATSAPP_APP_SECRET: 'whatsapp-test-app-secret-32-chars',
+  WHATSAPP_ACCESS_TOKEN: 'whatsapp-test-access-token-at-least-20-chars',
+  WHATSAPP_GRAPH_API_VERSION: 'v25.0',
   BUSINESS_NAME: 'Café Nube',
   BUSINESS_TIME_ZONE: 'America/Lima',
 };
@@ -71,6 +74,17 @@ describe('validateEnvironment', () => {
       'a short WhatsApp verify token',
       { WHATSAPP_VERIFY_TOKEN: 'too-short' },
       'WHATSAPP_VERIFY_TOKEN',
+    ],
+    ['a short WhatsApp app secret', { WHATSAPP_APP_SECRET: 'too-short' }, 'WHATSAPP_APP_SECRET'],
+    [
+      'a short WhatsApp access token',
+      { WHATSAPP_ACCESS_TOKEN: 'too-short' },
+      'WHATSAPP_ACCESS_TOKEN',
+    ],
+    [
+      'an invalid WhatsApp Graph API version',
+      { WHATSAPP_GRAPH_API_VERSION: '25' },
+      'WHATSAPP_GRAPH_API_VERSION',
     ],
     ['an invalid business time zone', { BUSINESS_TIME_ZONE: 'Lima' }, 'BUSINESS_TIME_ZONE'],
     ['a similarity below zero', { RAG_MIN_SIMILARITY: '-0.1' }, 'RAG_MIN_SIMILARITY'],

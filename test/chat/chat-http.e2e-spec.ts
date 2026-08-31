@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -17,6 +17,8 @@ import { ConversationService } from '../../src/conversation/conversation.service
 import type { GenerateResponseInput, GenerateResponseResult } from '../../src/chat/openai.service';
 import { OpenAiService } from '../../src/chat/openai.service';
 import type { DocumentChatContent } from '../../src/chat/chat.types';
+import { WhatsAppMessageSenderService } from '../../src/channels/whatsapp/whatsapp-message-sender.service';
+import type { WhatsAppInboundMessage } from '../../src/channels/whatsapp/whatsapp-webhook-receipt.service';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ConversationTurnStatus, ProductCategory } from '../../src/generated/prisma/enums';
 import { OrderAction, OrderStatus } from '../../src/order/order.types';
@@ -41,6 +43,9 @@ const TEST_ENVIRONMENT = {
   RATE_LIMIT_CONVERSATIONS_PER_HOUR: '100',
   RATE_LIMIT_MESSAGES_PER_MINUTE: '100',
   WHATSAPP_VERIFY_TOKEN: 'whatsapp-e2e-verify-token-32-chars',
+  WHATSAPP_APP_SECRET: 'whatsapp-e2e-app-secret-32-chars',
+  WHATSAPP_ACCESS_TOKEN: 'whatsapp-e2e-access-token-at-least-20-chars',
+  WHATSAPP_GRAPH_API_VERSION: 'v25.0',
   BUSINESS_NAME: 'Café Nube',
   BUSINESS_TIME_ZONE: 'America/Lima',
 } as const;
@@ -92,6 +97,7 @@ describe('HTTP conversation flow', () => {
   const originalEnvironment = new Map<EnvironmentKey, string | undefined>();
   const generate = jest.fn<Promise<GenerateResponseResult>, [GenerateResponseInput]>();
   const embed = jest.fn<Promise<number[]>, [string]>();
+  const sendWhatsAppText = jest.fn<Promise<void>, [WhatsAppInboundMessage, string]>();
 
   beforeAll(async () => {
     for (const key of [...Object.keys(TEST_ENVIRONMENT), 'DATABASE_URL'] as EnvironmentKey[]) {
@@ -117,9 +123,11 @@ describe('HTTP conversation flow', () => {
       .useValue({ generate })
       .overrideProvider(EmbeddingService)
       .useValue({ embed })
+      .overrideProvider(WhatsAppMessageSenderService)
+      .useValue({ sendText: sendWhatsAppText })
       .compile();
 
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication({ rawBody: true });
     configureApplication(app, {
       corsAllowedOrigins: app.get(ConfigService).getOrThrow<string[]>('CORS_ALLOWED_ORIGINS'),
     });
@@ -144,6 +152,8 @@ describe('HTTP conversation flow', () => {
       usedTools: [],
     });
     embed.mockReset().mockResolvedValue(deterministicEmbedding());
+    sendWhatsAppText.mockReset().mockResolvedValue(undefined);
+    await prisma.whatsAppWebhookMessage.deleteMany();
     await prisma.order.deleteMany();
     await prisma.conversationMessage.deleteMany();
     await Promise.all([
@@ -195,6 +205,131 @@ describe('HTTP conversation flow', () => {
         hub_challenge: '123456789',
       })
       .expect(200, '123456789');
+  });
+
+  it('acknowledges a WhatsApp notification with a valid Meta signature', async () => {
+    const payload = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [],
+    });
+    const signature = `sha256=${createHmac('sha256', TEST_ENVIRONMENT.WHATSAPP_APP_SECRET)
+      .update(payload)
+      .digest('hex')}`;
+
+    await request(server)
+      .post('/api/webhook/whatsapp')
+      .set('Content-Type', 'application/json')
+      .set('X-Hub-Signature-256', signature)
+      .send(payload)
+      .expect(200, '');
+    expect(sendWhatsAppText).not.toHaveBeenCalled();
+  });
+
+  it('routes a WhatsApp text through the shared chatbot and suppresses a duplicate delivery', async () => {
+    await prisma.product.create({
+      data: {
+        slug: 'espresso-e2e',
+        name: 'Espresso',
+        description: 'Café intenso de prueba.',
+        price: 8,
+        currency: 'PEN',
+        category: ProductCategory.HOT_DRINK,
+        active: true,
+        availableForOrdering: true,
+      },
+    });
+    generate.mockImplementationOnce(async (input) => {
+      expect(input.message).toBe('¿Qué productos tienen?');
+      expect(input.context.channel).toBe('whatsapp');
+      const catalog = JSON.parse(
+        await input.searchCatalog({
+          productName: null,
+          category: null,
+          maxPrice: null,
+          maxPriceExclusive: false,
+          dietaryTags: [],
+          excludedAllergens: [],
+          containsCoffee: null,
+          decaffeinated: null,
+          caffeineFree: null,
+        }),
+      ) as { products: Array<{ name: string; price: string }> };
+      expect(catalog.products).toEqual([expect.objectContaining({ name: 'Espresso', price: '8' })]);
+      return {
+        answer: 'Tenemos Espresso y otras bebidas calientes.',
+        usedSources: [],
+        llmCalls: 2,
+        usedTools: ['search_catalog'],
+      };
+    });
+    const payload = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'waba-e2e',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                metadata: { phone_number_id: '1220572421149962' },
+                contacts: [
+                  {
+                    wa_id: '51999999999',
+                    profile: { name: 'Ana Cliente' },
+                  },
+                ],
+                messages: [
+                  {
+                    id: 'wamid.e2e-duplicate',
+                    from: '51999999999',
+                    type: 'text',
+                    text: { body: '¿Qué productos tienen?' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const signature = `sha256=${createHmac('sha256', TEST_ENVIRONMENT.WHATSAPP_APP_SECRET)
+      .update(payload)
+      .digest('hex')}`;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await request(server)
+        .post('/api/webhook/whatsapp')
+        .set('Content-Type', 'application/json')
+        .set('X-Hub-Signature-256', signature)
+        .send(payload)
+        .expect(200, '');
+    }
+
+    await expect(
+      prisma.whatsAppWebhookMessage.count({
+        where: { wabaId: 'waba-e2e', messageId: 'wamid.e2e-duplicate' },
+      }),
+    ).resolves.toBe(1);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppText).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppText).toHaveBeenCalledWith(
+      {
+        wabaId: 'waba-e2e',
+        messageId: 'wamid.e2e-duplicate',
+        phoneNumberId: '1220572421149962',
+        recipientPhoneNumber: '51999999999',
+        messageType: 'text',
+        text: '¿Qué productos tienen?',
+        customerName: 'Ana Cliente',
+      },
+      'Tenemos Espresso y otras bebidas calientes.',
+    );
+    await expect(prisma.conversation.count({ where: { channel: 'whatsapp' } })).resolves.toBe(1);
+    await expect(
+      prisma.conversationMessage.count({
+        where: { conversation: { channel: 'whatsapp' } },
+      }),
+    ).resolves.toBe(2);
   });
 
   it('rejects an invalid WhatsApp webhook verification token', async () => {
@@ -666,7 +801,7 @@ describe('HTTP conversation flow', () => {
       .expect(201, { reply: 'Ahora está vigente la promoción siempre vigente.' });
   });
 
-  it('removes model Markdown from the web response while preserving the core message', async () => {
+  it('keeps supported strong emphasis while removing unsupported inline-code Markdown', async () => {
     generate.mockResolvedValueOnce({
       answer: '**Pedido confirmado:** total `S/ 28`.',
       usedSources: [],
@@ -679,7 +814,7 @@ describe('HTTP conversation flow', () => {
     await request(server)
       .post('/api/chat')
       .send(chatMessage(sessionId, 'Confirma mi pedido'))
-      .expect(201, { reply: 'Pedido confirmado: total S/ 28.' });
+      .expect(201, { reply: '**Pedido confirmado:** total S/ 28.' });
 
     await expect(
       prisma.conversation.findUniqueOrThrow({
@@ -959,7 +1094,7 @@ describe('HTTP conversation flow', () => {
     await request(server)
       .post('/api/chat')
       .send(chatMessage(sessionId, 'Soy Ana Pérez, mi celular es +51 987 654 321.'))
-      .expect(201, { reply: 'Ana, llevas 3 lattes por S/ 39. ¿Deseas confirmar el pedido?' });
+      .expect(201, { reply: 'Ana, llevas 3 lattes por S/ 39. Deseas confirmar el pedido?' });
     await request(server).post('/api/chat').send(chatMessage(sessionId, 'sí')).expect(201);
 
     const firstConfirmation = await prisma.order.findFirstOrThrow();
