@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ChatService } from '../../chat/chat.service';
 import { getApplicationFailureCode } from '../../common/application-error';
 import { ConversationService } from '../../conversation/conversation.service';
-import { WHATSAPP_PROVIDER, type WhatsAppProvider } from './providers/whatsapp-provider';
+import { WhatsAppOutboundMessageService } from './whatsapp-outbound-message.service';
 import type { WhatsAppInboundMessage } from './whatsapp-webhook-receipt.service';
 
 const UNSUPPORTED_MESSAGE_REPLY =
@@ -18,7 +18,7 @@ export class WhatsAppChatService {
   constructor(
     private readonly chat: ChatService,
     private readonly conversations: ConversationService,
-    @Inject(WHATSAPP_PROVIDER) private readonly provider: WhatsAppProvider,
+    private readonly outboundMessages: WhatsAppOutboundMessageService,
   ) {}
 
   async handle(message: WhatsAppInboundMessage): Promise<void> {
@@ -64,11 +64,7 @@ export class WhatsAppChatService {
   }
 
   private async sendText(message: WhatsAppInboundMessage, text: string): Promise<void> {
-    await this.provider.sendText({
-      phoneNumberId: message.phoneNumberId,
-      recipientPhoneNumber: message.recipientPhoneNumber,
-      text,
-    });
+    await this.outboundMessages.sendText(message, text);
   }
 
   private createSessionId(message: WhatsAppInboundMessage): string {

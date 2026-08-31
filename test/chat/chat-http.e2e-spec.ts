@@ -20,9 +20,14 @@ import type { DocumentChatContent } from '../../src/chat/chat.types';
 import {
   WHATSAPP_PROVIDER,
   type SendWhatsAppTextInput,
+  type SendWhatsAppTextResult,
 } from '../../src/channels/whatsapp/providers/whatsapp-provider';
 import { PrismaService } from '../../src/database/prisma.service';
-import { ConversationTurnStatus, ProductCategory } from '../../src/generated/prisma/enums';
+import {
+  ConversationTurnStatus,
+  ProductCategory,
+  WhatsAppOutboundStatus,
+} from '../../src/generated/prisma/enums';
 import { OrderAction, OrderStatus } from '../../src/order/order.types';
 import { EmbeddingService } from '../../src/rag/embedding.service';
 import { EMBEDDING_DIMENSIONS } from '../../src/rag/rag.types';
@@ -99,7 +104,7 @@ describe('HTTP conversation flow', () => {
   const originalEnvironment = new Map<EnvironmentKey, string | undefined>();
   const generate = jest.fn<Promise<GenerateResponseResult>, [GenerateResponseInput]>();
   const embed = jest.fn<Promise<number[]>, [string]>();
-  const sendWhatsAppText = jest.fn<Promise<Record<string, never>>, [SendWhatsAppTextInput]>();
+  const sendWhatsAppText = jest.fn<Promise<SendWhatsAppTextResult>, [SendWhatsAppTextInput]>();
 
   beforeAll(async () => {
     for (const key of [...Object.keys(TEST_ENVIRONMENT), 'DATABASE_URL'] as EnvironmentKey[]) {
@@ -154,7 +159,8 @@ describe('HTTP conversation flow', () => {
       usedTools: [],
     });
     embed.mockReset().mockResolvedValue(deterministicEmbedding());
-    sendWhatsAppText.mockReset().mockResolvedValue({});
+    sendWhatsAppText.mockReset().mockResolvedValue({ providerMessageId: 'wamid.e2e-default' });
+    await prisma.whatsAppOutboundMessage.deleteMany();
     await prisma.whatsAppWebhookMessage.deleteMany();
     await prisma.order.deleteMany();
     await prisma.conversationMessage.deleteMany();
@@ -228,6 +234,7 @@ describe('HTTP conversation flow', () => {
   });
 
   it('routes a WhatsApp text through the shared chatbot and suppresses a duplicate delivery', async () => {
+    sendWhatsAppText.mockResolvedValueOnce({ providerMessageId: 'wamid.outbound-e2e' });
     await prisma.product.create({
       data: {
         slug: 'espresso-e2e',
@@ -284,6 +291,7 @@ describe('HTTP conversation flow', () => {
                   {
                     id: 'wamid.e2e-duplicate',
                     from: '51999999999',
+                    timestamp: '1788195600',
                     type: 'text',
                     text: { body: '¿Qué productos tienen?' },
                   },
@@ -319,6 +327,64 @@ describe('HTTP conversation flow', () => {
       recipientPhoneNumber: '51999999999',
       text: 'Tenemos Espresso y otras bebidas calientes.',
     });
+    const acceptedOutbound = await prisma.whatsAppOutboundMessage.findUniqueOrThrow({
+      where: { providerMessageId: 'wamid.outbound-e2e' },
+    });
+    expect(acceptedOutbound.wabaId).toBe('waba-e2e');
+    expect(acceptedOutbound.inboundMessageId).toBe('wamid.e2e-duplicate');
+    expect(acceptedOutbound.status).toBe(WhatsAppOutboundStatus.ACCEPTED);
+    expect(acceptedOutbound.attemptCount).toBe(1);
+    expect(acceptedOutbound.providerAcceptedAt).toBeInstanceOf(Date);
+
+    const statusPayload = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'waba-e2e',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                statuses: [
+                  {
+                    id: 'wamid.outbound-e2e',
+                    status: 'delivered',
+                    timestamp: '1788195605',
+                  },
+                  {
+                    id: 'wamid.outbound-e2e',
+                    status: 'sent',
+                    timestamp: '1788195604',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const statusSignature = `sha256=${createHmac('sha256', TEST_ENVIRONMENT.WHATSAPP_APP_SECRET)
+      .update(statusPayload)
+      .digest('hex')}`;
+
+    await request(server)
+      .post('/api/webhook/whatsapp')
+      .set('Content-Type', 'application/json')
+      .set('X-Hub-Signature-256', statusSignature)
+      .send(statusPayload)
+      .expect(200, '');
+
+    await expect(
+      prisma.whatsAppOutboundMessage.findUniqueOrThrow({
+        where: { providerMessageId: 'wamid.outbound-e2e' },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: WhatsAppOutboundStatus.DELIVERED,
+        deliveredAt: new Date(1_788_195_605_000),
+        sentAt: null,
+      }),
+    );
     await expect(prisma.conversation.count({ where: { channel: 'whatsapp' } })).resolves.toBe(1);
     await expect(
       prisma.conversationMessage.count({

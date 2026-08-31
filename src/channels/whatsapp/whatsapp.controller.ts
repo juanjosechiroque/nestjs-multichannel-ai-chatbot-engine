@@ -26,6 +26,7 @@ import {
 import { ApiErrorResponseDto } from '../../common/api-error-response.dto';
 import { WhatsAppWebhookVerificationDto } from './dto/whatsapp-webhook-verification.dto';
 import { WhatsAppChatService } from './whatsapp-chat.service';
+import { WhatsAppOutboundMessageService } from './whatsapp-outbound-message.service';
 import { WhatsAppWebhookReceiptService } from './whatsapp-webhook-receipt.service';
 
 @ApiTags('WhatsApp webhooks')
@@ -39,6 +40,7 @@ export class WhatsAppController {
     config: ConfigService,
     private readonly webhookReceipts: WhatsAppWebhookReceiptService,
     private readonly whatsappChat: WhatsAppChatService,
+    private readonly outboundMessages: WhatsAppOutboundMessageService,
   ) {
     this.verifyToken = config.getOrThrow<string>('WHATSAPP_VERIFY_TOKEN');
     this.appSecret = config.getOrThrow<string>('WHATSAPP_APP_SECRET');
@@ -87,6 +89,7 @@ export class WhatsAppController {
       throw new ForbiddenException('Invalid WhatsApp webhook signature');
     }
 
+    const deliveryStatuses = await this.outboundMessages.processStatuses(payload);
     const receipt = await this.webhookReceipts.reserve(payload);
     for (const message of receipt.acceptedMessages) {
       try {
@@ -101,6 +104,9 @@ export class WhatsAppController {
       event: 'whatsapp.webhook.notification.acknowledged',
       acceptedMessages: receipt.acceptedMessages.length,
       duplicateMessages: receipt.duplicateMessages,
+      receivedStatuses: deliveryStatuses.receivedStatuses,
+      updatedStatuses: deliveryStatuses.updatedStatuses,
+      ignoredStatuses: deliveryStatuses.ignoredStatuses,
     });
   }
 

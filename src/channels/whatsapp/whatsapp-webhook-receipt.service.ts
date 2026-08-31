@@ -8,9 +8,13 @@ export interface WhatsAppInboundMessage {
   phoneNumberId: string;
   recipientPhoneNumber: string;
   messageType: string;
+  webhookReceivedAt: Date;
+  customerSentAt?: Date;
   text?: string;
   customerName?: string;
 }
+
+type ExtractedWhatsAppInboundMessage = Omit<WhatsAppInboundMessage, 'webhookReceivedAt'>;
 
 export interface WhatsAppWebhookReceipt {
   acceptedMessages: WhatsAppInboundMessage[];
@@ -30,10 +34,10 @@ export class WhatsAppWebhookReceiptService {
 
     for (const message of messages) {
       try {
-        await this.prisma.whatsAppWebhookMessage.create({
+        const reservation = await this.prisma.whatsAppWebhookMessage.create({
           data: { wabaId: message.wabaId, messageId: message.messageId },
         });
-        acceptedMessages.push(message);
+        acceptedMessages.push({ ...message, webhookReceivedAt: reservation.receivedAt });
       } catch (error: unknown) {
         if (this.isUniqueConstraintError(error)) {
           duplicateMessages += 1;
@@ -77,10 +81,10 @@ export class WhatsAppWebhookReceiptService {
     }
   }
 
-  private extractMessages(payload: unknown): WhatsAppInboundMessage[] {
+  private extractMessages(payload: unknown): ExtractedWhatsAppInboundMessage[] {
     if (!this.isRecord(payload) || !Array.isArray(payload.entry)) return [];
 
-    const messages: WhatsAppInboundMessage[] = [];
+    const messages: ExtractedWhatsAppInboundMessage[] = [];
     for (const entry of payload.entry) {
       if (
         !this.isRecord(entry) ||
@@ -115,12 +119,14 @@ export class WhatsAppWebhookReceiptService {
           const messageType = this.isIdentifier(message.type, 64) ? message.type : 'unknown';
           const text = this.extractText(messageType, message.text);
           const customerName = contactNames.get(message.from);
+          const customerSentAt = this.parseMetaTimestamp(message.timestamp);
           messages.push({
             wabaId: entry.id,
             messageId: message.id,
             phoneNumberId: metadata.phone_number_id,
             recipientPhoneNumber: message.from,
             messageType,
+            ...(customerSentAt ? { customerSentAt } : {}),
             ...(text ? { text } : {}),
             ...(customerName ? { customerName } : {}),
           });
@@ -171,6 +177,14 @@ export class WhatsAppWebhookReceiptService {
 
   private isPhoneNumber(value: unknown): value is string {
     return typeof value === 'string' && /^\d{5,20}$/.test(value);
+  }
+
+  private parseMetaTimestamp(value: unknown): Date | undefined {
+    if (typeof value !== 'string' || !/^\d{1,12}$/.test(value)) return undefined;
+    const milliseconds = Number(value) * 1_000;
+    if (!Number.isSafeInteger(milliseconds)) return undefined;
+    const timestamp = new Date(milliseconds);
+    return Number.isNaN(timestamp.getTime()) ? undefined : timestamp;
   }
 
   private isUniqueConstraintError(error: unknown): boolean {

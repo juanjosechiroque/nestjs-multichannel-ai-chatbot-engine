@@ -7,6 +7,7 @@ import {
 } from '../../common/application-error';
 import type { ConversationService } from '../../conversation/conversation.service';
 import { WhatsAppChatService } from './whatsapp-chat.service';
+import type { WhatsAppOutboundMessageService } from './whatsapp-outbound-message.service';
 import type { WhatsAppInboundMessage } from './whatsapp-webhook-receipt.service';
 
 const MESSAGE: WhatsAppInboundMessage = {
@@ -15,6 +16,7 @@ const MESSAGE: WhatsAppInboundMessage = {
   phoneNumberId: '1220572421149962',
   recipientPhoneNumber: '51999999999',
   messageType: 'text',
+  webhookReceivedAt: new Date('2026-08-31T17:00:00.000Z'),
   text: '¿Qué productos tienen?',
   customerName: 'Ana Cliente',
 };
@@ -27,7 +29,7 @@ function createService(): WhatsAppChatService {
   return new WhatsAppChatService(
     { reply } as unknown as ChatService,
     { findOrCreateBySession } as unknown as ConversationService,
-    { sendText },
+    { sendText } as unknown as WhatsAppOutboundMessageService,
   );
 }
 
@@ -71,11 +73,10 @@ describe('WhatsAppChatService', () => {
         },
       }),
     );
-    expect(sendText).toHaveBeenCalledWith({
-      phoneNumberId: '1220572421149962',
-      recipientPhoneNumber: '51999999999',
-      text: 'Tenemos bebidas calientes, bebidas frías y alimentos.',
-    });
+    expect(sendText).toHaveBeenCalledWith(
+      MESSAGE,
+      'Tenemos bebidas calientes, bebidas frías y alimentos.',
+    );
   });
 
   it('keeps the same session for later messages from the same WABA customer', async () => {
@@ -112,11 +113,10 @@ describe('WhatsAppChatService', () => {
 
     expect(findOrCreateBySession).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
-    expect(sendText).toHaveBeenCalledWith({
-      phoneNumberId: '1220572421149962',
-      recipientPhoneNumber: '51999999999',
-      text: 'Por ahora puedo responder mensajes de texto. Escríbeme tu consulta para ayudarte.',
-    });
+    expect(sendText).toHaveBeenCalledWith(
+      imageMessage,
+      'Por ahora puedo responder mensajes de texto. Escríbeme tu consulta para ayudarte.',
+    );
   });
 
   it('sends a safe fallback when the chatbot is temporarily unavailable', async () => {
@@ -126,11 +126,11 @@ describe('WhatsAppChatService', () => {
 
     await service.handle(MESSAGE);
 
-    expect(sendText).toHaveBeenCalledWith({
-      phoneNumberId: '1220572421149962',
-      recipientPhoneNumber: '51999999999',
-      text: 'No pude procesar tu consulta en este momento. Inténtalo nuevamente con otro mensaje.',
-    });
+    expect(sendText).toHaveBeenCalledWith(
+      MESSAGE,
+      'No pude procesar tu consulta en este momento. Inténtalo nuevamente con otro mensaje.',
+    );
+    expect(JSON.stringify(sendText.mock.calls)).not.toContain('OPENAI_REQUEST_FAILED');
   });
 
   it('propagates Meta delivery failures so the webhook reservation can be retried', async () => {

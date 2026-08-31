@@ -57,12 +57,18 @@ describe('MetaWhatsAppClient', () => {
     });
   });
 
-  it('accepts a successful provider response without a readable message ID', async () => {
-    jest.spyOn(Logger.prototype, 'log').mockImplementation();
+  it('rejects a successful provider response without the message ID required for tracking', async () => {
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response(undefined, { status: 200 }));
     const client = createClient();
 
-    await expect(client.sendText(MESSAGE)).resolves.toEqual({});
+    await expect(client.sendText(MESSAGE)).rejects.toEqual(new WhatsAppDeliveryFailedException());
+    expect(error).toHaveBeenCalledWith({
+      event: 'whatsapp.provider.delivery.failed',
+      provider: 'meta',
+      failureCode: 'WHATSAPP_DELIVERY_FAILED',
+      message: 'Meta Graph API returned no message ID',
+    });
   });
 
   it('returns a controlled failure without logging credentials or recipient data', async () => {

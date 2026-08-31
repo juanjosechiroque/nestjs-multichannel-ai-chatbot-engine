@@ -28,9 +28,11 @@ The sender identifier and message content are used only to maintain the test con
 a relevant response, and send that response. Conversation messages and generated answers are stored
 in PostgreSQL as test history. The webhook deduplication table separately stores only the WABA
 identifier, message identifier, and reception timestamp; it does not store the sender's phone number
-or message content. A one-way hash of the WABA and sender identifier is used as the internal WhatsApp
-conversation session key. If the tester creates an order, Meta-provided name and phone data may be
-stored with that order as checkout identity.
+or message content. The outbound delivery table stores technical inbound and provider message
+identifiers, delivery state, attempt count, failure code, and event timestamps; it does not store the
+sender's phone number or generated reply. A one-way hash of the WABA and sender identifier is used as
+the internal WhatsApp conversation session key. If the tester creates an order, Meta-provided name
+and phone data may be stored with that order as checkout identity.
 
 ## 3. Purpose
 
@@ -55,10 +57,10 @@ such as temporary hosting, development tunnels, or a database service.
 
 ## 5. Retention
 
-The project retains technical message identifiers, test conversation history, generated replies,
-and any test orders required to demonstrate memory, duplicate prevention, and order behavior. These
-records are removed by the project owner when they are no longer required or when the demonstration
-database is reset.
+The project retains technical message and delivery identifiers, delivery timestamps and statuses,
+test conversation history, generated replies, and any test orders required to demonstrate memory,
+duplicate prevention, delivery verification, and order behavior. These records are removed by the
+project owner when they are no longer required or when the demonstration database is reset.
 
 Because this is a closed environment, the project owner controls both the application and the only
 authorized tester number and can delete all associated test records directly.

@@ -7,7 +7,7 @@ export interface SendWhatsAppTextInput {
 }
 
 export interface SendWhatsAppTextResult {
-  providerMessageId?: string;
+  providerMessageId: string;
 }
 
 export interface WhatsAppProvider {

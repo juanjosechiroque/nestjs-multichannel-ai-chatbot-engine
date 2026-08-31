@@ -173,10 +173,14 @@ telemetry and are not part of the web response contract.
 6. Catalog, RAG, promotions, memory, and order operations execute through the shared typed tools.
 7. `WhatsAppChatService` sends the generated text through the `WhatsAppProvider` port;
    `MetaWhatsAppClient` translates it into a Graph API message request.
-8. Unsupported media receives a deterministic text capability response. A controlled chatbot
-   failure receives a safe retry message without exposing provider or database details.
-9. If Graph API delivery fails, the receipt reservation is released so Meta can retry. A completed
-   chatbot turn is replayed from PostgreSQL rather than invoking OpenAI twice.
+8. `WhatsAppOutboundMessageService` persists the required WAMID and acceptance latency without
+   storing the generated text or recipient phone. A `200` without WAMID is rejected as unverifiable.
+9. Later signed `sent`, `delivered`, `read`, or `failed` events advance the outbound record
+   monotonically; duplicates, unknown IDs, and regressive events are safely ignored.
+10. Unsupported media receives a deterministic text capability response. A controlled chatbot
+    failure receives a safe retry message without exposing provider or database details.
+11. If Graph API delivery fails, the receipt reservation is released so Meta can retry. A completed
+    chatbot turn is replayed from PostgreSQL rather than invoking OpenAI twice.
 
 This flow is synchronous in the portfolio deployment. A production extension should persist a job
 and acknowledge Meta before model execution, then process delivery from a background worker.
@@ -305,8 +309,10 @@ owns payload extraction and the PostgreSQL duplicate ledger. `WhatsAppChatServic
 provider identity, and a hashed stable session to `ChatService`; it contains no prompts, retrieval,
 catalog, or order rules. It depends on the `WhatsAppProvider` port instead of Meta HTTP details.
 `MetaWhatsAppClient` implements that port and owns Graph API URLs, credentials, payload translation,
-timeouts, response parsing, and transport-error mapping. New and duplicate valid deliveries both
-receive an empty `200`, but only the first is processed and answered.
+timeouts, response parsing, and transport-error mapping. `WhatsAppOutboundMessageService` owns the
+provider-neutral send attempt, WAMID persistence, delivery-state transitions, and latency telemetry.
+New and duplicate valid deliveries both receive an empty `200`, but only the first is processed and
+answered.
 
 A channel adapter may:
 
@@ -328,6 +334,7 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 | WhatsApp webhook controller  | Meta challenge, signature validation, acknowledgment            | Chatbot or business behavior                |
 | WhatsApp receipt service     | Payload extraction and durable message deduplication            | Chatbot invocation or outbound formatting   |
 | WhatsApp chat adapter        | Stable session/identity mapping and `ChatService` invocation    | Prompts, retrieval, catalog, or order rules |
+| WhatsApp outbound service    | WAMID lifecycle, safe failures, status ordering, and latency    | Generated text retention or Meta HTTP shape |
 | `WhatsAppProvider` port      | Provider-neutral outbound text contract                         | Meta payloads or business behavior          |
 | `MetaWhatsAppClient`         | Graph API authentication, translation, timeout, and result      | Prompts or conversational behavior          |
 | `ConversationService`        | Conversation creation and channel-session resolution            | Prompt or channel payload interpretation    |
@@ -356,6 +363,7 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 | One tool per message            | Bounds orchestration, latency, and failure modes                | Complex requests may require another customer turn  |
 | Backend-created sessions        | Rejects unknown conversations and controls lifecycle            | Requires a session-creation request                 |
 | PostgreSQL message ledger       | Makes channel retries durable across restarts                   | Adds one small row per attempted message            |
+| PostgreSQL delivery lifecycle   | Verifies accepted, delivered, read, and failed Meta messages    | Adds operational rows and status handling           |
 | Hashed WhatsApp session key     | Preserves customer memory without a raw-phone public session ID | Requires deterministic WABA/customer mapping        |
 | Synchronous WhatsApp processing | Keeps the portfolio deployment operationally small              | Production latency needs a durable worker queue     |
 | Provider port inside Nest       | Isolates Meta without a separately deployed service             | Adds an interface and DI token                      |

@@ -65,8 +65,9 @@ generation and embeddings are replaced by deterministic test doubles. They cover
 - Global security headers and removal of the Express signature.
 - Allowed and disallowed browser origins, including CORS preflight behavior.
 - WhatsApp callback verification, POST signatures, shared-chat routing, stable conversation memory,
-  provider-port substitution, Graph API translation, and durable duplicate suppression without
-  repeated OpenAI calls.
+  provider-port substitution, safe chatbot/provider failures, required WAMID persistence, monotonic
+  delivery statuses, latency timestamps, Graph API translation, and durable duplicate suppression
+  without repeated OpenAI calls.
 - Backend-managed conversations and persistent history.
 - Completed-message replay, conflicting IDs, failed retries, and concurrent duplicate rejection.
 - Catalog endpoints, typed catalog search, and menu documents.

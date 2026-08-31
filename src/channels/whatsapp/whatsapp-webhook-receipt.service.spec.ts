@@ -5,6 +5,8 @@ import { WhatsAppWebhookReceiptService } from './whatsapp-webhook-receipt.servic
 
 const create = jest.fn();
 const deleteMany = jest.fn();
+const RECEIVED_AT = new Date('2026-08-31T17:00:01.000Z');
+const CUSTOMER_SENT_AT = new Date(1_788_195_600_000);
 
 function createService(): WhatsAppWebhookReceiptService {
   return new WhatsAppWebhookReceiptService({
@@ -32,6 +34,7 @@ function notification(messageIds: string[]): unknown {
               messages: messageIds.map((id) => ({
                 id,
                 from: '51999999999',
+                timestamp: '1788195600',
                 type: 'text',
                 text: { body: '¿Qué productos tienen?' },
               })),
@@ -45,7 +48,7 @@ function notification(messageIds: string[]): unknown {
 
 describe('WhatsAppWebhookReceiptService', () => {
   beforeEach(() => {
-    create.mockReset().mockResolvedValue({});
+    create.mockReset().mockResolvedValue({ receivedAt: RECEIVED_AT });
     deleteMany.mockReset().mockResolvedValue({ count: 1 });
   });
 
@@ -65,6 +68,8 @@ describe('WhatsAppWebhookReceiptService', () => {
           phoneNumberId: '1220572421149962',
           recipientPhoneNumber: '51999999999',
           messageType: 'text',
+          webhookReceivedAt: RECEIVED_AT,
+          customerSentAt: CUSTOMER_SENT_AT,
           text: '¿Qué productos tienen?',
           customerName: 'Ana Cliente',
         },
@@ -74,6 +79,8 @@ describe('WhatsAppWebhookReceiptService', () => {
           phoneNumberId: '1220572421149962',
           recipientPhoneNumber: '51999999999',
           messageType: 'text',
+          webhookReceivedAt: RECEIVED_AT,
+          customerSentAt: CUSTOMER_SENT_AT,
           text: '¿Qué productos tienen?',
           customerName: 'Ana Cliente',
         },
@@ -101,7 +108,9 @@ describe('WhatsAppWebhookReceiptService', () => {
 
   it('deduplicates repeated IDs contained in the same notification', async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
-    create.mockResolvedValueOnce({}).mockRejectedValueOnce({ code: 'P2002' });
+    create
+      .mockResolvedValueOnce({ receivedAt: RECEIVED_AT })
+      .mockRejectedValueOnce({ code: 'P2002' });
     const service = createService();
 
     await expect(
@@ -114,6 +123,8 @@ describe('WhatsAppWebhookReceiptService', () => {
           phoneNumberId: '1220572421149962',
           recipientPhoneNumber: '51999999999',
           messageType: 'text',
+          webhookReceivedAt: RECEIVED_AT,
+          customerSentAt: CUSTOMER_SENT_AT,
           text: '¿Qué productos tienen?',
           customerName: 'Ana Cliente',
         },
@@ -164,6 +175,7 @@ describe('WhatsAppWebhookReceiptService', () => {
           phoneNumberId: '1220572421149962',
           recipientPhoneNumber: '51999999999',
           messageType: 'image',
+          webhookReceivedAt: RECEIVED_AT,
           customerName: 'Ana Cliente',
         },
       ],
@@ -215,6 +227,7 @@ describe('WhatsAppWebhookReceiptService', () => {
       phoneNumberId: '1220572421149962',
       recipientPhoneNumber: '51999999999',
       messageType: 'text',
+      webhookReceivedAt: RECEIVED_AT,
       text: 'Mensaje privado',
     });
 
@@ -241,6 +254,7 @@ describe('WhatsAppWebhookReceiptService', () => {
         phoneNumberId: '1220572421149962',
         recipientPhoneNumber: '51999999999',
         messageType: 'text',
+        webhookReceivedAt: RECEIVED_AT,
         text: 'Mensaje privado',
       }),
     ).rejects.toEqual(new DatabaseUnavailableException());
