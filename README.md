@@ -62,6 +62,8 @@ that are not implemented.
 - Idempotent confirmation: repeated or concurrent confirmation returns the same order.
 - Clarification for unknown or ambiguous product names without partial writes.
 - Availability validation both when products are added and immediately before confirmation.
+- `CONFIRMED` closes the chatbot workflow by persisting an accepted order; it does not claim payment,
+  kitchen dispatch, or delivery fulfillment.
 
 ### Web channel and operations
 
