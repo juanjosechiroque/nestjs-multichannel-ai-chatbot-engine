@@ -341,7 +341,9 @@ prisma/
 ├── seed-data/        # Reproducible example records
 └── schema.prisma     # Products, knowledge, conversations, and orders
 
-examples/cafe-nube/   # Replaceable business configuration and presentation asset
+examples/
+├── cafe-nube/        # Replaceable business configuration and presentation asset
+└── web-widget/       # Framework-free external integration example
 docs/                 # Quality and evaluation documentation
 ```
 

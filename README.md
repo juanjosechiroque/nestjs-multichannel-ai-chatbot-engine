@@ -124,6 +124,11 @@ HTTP documentation is available after startup:
 - Swagger UI: `http://localhost:3000/api/docs`
 - OpenAPI JSON: `http://localhost:3000/api/docs-json`
 
+A framework-free, portable Web Component integration is available in
+[`examples/web-widget`](examples/web-widget). It creates backend-managed sessions, sends idempotent
+message IDs, and renders text, safe links, and document responses without adding frontend concerns
+to the chatbot core.
+
 ## API usage
 
 ### Health
