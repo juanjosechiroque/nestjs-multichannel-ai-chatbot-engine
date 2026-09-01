@@ -63,6 +63,7 @@ generation and embeddings are replaced by deterministic test doubles. They cover
 - Global DTO validation and controlled errors.
 - Swagger/OpenAPI route coverage, schemas, operations, and documented HTTP responses.
 - Global security headers and removal of the Express signature.
+- Allowed and disallowed browser origins, including CORS preflight behavior.
 - Backend-managed conversations and persistent history.
 - Completed-message replay, conflicting IDs, failed retries, and concurrent duplicate rejection.
 - Catalog endpoints, typed catalog search, and menu documents.

@@ -45,7 +45,7 @@ describe('Web channel rate limiting', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    configureApplication(app);
+    configureApplication(app, { corsAllowedOrigins: ['http://localhost:4173'] });
     await app.init();
     server = app.getHttpServer() as Server;
   });

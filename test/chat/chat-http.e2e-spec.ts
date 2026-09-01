@@ -28,6 +28,7 @@ import { applyMigrations, assertDisposableTestDatabase } from '../support/test-d
 const TEST_ENVIRONMENT = {
   NODE_ENV: 'test',
   PORT: '3000',
+  CORS_ALLOWED_ORIGINS: 'http://localhost:4173',
   OPENAI_API_KEY: 'e2e-not-a-real-key',
   OPENAI_MODEL: 'e2e-model',
   OPENAI_EMBEDDING_MODEL: 'e2e-embedding-model',
@@ -118,7 +119,9 @@ describe('HTTP conversation flow', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
-    configureApplication(app);
+    configureApplication(app, {
+      corsAllowedOrigins: app.get(ConfigService).getOrThrow<string[]>('CORS_ALLOWED_ORIGINS'),
+    });
     await app.init();
     prisma = app.get(PrismaService);
     const configuredDatabaseUrl = app.get(ConfigService).getOrThrow<string>('DATABASE_URL');
@@ -176,6 +179,40 @@ describe('HTTP conversation flow', () => {
     expect(response.get('X-Content-Type-Options')).toBe('nosniff');
     expect(response.get('X-Frame-Options')).toBe('SAMEORIGIN');
     expect(response.get('X-Powered-By')).toBeUndefined();
+  });
+
+  it('allows the configured browser origin and omits CORS permission for another origin', async () => {
+    const allowedResponse = await request(server)
+      .get('/api/health')
+      .set('Origin', 'http://localhost:4173')
+      .expect(200);
+    const disallowedResponse = await request(server)
+      .get('/api/health')
+      .set('Origin', 'https://untrusted.example')
+      .expect(200);
+
+    expect(allowedResponse.get('Access-Control-Allow-Origin')).toBe('http://localhost:4173');
+    expect(disallowedResponse.get('Access-Control-Allow-Origin')).toBeUndefined();
+  });
+
+  it('answers preflight only with permission for the configured browser origin', async () => {
+    const allowedResponse = await request(server)
+      .options('/api/chat')
+      .set('Origin', 'http://localhost:4173')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type')
+      .expect(204);
+    const disallowedResponse = await request(server)
+      .options('/api/chat')
+      .set('Origin', 'https://untrusted.example')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type')
+      .expect(204);
+
+    expect(allowedResponse.get('Access-Control-Allow-Origin')).toBe('http://localhost:4173');
+    expect(allowedResponse.get('Access-Control-Allow-Methods')).toContain('POST');
+    expect(allowedResponse.get('Access-Control-Allow-Headers')).toBe('content-type');
+    expect(disallowedResponse.get('Access-Control-Allow-Origin')).toBeUndefined();
   });
 
   it('publishes the documented HTTP contract as OpenAPI JSON', async () => {

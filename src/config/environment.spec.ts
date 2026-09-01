@@ -3,6 +3,7 @@ import { validateEnvironment } from './environment';
 const VALID_ENVIRONMENT: Record<string, unknown> = {
   NODE_ENV: 'development',
   PORT: '3000',
+  CORS_ALLOWED_ORIGINS: ' http://localhost:4173/, https://www.cafenube.pe/ ',
   OPENAI_API_KEY: 'test-key',
   OPENAI_MODEL: 'gpt-5.6-luna',
   OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
@@ -30,6 +31,10 @@ describe('validateEnvironment', () => {
     const environment = validateEnvironment(environmentInput);
 
     expect(environment.PORT).toBe(3000);
+    expect(environment.CORS_ALLOWED_ORIGINS).toEqual([
+      'http://localhost:4173',
+      'https://www.cafenube.pe',
+    ]);
     expect(environment.OPENAI_MAX_OUTPUT_TOKENS).toBe(500);
     expect(environment.OPENAI_EMBEDDING_MODEL).toBe('text-embedding-3-small');
     expect(environment.OPENAI_GENERATION_TIMEOUT_MS).toBe(20_000);
@@ -42,11 +47,23 @@ describe('validateEnvironment', () => {
     expect(environment.BUSINESS_TIME_ZONE).toBe('America/Lima');
   });
 
+  it('uses the local widget origin when the CORS allowlist is omitted', () => {
+    const environmentInput = { ...VALID_ENVIRONMENT };
+    delete environmentInput.CORS_ALLOWED_ORIGINS;
+
+    expect(validateEnvironment(environmentInput).CORS_ALLOWED_ORIGINS).toEqual([
+      'http://localhost:4173',
+    ]);
+  });
+
   it.each([
     ['an unsupported NODE_ENV', { NODE_ENV: 'staging' }, 'NODE_ENV'],
     ['a port below the valid range', { PORT: '0' }, 'PORT'],
     ['a port above the valid range', { PORT: '70000' }, 'PORT'],
     ['a non-numeric port', { PORT: 'abc' }, 'PORT'],
+    ['an empty CORS allowlist', { CORS_ALLOWED_ORIGINS: '' }, 'CORS_ALLOWED_ORIGINS'],
+    ['an invalid CORS origin', { CORS_ALLOWED_ORIGINS: 'cafenube.pe' }, 'CORS_ALLOWED_ORIGINS'],
+    ['a wildcard CORS origin', { CORS_ALLOWED_ORIGINS: '*' }, 'CORS_ALLOWED_ORIGINS'],
     ['an empty OpenAI API key', { OPENAI_API_KEY: '' }, 'OPENAI_API_KEY'],
     ['an empty database URL', { DATABASE_URL: '' }, 'DATABASE_URL'],
     ['an invalid business time zone', { BUSINESS_TIME_ZONE: 'Lima' }, 'BUSINESS_TIME_ZONE'],
