@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { CatalogModule } from '../catalog/catalog.module';
 import { ConversationModule } from '../conversation/conversation.module';
+import { DatabaseModule } from '../database/database.module';
 import { MemoryModule } from '../memory/memory.module';
 import { OrderModule } from '../order/order.module';
 import { RagModule } from '../rag/rag.module';
 import { ChatService } from './chat.service';
+import { ChatTurnService } from './chat-turn.service';
 import { CatalogEvaluationService } from './evaluation/catalog-evaluation.service';
 import { ConversationSecurityEvaluationService } from './evaluation/conversation-security-evaluation.service';
 import { ConversationSecurityJudgeService } from './evaluation/conversation-security-judge.service';
@@ -17,9 +19,17 @@ import { OrderTool } from './tools/order.tool';
 import { PromotionSearchTool } from './tools/promotion-search.tool';
 
 @Module({
-  imports: [CatalogModule, ConversationModule, MemoryModule, OrderModule, RagModule],
+  imports: [
+    CatalogModule,
+    ConversationModule,
+    DatabaseModule,
+    MemoryModule,
+    OrderModule,
+    RagModule,
+  ],
   providers: [
     ChatService,
+    ChatTurnService,
     CatalogEvaluationService,
     CatalogSearchTool,
     ConversationSecurityEvaluationService,

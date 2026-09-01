@@ -10,6 +10,7 @@ export interface TrustedCustomerIdentity {
 
 export interface ChatRequest {
   requestId: string;
+  messageId: string;
   conversationId: string;
   channel: ChatChannel;
   message: string;

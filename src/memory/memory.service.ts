@@ -3,7 +3,7 @@ import type { RequestContext } from '../common/request-context';
 import { executeDatabaseOperation } from '../database/database-operation';
 import { PrismaService } from '../database/prisma.service';
 import { MessageRole } from '../generated/prisma/enums';
-import type { ChatHistoryMessage, SaveExchangeInput } from './memory.types';
+import type { ChatHistoryMessage } from './memory.types';
 
 const RECENT_MESSAGE_LIMIT = 10;
 
@@ -48,38 +48,5 @@ export class MemoryService {
       role: message.role === MessageRole.USER ? 'user' : 'assistant',
       content: message.content,
     }));
-  }
-
-  async saveExchange(
-    { conversationId, userMessage, assistantMessage }: SaveExchangeInput,
-    context: RequestContext,
-  ): Promise<void> {
-    const startedAt = Date.now();
-    const correlatedContext = { ...context, conversationId };
-    await executeDatabaseOperation(
-      {
-        logger: this.logger,
-        operation: 'memory.exchange.write',
-        context: correlatedContext,
-      },
-      () =>
-        this.prisma.conversation.update({
-          where: { id: conversationId },
-          data: {
-            messages: {
-              create: [
-                { role: MessageRole.USER, content: userMessage },
-                { role: MessageRole.ASSISTANT, content: assistantMessage },
-              ],
-            },
-          },
-        }),
-    );
-
-    this.logger.log({
-      event: 'memory.exchange.saved',
-      ...correlatedContext,
-      durationMs: Date.now() - startedAt,
-    });
   }
 }

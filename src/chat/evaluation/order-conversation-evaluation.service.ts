@@ -75,6 +75,7 @@ export class OrderConversationEvaluationService {
       try {
         const response = await this.chat.reply({
           requestId: `order-eval-${randomUUID()}`,
+          messageId: randomUUID(),
           conversationId: conversation.id,
           channel: 'web',
           message: turn.message,

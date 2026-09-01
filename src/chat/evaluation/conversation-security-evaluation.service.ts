@@ -43,6 +43,7 @@ export class ConversationSecurityEvaluationService {
       try {
         const result = await this.chat.reply({
           requestId: `security-eval-${randomUUID()}`,
+          messageId: randomUUID(),
           conversationId: conversation.id,
           channel: 'web',
           message: evaluationCase.message,

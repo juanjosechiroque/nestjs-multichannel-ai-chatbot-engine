@@ -74,13 +74,13 @@ describe('Web channel rate limiting', () => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await request(server)
         .post('/api/chat')
-        .send({ sessionId, message: `Mensaje ${attempt + 1}` })
+        .send({ sessionId, messageId: randomUUID(), message: `Mensaje ${attempt + 1}` })
         .expect(201);
     }
 
     const response = await request(server)
       .post('/api/chat')
-      .send({ sessionId, message: 'Mensaje 11' })
+      .send({ sessionId, messageId: randomUUID(), message: 'Mensaje 11' })
       .expect(429);
 
     expect(response.body).toEqual({
