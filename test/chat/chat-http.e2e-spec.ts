@@ -168,8 +168,24 @@ describe('HTTP conversation flow', () => {
     await request(server).get('/api/health').expect(200, { status: 'ok' });
   });
 
+  it('applies global security headers without exposing the Express signature', async () => {
+    const response = await request(server).get('/api/health').expect(200);
+
+    expect(response.get('Content-Security-Policy')).toContain("default-src 'self'");
+    expect(response.get('Referrer-Policy')).toBe('no-referrer');
+    expect(response.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(response.get('X-Frame-Options')).toBe('SAMEORIGIN');
+    expect(response.get('X-Powered-By')).toBeUndefined();
+  });
+
   it('publishes the documented HTTP contract as OpenAPI JSON', async () => {
-    await request(server).get('/api/docs').expect('Content-Type', /html/).expect(200);
+    const swaggerResponse = await request(server)
+      .get('/api/docs')
+      .expect('Content-Type', /html/)
+      .expect(200);
+    expect(swaggerResponse.get('Content-Security-Policy')).toContain(
+      "script-src 'self' 'unsafe-inline'",
+    );
     const response = await request(server).get('/api/docs-json').expect(200);
     const document = response.body as OpenApiDocumentResponse;
 

@@ -75,6 +75,8 @@ that are not implemented.
 - Ten chat messages per minute per public session.
 - Structured correlated logs for memory, RAG, tools, OpenAI, and completed chat requests.
 - Token and latency telemetry without exposing it in the public response.
+- Global HTTP security headers through Helmet.
+- Graceful shutdown hooks that close Prisma connections on process termination.
 
 ### Quality
 
