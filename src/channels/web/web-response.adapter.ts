@@ -1,10 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { ChatContent, ChatResult } from '../../chat/chat.types';
+import type { ChatResult } from '../../chat/chat.types';
+import type { WebChatResponseDto } from './dto/web-chat-response.dto';
 
-export interface WebChatResponse {
-  reply: string;
-  content?: ChatContent[];
-}
+export type WebChatResponse = WebChatResponseDto;
 
 /**
  * Translates the channel-neutral chat result into the web API contract.

@@ -14,6 +14,7 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(port);
   Logger.log(`Server running at http://localhost:${port}`, 'Bootstrap');
+  Logger.log(`Swagger UI available at http://localhost:${port}/api/docs`, 'Bootstrap');
 }
 
 void bootstrap();

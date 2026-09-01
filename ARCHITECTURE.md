@@ -80,6 +80,7 @@ flowchart LR
         limit["ThrottlerGuard<br/>IP or session limit"]
         validation["ValidationPipe + DTO"]
         controller["Web controllers<br/>Transport mapping"]
+        openapi["Swagger / OpenAPI<br/>HTTP contract"]
     end
 
     subgraph core["Channel-independent conversational core"]
@@ -111,6 +112,7 @@ flowchart LR
     openai["OpenAI APIs"]
 
     request --> limit --> validation --> controller
+    openapi -.-> controller
     controller --> conversation --> postgres
     controller --> chat
     chat --> turns --> postgres
@@ -275,6 +277,7 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 | Component                    | Owns                                                            | Must not own                               |
 | ---------------------------- | --------------------------------------------------------------- | ------------------------------------------ |
 | Web controllers              | HTTP input/output and public session mapping                    | Chatbot or order rules                     |
+| Swagger / OpenAPI            | Discoverable HTTP contracts and examples                        | Core or business behavior                  |
 | Web rate-limit configuration | IP/session tracking and `429` protection                        | Business limits or model behavior          |
 | `ConversationService`        | Conversation creation and public-session resolution             | Prompt or channel payload interpretation   |
 | `ChatService`                | One complete channel-neutral reply                              | HTTP, WhatsApp, or provider payloads       |

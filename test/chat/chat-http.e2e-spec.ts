@@ -69,6 +69,13 @@ interface CatalogItemResponse {
   availableForOrdering?: boolean;
 }
 
+interface OpenApiDocumentResponse {
+  openapi: string;
+  info: { title: string; version: string };
+  paths: Record<string, Record<string, unknown>>;
+  components?: { schemas?: Record<string, unknown> };
+}
+
 function deterministicEmbedding(): number[] {
   const embedding = Array<number>(EMBEDDING_DIMENSIONS).fill(0);
   embedding[0] = 1;
@@ -159,6 +166,53 @@ describe('HTTP conversation flow', () => {
 
   it('returns application health through the global API prefix', async () => {
     await request(server).get('/api/health').expect(200, { status: 'ok' });
+  });
+
+  it('publishes the documented HTTP contract as OpenAPI JSON', async () => {
+    await request(server).get('/api/docs').expect('Content-Type', /html/).expect(200);
+    const response = await request(server).get('/api/docs-json').expect(200);
+    const document = response.body as OpenApiDocumentResponse;
+
+    expect(document.openapi).toMatch(/^3\./);
+    expect(document.info).toEqual(
+      expect.objectContaining({
+        title: 'Multichannel AI Chatbot Engine API',
+        version: '0.1.0',
+      }),
+    );
+    expect(Object.keys(document.paths)).toEqual(
+      expect.arrayContaining([
+        '/api/health',
+        '/api/conversations',
+        '/api/chat',
+        '/api/products',
+        '/api/promotions',
+        '/api/faqs',
+        '/api/menu',
+      ]),
+    );
+    expect(document.paths['/api/chat']?.post).toEqual(
+      expect.objectContaining({
+        summary: 'Send an idempotent message to the web chatbot',
+        requestBody: expect.any(Object) as object,
+        responses: expect.objectContaining({
+          '201': expect.any(Object) as object,
+          '400': expect.any(Object) as object,
+          '404': expect.any(Object) as object,
+          '409': expect.any(Object) as object,
+          '429': expect.any(Object) as object,
+          '503': expect.any(Object) as object,
+        }) as object,
+      }),
+    );
+    expect(document.components?.schemas).toEqual(
+      expect.objectContaining({
+        WebChatMessageDto: expect.any(Object) as object,
+        WebChatResponseDto: expect.any(Object) as object,
+        ProductResponseDto: expect.any(Object) as object,
+        ApiErrorResponseDto: expect.any(Object) as object,
+      }),
+    );
   });
 
   it('creates a backend-managed web conversation with a UUID session', async () => {
