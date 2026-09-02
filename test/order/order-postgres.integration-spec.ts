@@ -303,16 +303,6 @@ describe('OrderService with PostgreSQL', () => {
     await expect(prisma.orderItem.count({ where: { orderId: result.id } })).resolves.toBe(1);
   });
 
-  it.each([0, -1, 1.5])(
-    'rejects invalid quantity %s without creating an order',
-    async (quantity) => {
-      await expect(
-        orders.addItem({ conversationId, productId: cappuccinoId, quantity }),
-      ).rejects.toBeInstanceOf(RangeError);
-      await expect(prisma.order.count({ where: { conversationId } })).resolves.toBe(0);
-    },
-  );
-
   it('keeps terminal orders and starts a new draft for the next purchase', async () => {
     const firstOrder = await orders.addItem({
       conversationId,

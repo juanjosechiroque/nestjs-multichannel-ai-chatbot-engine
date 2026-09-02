@@ -36,14 +36,10 @@ Unit tests mock OpenAI and do not require Docker, a database, network access, or
 ### Test logging policy
 
 `test/support/silence-logging.ts` runs through `setupFilesAfterEnv` for every Jest project
-(unit, integration, and HTTP end-to-end):
-
-- All NestJS `Logger` levels are silenced by default, so the deliberate error and warning paths
-  the suites exercise never flood the reporter. Specs that assert on structured logging still spy
-  on `Logger.prototype` directly.
-- `console.error` and `console.warn` are treated as a signal: an unexpected call fails the test
-  that produced it, so new noise in CI cannot hide. A spec that means to assert on `console` opts
-  out by spying on it itself.
+(unit, integration, and HTTP end-to-end): all NestJS `Logger` levels are silenced by default, so
+the deliberate error and warning paths the suites exercise never flood the reporter. Specs that
+assert on structured logging re-spy on `Logger.prototype` themselves. Application code logs only
+through `Logger`, never `console`.
 
 ## PostgreSQL integration tests
 
