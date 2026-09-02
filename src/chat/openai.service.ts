@@ -11,9 +11,15 @@ import {
 import type { RequestContext } from '../common/request-context';
 import { ProductCategory } from '../generated/prisma/enums';
 import type { ChatHistoryMessage } from '../memory/memory.types';
-import type { KnowledgeSourceType, RagSourceReference } from '../rag/rag.types';
+import type { RagSourceReference } from '../rag/rag.types';
 import { OrderAction } from '../order/order.types';
-import type { ChatContent, DocumentChatContent } from './chat.types';
+import type { ChatContent } from './chat.types';
+import {
+  CHAT_RESPONSE_FORMAT,
+  getAvailableSources,
+  getContent,
+  parseResponse,
+} from './chat-response.parser';
 import { addTokenUsage, type TokenUsage } from './token-usage';
 import type { CatalogSearchArguments } from './tools/catalog-search.tool';
 import type { PromotionSearchArguments } from './tools/promotion-search.tool';
@@ -30,6 +36,9 @@ export interface GenerateResponseInput {
   instructions: string;
   history: ChatHistoryMessage[];
   orderContext: OrderConversationContext;
+  conversationId: string;
+  toolChoice: OpenAI.Responses.ToolChoiceOptions | OpenAI.Responses.ToolChoiceFunction;
+  knowledgeQueryOverride?: string;
   manageOrder: (order: OrderToolArguments) => Promise<string>;
   setOrderCustomer: (details: OrderCustomerDetailsArguments) => Promise<string>;
   getMenuDocument: () => Promise<string>;
@@ -45,11 +54,6 @@ export interface GenerateResponseResult {
   usedTools: string[];
   tokenUsage?: TokenUsage;
   content?: ChatContent[];
-}
-
-interface StructuredChatResponse {
-  answer: string;
-  usedSourceIds: string[];
 }
 
 interface KnowledgeSearchArguments {
@@ -357,71 +361,6 @@ function buildChatTools(orderContext: OrderConversationContext): OpenAI.Response
   ];
 }
 
-const CHAT_RESPONSE_FORMAT = {
-  type: 'json_schema' as const,
-  name: 'chat_response',
-  strict: true,
-  schema: {
-    type: 'object',
-    properties: {
-      answer: {
-        type: 'string',
-        description: 'The customer-facing answer.',
-      },
-      usedSourceIds: {
-        type: 'array',
-        description: 'Identifiers of business-tool items that directly support the answer.',
-        items: { type: 'string' },
-      },
-    },
-    required: ['answer', 'usedSourceIds'],
-    additionalProperties: false,
-  },
-};
-
-function isLocationKnowledgeRequest(message: string): boolean {
-  const normalizedMessage = message
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-  const hasExplicitLocationTerm =
-    /\b(direccion|ubicacion|domicilio|sede|sedes|sucursal|sucursales)\b/.test(normalizedMessage);
-  const asksWhere = /\b(donde|como llego|como llegar)\b/.test(normalizedMessage);
-  const mentionsBusinessPlace = /\b(cafe|cafeteria|local|locales|queda|ubicad[oa]s?)\b/.test(
-    normalizedMessage,
-  );
-
-  return hasExplicitLocationTerm || (asksWhere && mentionsBusinessPlace);
-}
-
-function isServicesKnowledgeRequest(message: string): boolean {
-  const normalizedMessage = message
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-
-  return /\b(servicio|servicios|facilidad|facilidades|comodidad|comodidades)\b/.test(
-    normalizedMessage,
-  );
-}
-
-function isPromotionRequest(message: string): boolean {
-  const normalizedMessage = message
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-
-  return /\b(promocion|promociones|promo|promos|oferta|ofertas|descuento|descuentos|2x1)\b/.test(
-    normalizedMessage,
-  );
-}
-
-function isKnowledgeSourceType(value: unknown): value is KnowledgeSourceType {
-  return (
-    value === 'product' || value === 'product_category' || value === 'promotion' || value === 'faq'
-  );
-}
-
 @Injectable()
 export class OpenAiService {
   private readonly client: OpenAI;
@@ -441,6 +380,8 @@ export class OpenAiService {
     instructions,
     history,
     orderContext,
+    toolChoice,
+    knowledgeQueryOverride,
     manageOrder,
     setOrderCustomer,
     getMenuDocument,
@@ -453,26 +394,12 @@ export class OpenAiService {
     try {
       const initialInput = this.buildInput(message, history, orderContext);
       const tools = buildChatTools(orderContext);
-      const locationKnowledgeRequest = isLocationKnowledgeRequest(message);
-      const servicesKnowledgeRequest = isServicesKnowledgeRequest(message);
-      const promotionRequest = isPromotionRequest(message);
-      const forceKnowledgeSearch =
-        !promotionRequest && (locationKnowledgeRequest || servicesKnowledgeRequest);
-      const knowledgeQueryOverride = locationKnowledgeRequest
-        ? `dirección exacta, ubicación, cómo llegar y enlace de mapa. Pregunta del cliente: ${message}`
-        : servicesKnowledgeRequest
-          ? message
-          : undefined;
       const initialCallStartedAt = Date.now();
       const initialResponse = await this.createResponse({
         instructions,
         input: initialInput,
         tools,
-        toolChoice: promotionRequest
-          ? { type: 'function', name: PROMOTION_SEARCH_TOOL_NAME }
-          : forceKnowledgeSearch
-            ? { type: 'function', name: KNOWLEDGE_SEARCH_TOOL_NAME }
-            : 'auto',
+        toolChoice,
       });
       this.assertResponseCompleted(initialResponse);
       const toolCalls = initialResponse.output.filter(
@@ -681,11 +608,11 @@ export class OpenAiService {
       throw new OpenAiEmptyResponseException();
     }
 
-    const generatedResponse = this.parseResponse(response.output_text);
+    const generatedResponse = parseResponse(response.output_text);
     if (generatedResponse.answer.trim().length === 0) {
       throw new OpenAiEmptyResponseException();
     }
-    const availableSources = this.getAvailableSources(businessContext);
+    const availableSources = getAvailableSources(businessContext);
     const invalidSourceIds = generatedResponse.usedSourceIds.filter(
       (sourceId) => !availableSources.has(sourceId),
     );
@@ -722,7 +649,7 @@ export class OpenAiService {
       llmCalls,
       usedTools,
       tokenUsage,
-      ...this.getContent(businessContext),
+      ...getContent(businessContext),
     };
   }
 
@@ -1011,121 +938,5 @@ export class OpenAiService {
       scope,
       promotionName: promotionName === null ? null : promotionName.trim(),
     };
-  }
-
-  private parseResponse(outputText: string): StructuredChatResponse {
-    const parsed: unknown = JSON.parse(outputText);
-
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      !('answer' in parsed) ||
-      typeof parsed.answer !== 'string' ||
-      !('usedSourceIds' in parsed) ||
-      !Array.isArray(parsed.usedSourceIds) ||
-      !parsed.usedSourceIds.every((sourceId) => typeof sourceId === 'string')
-    ) {
-      throw new Error('OpenAI returned an invalid structured response');
-    }
-
-    return {
-      answer: parsed.answer.replaceAll('\\n', '\n'),
-      usedSourceIds: parsed.usedSourceIds,
-    };
-  }
-
-  private getContent(businessContext: string): { content?: ChatContent[] } {
-    const parsed: unknown = JSON.parse(businessContext);
-
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      !('documentStatus' in parsed) ||
-      parsed.documentStatus !== 'available' ||
-      !('document' in parsed) ||
-      !this.isDocumentContent(parsed.document)
-    ) {
-      return {};
-    }
-
-    return { content: [parsed.document] };
-  }
-
-  private isDocumentContent(value: unknown): value is DocumentChatContent {
-    return (
-      typeof value === 'object' &&
-      value !== null &&
-      'type' in value &&
-      value.type === 'document' &&
-      'title' in value &&
-      typeof value.title === 'string' &&
-      'url' in value &&
-      typeof value.url === 'string' &&
-      'mimeType' in value &&
-      value.mimeType === 'application/pdf'
-    );
-  }
-
-  private getAvailableSources(businessContext: string): Map<string, RagSourceReference> {
-    const parsed: unknown = JSON.parse(businessContext);
-
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      (!('knowledge' in parsed) &&
-        !('products' in parsed) &&
-        !('currentPromotions' in parsed) &&
-        !('orderOperationStatus' in parsed) &&
-        !('documentStatus' in parsed)) ||
-      ('knowledge' in parsed && !Array.isArray(parsed.knowledge)) ||
-      ('products' in parsed && !Array.isArray(parsed.products)) ||
-      ('currentPromotions' in parsed && !Array.isArray(parsed.currentPromotions)) ||
-      ('otherPromotions' in parsed && !Array.isArray(parsed.otherPromotions))
-    ) {
-      throw new Error('Business context has an invalid structure');
-    }
-
-    const knowledge: unknown[] =
-      'knowledge' in parsed && Array.isArray(parsed.knowledge) ? parsed.knowledge : [];
-    const products: unknown[] =
-      'products' in parsed && Array.isArray(parsed.products) ? parsed.products : [];
-    const currentPromotions: unknown[] =
-      'currentPromotions' in parsed && Array.isArray(parsed.currentPromotions)
-        ? parsed.currentPromotions
-        : [];
-    const otherPromotions: unknown[] =
-      'otherPromotions' in parsed && Array.isArray(parsed.otherPromotions)
-        ? parsed.otherPromotions
-        : [];
-
-    return new Map<string, RagSourceReference>(
-      [...knowledge, ...products, ...currentPromotions, ...otherPromotions].flatMap(
-        (item): Array<[string, RagSourceReference]> => {
-          if (
-            typeof item === 'object' &&
-            item !== null &&
-            'sourceId' in item &&
-            typeof item.sourceId === 'string' &&
-            'sourceKey' in item &&
-            typeof item.sourceKey === 'string' &&
-            'type' in item &&
-            isKnowledgeSourceType(item.type)
-          ) {
-            return [
-              [
-                item.sourceId,
-                {
-                  sourceId: item.sourceId,
-                  sourceKey: item.sourceKey,
-                  sourceType: item.type,
-                },
-              ],
-            ];
-          }
-
-          return [];
-        },
-      ),
-    );
   }
 }

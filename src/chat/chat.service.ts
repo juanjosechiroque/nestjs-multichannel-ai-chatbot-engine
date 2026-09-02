@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { getApplicationFailureCode } from '../common/application-error';
 import type { RequestContext } from '../common/request-context';
 import { MemoryService } from '../memory/memory.service';
+import { routeToolChoice } from './chat-tool-router';
 import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
 import { CatalogSearchTool } from './tools/catalog-search.tool';
@@ -81,12 +82,18 @@ export class ChatService {
         context,
       );
 
+      const routing = routeToolChoice(message);
       const generation = await this.openAi.generate({
         context,
         message,
         instructions: this.instructions,
         history,
         orderContext,
+        conversationId,
+        toolChoice: routing.toolChoice,
+        ...(routing.knowledgeQueryOverride
+          ? { knowledgeQueryOverride: routing.knowledgeQueryOverride }
+          : {}),
         manageOrder: (order) => this.orderTool.execute({ ...order, conversationId, context }),
         setOrderCustomer: (details) =>
           this.orderTool.setCustomerDetails(details, conversationId, context),
