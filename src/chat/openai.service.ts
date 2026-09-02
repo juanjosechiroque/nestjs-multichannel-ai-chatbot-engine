@@ -47,6 +47,8 @@ const EMPTY_BUSINESS_CONTEXT = JSON.stringify({
   knowledge: [],
 });
 
+const MAX_OUTPUT_TOKENS = 1_000;
+
 @Injectable()
 export class OpenAiService {
   private readonly client: OpenAI;
@@ -59,8 +61,8 @@ export class OpenAiService {
   ) {
     this.client = new OpenAI({
       apiKey: this.config.getOrThrow<string>('OPENAI_API_KEY'),
-      timeout: this.config.get<number>('OPENAI_GENERATION_TIMEOUT_MS', 20_000),
-      maxRetries: this.config.get<number>('OPENAI_GENERATION_MAX_RETRIES', 1),
+      timeout: this.config.get<number>('OPENAI_TIMEOUT_MS', 20_000),
+      maxRetries: this.config.get<number>('OPENAI_MAX_RETRIES', 1),
     });
     this.toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
   }
@@ -283,7 +285,7 @@ export class OpenAiService {
       store: false,
       prompt_cache_options: { mode: 'explicit' },
       reasoning: { effort: 'low' },
-      max_output_tokens: this.config.get<number>('OPENAI_MAX_OUTPUT_TOKENS', 2_000),
+      max_output_tokens: MAX_OUTPUT_TOKENS,
       text: { format: CHAT_RESPONSE_FORMAT },
     });
   }
