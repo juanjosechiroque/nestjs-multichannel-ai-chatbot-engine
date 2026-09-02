@@ -1,6 +1,6 @@
 import { DatabaseUnavailableException } from '../../common/application-error';
 import { Prisma } from '../../generated/prisma/client';
-import { ActiveOrderNotFoundError } from '../../order/order.errors';
+import { ActiveOrderNotFoundError, OrderProductNotAvailableError } from '../../order/order.errors';
 import { InvalidOrderTransitionError, OrderStateMachine } from '../../order/order-state-machine';
 import type { OrderService } from '../../order/order.service';
 import { OrderAction, OrderStatus, type OrderResult } from '../../order/order.types';
@@ -22,6 +22,7 @@ function product(id: string, name: string, slug: string) {
     currency: 'PEN',
     category: 'HOT_DRINK' as const,
     active: true,
+    availableForOrdering: true,
     metadata: null,
     createdAt: new Date('2026-08-11T00:00:00.000Z'),
     updatedAt: new Date('2026-08-11T00:00:00.000Z'),
@@ -241,6 +242,31 @@ describe('OrderTool', () => {
       expect.objectContaining({ productName: 'producto inventado', reason: 'not_found' }),
     ]);
     expect(orders.addItems).not.toHaveBeenCalled();
+  });
+
+  it('returns a controlled rejection when a catalog product cannot currently be ordered', async () => {
+    const { tool, searchProducts, orders } = createTool();
+    searchProducts.mockResolvedValue([
+      product('product-cappuccino', 'Cappuccino Nube', 'cappuccino-nube'),
+    ]);
+    orders.addItems.mockRejectedValue(new OrderProductNotAvailableError('product-cappuccino'));
+
+    const result = JSON.parse(
+      await tool.execute({
+        action: OrderAction.ADD_ITEMS,
+        items: [{ productName: 'Cappuccino Nube', quantity: 1 }],
+        conversationId: 'conversation-1',
+        context,
+      }),
+    ) as { orderOperationStatus: string; issues: Array<{ reason: string }> };
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        orderOperationStatus: 'rejected',
+        order: null,
+        issues: [{ reason: 'product_not_available' }],
+      }),
+    );
   });
 
   it('resolves removals against the current order snapshot instead of catalog prices', async () => {

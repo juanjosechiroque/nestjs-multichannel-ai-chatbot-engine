@@ -62,6 +62,7 @@ interface ChatResponse {
 interface CatalogItemResponse {
   slug: string;
   active: boolean;
+  availableForOrdering?: boolean;
 }
 
 function deterministicEmbedding(): number[] {
@@ -191,6 +192,7 @@ describe('HTTP conversation flow', () => {
           price: '8.00',
           category: ProductCategory.HOT_DRINK,
           active: true,
+          availableForOrdering: false,
         },
         {
           id: randomUUID(),
@@ -209,6 +211,7 @@ describe('HTTP conversation flow', () => {
 
     expect(products.map((product) => product.slug)).toEqual(['alpha-activo', 'zeta-activo']);
     expect(products.every((product) => product.active)).toBe(true);
+    expect(products.map((product) => product.availableForOrdering)).toEqual([false, true]);
   });
 
   it('returns only active promotions ordered by name', async () => {
@@ -972,6 +975,7 @@ describe('HTTP conversation flow', () => {
           price: '13',
           currency: 'PEN',
           category: 'HOT_DRINK',
+          availableForOrdering: true,
           allergens: [],
           dietaryTags: [],
           containsCoffee: null,
@@ -1148,6 +1152,7 @@ describe('HTTP conversation flow', () => {
           price: '9',
           currency: 'PEN',
           category: 'FOOD',
+          availableForOrdering: true,
           allergens: ['GLUTEN'],
           dietaryTags: ['VEGAN', 'VEGETARIAN'],
           containsCoffee: false,

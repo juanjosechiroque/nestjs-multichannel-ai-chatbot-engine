@@ -35,6 +35,7 @@ describe('CatalogSearchTool', () => {
         price: { toString: () => '13.00' },
         currency: 'PEN',
         category: ProductCategory.HOT_DRINK,
+        availableForOrdering: true,
         metadata: {
           allergens: ['MILK'],
           dietaryTags: ['VEGETARIAN'],
@@ -87,6 +88,7 @@ describe('CatalogSearchTool', () => {
           price: '13.00',
           currency: 'PEN',
           category: 'HOT_DRINK',
+          availableForOrdering: true,
           allergens: ['MILK'],
           dietaryTags: ['VEGETARIAN'],
           containsCoffee: true,
@@ -122,6 +124,7 @@ describe('CatalogSearchTool', () => {
       price: { toString: () => '12.00' },
       currency: 'PEN',
       category: ProductCategory.HOT_DRINK,
+      availableForOrdering: true,
       metadata: {},
     };
     const searchProducts = jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([product]);
@@ -158,6 +161,7 @@ describe('CatalogSearchTool', () => {
         price: { toString: () => '10.00' },
         currency: 'PEN',
         category: ProductCategory.COLD_DRINK,
+        availableForOrdering: false,
         metadata: {
           allergens: 'MILK',
           dietaryTags: [42],
@@ -179,6 +183,7 @@ describe('CatalogSearchTool', () => {
 
     expect(output.products).toEqual([
       expect.objectContaining({
+        availableForOrdering: false,
         allergens: [],
         dietaryTags: [],
         containsCoffee: null,

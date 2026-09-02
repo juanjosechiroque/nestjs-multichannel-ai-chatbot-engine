@@ -160,6 +160,43 @@ describe('OrderService with PostgreSQL', () => {
     ]);
   });
 
+  it('rejects products that are unavailable when adding or confirming an order', async () => {
+    await prisma.product.update({
+      where: { id: croissantId },
+      data: { availableForOrdering: false },
+    });
+    await expect(
+      orders.addItem({ conversationId, productId: croissantId, quantity: 1 }),
+    ).rejects.toBeInstanceOf(OrderProductNotAvailableError);
+    await expect(prisma.order.count({ where: { conversationId } })).resolves.toBe(0);
+
+    const draft = await orders.addItem({
+      conversationId,
+      productId: cappuccinoId,
+      quantity: 1,
+    });
+    await orders.setCustomerDetails({
+      conversationId,
+      customerName: 'Ana Pérez',
+      customerPhone: '987654321',
+    });
+    await orders.review(conversationId);
+    await prisma.product.update({
+      where: { id: cappuccinoId },
+      data: { availableForOrdering: false },
+    });
+
+    await expect(orders.confirm(conversationId)).rejects.toBeInstanceOf(
+      OrderProductNotAvailableError,
+    );
+    await expect(prisma.order.findUniqueOrThrow({ where: { id: draft.id } })).resolves.toEqual(
+      expect.objectContaining({
+        status: PrismaOrderStatus.CONFIRMING_ORDER,
+        orderNumber: null,
+      }),
+    );
+  });
+
   it('returns the same confirmed order when confirmation is repeated concurrently', async () => {
     const draft = await orders.addItem({
       conversationId,
