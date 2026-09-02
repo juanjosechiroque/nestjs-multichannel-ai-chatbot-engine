@@ -18,12 +18,7 @@ import {
   parseResponse,
 } from './chat-response.parser';
 import { addTokenUsage, type TokenUsage } from './token-usage';
-import {
-  CHAT_TOOLS,
-  type ChatTool,
-  type ToolBuildContext,
-  type ToolInvocationContext,
-} from './tools/chat-tool';
+import { CHAT_TOOLS, type ChatTool, type ToolInvocationContext } from './tools/chat-tool';
 import type { OrderConversationContext } from './tools/order.tool';
 
 export interface GenerateResponseInput {
@@ -89,9 +84,8 @@ export class OpenAiService {
 
     try {
       const initialInput = this.buildInput(message, history, orderContext);
-      const buildContext: ToolBuildContext = { orderContext };
       const tools = registry.flatMap((tool) => {
-        const definition = tool.buildDefinition(buildContext);
+        const definition = tool.buildDefinition({ orderContext });
         return definition ? [definition] : [];
       });
       const initialCallStartedAt = Date.now();
@@ -140,37 +134,17 @@ export class OpenAiService {
         totalTokens: initialResponse.usage?.total_tokens,
       });
 
-      const tool = toolsByName.get(toolCall.name);
-      if (!tool) {
-        throw new Error(`OpenAI requested an unsupported tool: ${toolCall.name}`);
-      }
-      const invocationContext: ToolInvocationContext = {
+      const toolOutput = await this.runToolCall(toolCall, toolsByName, {
         requestContext: context,
         conversationId,
         orderContext,
         message,
         ...(knowledgeQueryOverride ? { argumentOverride: knowledgeQueryOverride } : {}),
-      };
-      const toolOutput = await tool.execute(
-        tool.parseArguments(toolCall.arguments),
-        invocationContext,
-      );
-      // The Responses API requires replaying every output item. The SDK models a few
-      // output-only status variants more broadly than its input union, so bridge them via unknown.
-      const continuationItems = initialResponse.output as unknown as OpenAI.Responses.ResponseInput;
-      const continuationInput: OpenAI.Responses.ResponseInput = [
-        ...initialInput,
-        ...continuationItems,
-        {
-          type: 'function_call_output',
-          call_id: toolCall.call_id,
-          output: toolOutput,
-        },
-      ];
+      });
       const finalCallStartedAt = Date.now();
       const finalResponse = await this.createResponse({
         instructions,
-        input: continuationInput,
+        input: this.buildContinuationInput(initialInput, initialResponse, toolCall, toolOutput),
         tools,
         toolChoice: 'none',
       });
@@ -192,31 +166,65 @@ export class OpenAiService {
         usedTools: [toolCall.name],
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown OpenAI error';
-      const failure =
-        error instanceof ApplicationServiceUnavailableException
-          ? error
-          : new OpenAiRequestFailedException();
-      const event =
-        failure.failureCode === 'OPENAI_EMPTY_RESPONSE'
-          ? 'openai.response.empty'
-          : failure.failureCode === 'OPENAI_INCOMPLETE_RESPONSE'
-            ? 'openai.response.incomplete'
-            : failure.failureCode === 'OPENAI_REQUEST_FAILED'
-              ? 'openai.response.failed'
-              : 'openai.tool.failed';
-      this.logger.error({
-        event,
-        ...context,
-        durationMs: Date.now() - startedAt,
-        failureCode: failure.failureCode,
-        message:
-          error instanceof OpenAiIncompleteResponseException
-            ? `OpenAI response incomplete: ${error.reason}`
-            : message,
-      });
-      throw failure;
+      this.raiseProviderFailure(error, context, startedAt);
     }
+  }
+
+  private runToolCall(
+    toolCall: OpenAI.Responses.ResponseFunctionToolCall,
+    toolsByName: Map<string, ChatTool>,
+    invocationContext: ToolInvocationContext,
+  ): Promise<string> {
+    const tool = toolsByName.get(toolCall.name);
+    if (!tool) {
+      throw new Error(`OpenAI requested an unsupported tool: ${toolCall.name}`);
+    }
+
+    return tool.execute(tool.parseArguments(toolCall.arguments), invocationContext);
+  }
+
+  private buildContinuationInput(
+    initialInput: OpenAI.Responses.ResponseInput,
+    initialResponse: OpenAI.Responses.Response,
+    toolCall: OpenAI.Responses.ResponseFunctionToolCall,
+    toolOutput: string,
+  ): OpenAI.Responses.ResponseInput {
+    // The Responses API requires replaying every output item. The SDK models a few
+    // output-only status variants more broadly than its input union, so bridge them via unknown.
+    const continuationItems = initialResponse.output as unknown as OpenAI.Responses.ResponseInput;
+
+    return [
+      ...initialInput,
+      ...continuationItems,
+      { type: 'function_call_output', call_id: toolCall.call_id, output: toolOutput },
+    ];
+  }
+
+  private raiseProviderFailure(error: unknown, context: RequestContext, startedAt: number): never {
+    const message = error instanceof Error ? error.message : 'Unknown OpenAI error';
+    const failure =
+      error instanceof ApplicationServiceUnavailableException
+        ? error
+        : new OpenAiRequestFailedException();
+    const event =
+      failure.failureCode === 'OPENAI_EMPTY_RESPONSE'
+        ? 'openai.response.empty'
+        : failure.failureCode === 'OPENAI_INCOMPLETE_RESPONSE'
+          ? 'openai.response.incomplete'
+          : failure.failureCode === 'OPENAI_REQUEST_FAILED'
+            ? 'openai.response.failed'
+            : 'openai.tool.failed';
+    this.logger.error({
+      event,
+      ...context,
+      durationMs: Date.now() - startedAt,
+      failureCode: failure.failureCode,
+      message:
+        error instanceof OpenAiIncompleteResponseException
+          ? `OpenAI response incomplete: ${error.reason}`
+          : message,
+    });
+    throw failure;
   }
 
   private buildInput(
