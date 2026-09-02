@@ -33,6 +33,18 @@ The current global coverage thresholds are:
 
 Unit tests mock OpenAI and do not require Docker, a database, network access, or API credits.
 
+### Test logging policy
+
+`test/support/silence-logging.ts` runs through `setupFilesAfterEnv` for every Jest project
+(unit, integration, and HTTP end-to-end):
+
+- All NestJS `Logger` levels are silenced by default, so the deliberate error and warning paths
+  the suites exercise never flood the reporter. Specs that assert on structured logging still spy
+  on `Logger.prototype` directly.
+- `console.error` and `console.warn` are treated as a signal: an unexpected call fails the test
+  that produced it, so new noise in CI cannot hide. A spec that means to assert on `console` opts
+  out by spying on it itself.
+
 ## PostgreSQL integration tests
 
 ```bash
@@ -58,7 +70,15 @@ npm run test:e2e
 ```
 
 The HTTP suites start the real NestJS application with disposable PostgreSQL infrastructure. OpenAI
-generation and embeddings are replaced by deterministic test doubles. They cover:
+generation and embeddings are replaced by deterministic test doubles.
+
+A single pgvector container is started once per run by `test/support/e2e-global-setup.ts`
+(`globalSetup`) and migrations are applied once. Each `*.e2e-spec.ts` file builds its own NestJS
+application against that shared database through the `setupHttpE2E()` harness in
+`test/support/e2e-app.ts`, and isolates itself by truncating tables between tests. Splitting the
+former single 1.9k-line spec into focused files (contract, WhatsApp webhook, web chat, catalog,
+orders, knowledge) keeps each suite readable and lets a failure point at one area instead of the
+whole flow. They cover:
 
 - Global DTO validation and controlled errors.
 - Swagger/OpenAPI route coverage, schemas, operations, and documented HTTP responses.
