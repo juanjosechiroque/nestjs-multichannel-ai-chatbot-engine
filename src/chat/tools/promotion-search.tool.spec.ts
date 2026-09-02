@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import type { ToolInvocationContext } from './chat-tool';
 import { PromotionSearchTool } from './promotion-search.tool';
 
 describe('PromotionSearchTool', () => {
@@ -6,6 +7,12 @@ describe('PromotionSearchTool', () => {
     requestId: 'request-1',
     conversationId: 'conversation-1',
     channel: 'web' as const,
+  };
+  const invocation: ToolInvocationContext = {
+    requestContext: context,
+    conversationId: 'conversation-1',
+    orderContext: { activeOrder: null, confirmationReplayAvailable: false },
+    message: '¿Qué promociones hay?',
   };
   const fridayEvening = new Date('2026-08-15T00:30:00.000Z');
   const promotions = [
@@ -47,7 +54,7 @@ describe('PromotionSearchTool', () => {
     const { tool, searchPromotions } = createTool();
 
     const output = JSON.parse(
-      await tool.execute({ scope: 'CURRENT', promotionName: null, context }, fridayEvening),
+      await tool.execute({ scope: 'CURRENT', promotionName: null }, invocation, fridayEvening),
     ) as {
       promotionStatus: string;
       scope: string;
@@ -109,7 +116,7 @@ describe('PromotionSearchTool', () => {
     );
 
     const output = JSON.parse(
-      await tool.execute({ scope: 'CATALOG', promotionName: null, context }, fridayEvening),
+      await tool.execute({ scope: 'CATALOG', promotionName: null }, invocation, fridayEvening),
     ) as {
       currentPromotions: Array<{ sourceKey: string }>;
       otherPromotions: Array<{ sourceKey: string }>;
@@ -132,7 +139,7 @@ describe('PromotionSearchTool', () => {
     const { tool } = createTool(jest.fn().mockResolvedValue([promotions[1]]));
 
     await expect(
-      tool.execute({ scope: 'CURRENT', promotionName: null, context }, fridayEvening),
+      tool.execute({ scope: 'CURRENT', promotionName: null }, invocation, fridayEvening),
     ).resolves.toContain('"promotionStatus":"no_current_promotions"');
   });
 
@@ -140,7 +147,8 @@ describe('PromotionSearchTool', () => {
     const { tool, searchPromotions } = createTool(jest.fn().mockResolvedValue([]));
 
     await tool.execute(
-      { scope: 'CATALOG', promotionName: 'Desayuno Nube', context },
+      { scope: 'CATALOG', promotionName: 'Desayuno Nube' },
+      invocation,
       fridayEvening,
     );
 
@@ -152,5 +160,49 @@ describe('PromotionSearchTool', () => {
       },
       context,
     );
+  });
+
+  describe('buildDefinition', () => {
+    it('describes a strict scope/promotionName function tool', () => {
+      const { tool } = createTool();
+      const definition = tool.buildDefinition();
+
+      expect(definition).toEqual(
+        expect.objectContaining({ type: 'function', name: 'search_promotions', strict: true }),
+      );
+      expect(definition.parameters).toEqual(
+        expect.objectContaining({
+          required: ['scope', 'promotionName'],
+          additionalProperties: false,
+        }),
+      );
+    });
+  });
+
+  describe('parseArguments', () => {
+    it('normalizes a valid promotion filter', () => {
+      const { tool } = createTool();
+
+      expect(tool.parseArguments('{"scope":"CATALOG","promotionName":"  Viernes  "}')).toEqual({
+        scope: 'CATALOG',
+        promotionName: 'Viernes',
+      });
+      expect(tool.parseArguments('{"scope":"CURRENT","promotionName":null}')).toEqual({
+        scope: 'CURRENT',
+        promotionName: null,
+      });
+    });
+
+    it.each([
+      { name: 'an unknown scope', payload: '{"scope":"YESTERDAY","promotionName":null}' },
+      { name: 'a blank promotion name', payload: '{"scope":"CURRENT","promotionName":"  "}' },
+      { name: 'an extra property', payload: '{"scope":"CURRENT","promotionName":null,"x":1}' },
+    ])('throws for $name', ({ payload }) => {
+      const { tool } = createTool();
+
+      expect(() => tool.parseArguments(payload)).toThrow(
+        'OpenAI returned invalid search_promotions arguments',
+      );
+    });
   });
 });

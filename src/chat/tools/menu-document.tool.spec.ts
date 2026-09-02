@@ -25,4 +25,30 @@ describe('MenuDocumentTool', () => {
     );
     expect(getDescriptor).toHaveBeenCalledTimes(1);
   });
+
+  it('describes a no-argument function tool', () => {
+    const definition = new MenuDocumentTool({ getDescriptor: jest.fn() }).buildDefinition();
+
+    expect(definition).toEqual(
+      expect.objectContaining({ type: 'function', name: 'get_menu_document', strict: true }),
+    );
+    expect(definition.parameters).toEqual({
+      type: 'object',
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    });
+  });
+
+  it('accepts an empty argument object and rejects any property', () => {
+    const tool = new MenuDocumentTool({ getDescriptor: jest.fn() });
+
+    expect(() => tool.parseArguments('{}')).not.toThrow();
+    expect(() => tool.parseArguments('{"unexpected":true}')).toThrow(
+      'OpenAI returned invalid get_menu_document arguments',
+    );
+    expect(() => tool.parseArguments('"not-an-object"')).toThrow(
+      'OpenAI returned invalid get_menu_document arguments',
+    );
+  });
 });

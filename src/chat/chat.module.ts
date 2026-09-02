@@ -13,10 +13,13 @@ import { ConversationSecurityJudgeService } from './evaluation/conversation-secu
 import { OrderConversationEvaluationService } from './evaluation/order-conversation-evaluation.service';
 import { OpenAiService } from './openai.service';
 import { CatalogSearchTool } from './tools/catalog-search.tool';
+import { CHAT_TOOLS } from './tools/chat-tool';
 import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
+import { ManageOrderTool } from './tools/manage-order.tool';
 import { MenuDocumentTool } from './tools/menu-document.tool';
 import { OrderTool } from './tools/order.tool';
 import { PromotionSearchTool } from './tools/promotion-search.tool';
+import { SetOrderCustomerTool } from './tools/set-order-customer.tool';
 
 @Module({
   imports: [
@@ -38,8 +41,29 @@ import { PromotionSearchTool } from './tools/promotion-search.tool';
     KnowledgeSearchTool,
     MenuDocumentTool,
     OrderTool,
+    ManageOrderTool,
+    SetOrderCustomerTool,
     PromotionSearchTool,
     OpenAiService,
+    {
+      provide: CHAT_TOOLS,
+      useFactory: (
+        knowledge: KnowledgeSearchTool,
+        catalog: CatalogSearchTool,
+        promotion: PromotionSearchTool,
+        menu: MenuDocumentTool,
+        manageOrder: ManageOrderTool,
+        setOrderCustomer: SetOrderCustomerTool,
+      ) => [knowledge, catalog, promotion, menu, manageOrder, setOrderCustomer],
+      inject: [
+        KnowledgeSearchTool,
+        CatalogSearchTool,
+        PromotionSearchTool,
+        MenuDocumentTool,
+        ManageOrderTool,
+        SetOrderCustomerTool,
+      ],
+    },
   ],
   exports: [ChatService],
 })

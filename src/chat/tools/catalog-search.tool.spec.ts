@@ -1,6 +1,7 @@
 import type { CatalogService } from '../../catalog/catalog.service';
 import { ProductCategory } from '../../generated/prisma/enums';
 import { CatalogSearchTool, type CatalogSearchArguments } from './catalog-search.tool';
+import type { ToolInvocationContext } from './chat-tool';
 
 describe('CatalogSearchTool', () => {
   const noPreferenceFilters: Pick<
@@ -23,6 +24,25 @@ describe('CatalogSearchTool', () => {
     requestId: 'request-1',
     conversationId: 'conversation-1',
     channel: 'web' as const,
+  };
+  const invocation: ToolInvocationContext = {
+    requestContext: context,
+    conversationId: 'conversation-1',
+    orderContext: { activeOrder: null, confirmationReplayAvailable: false },
+    message: '¿Cuánto cuesta el cappuccino?',
+  };
+  const validArguments: CatalogSearchArguments = {
+    productName: null,
+    category: null,
+    maxPrice: null,
+    ...{
+      maxPriceExclusive: false,
+      dietaryTags: [],
+      excludedAllergens: [],
+      containsCoffee: null,
+      decaffeinated: null,
+      caffeineFree: null,
+    },
   };
 
   it('returns active catalog products as structured tool output', async () => {
@@ -48,18 +68,20 @@ describe('CatalogSearchTool', () => {
     const catalog: Pick<CatalogService, 'searchProducts'> = { searchProducts };
     const tool = new CatalogSearchTool(catalog);
 
-    const output = await tool.execute({
-      productName: 'cappuccino',
-      category: ProductCategory.HOT_DRINK,
-      maxPrice: 15,
-      maxPriceExclusive: false,
-      dietaryTags: ['VEGETARIAN'],
-      excludedAllergens: ['TREE_NUTS'],
-      containsCoffee: true,
-      decaffeinated: false,
-      caffeineFree: false,
-      context,
-    });
+    const output = await tool.execute(
+      {
+        productName: 'cappuccino',
+        category: ProductCategory.HOT_DRINK,
+        maxPrice: 15,
+        maxPriceExclusive: false,
+        dietaryTags: ['VEGETARIAN'],
+        excludedAllergens: ['TREE_NUTS'],
+        containsCoffee: true,
+        decaffeinated: false,
+        caffeineFree: false,
+      },
+      invocation,
+    );
 
     expect(searchProducts).toHaveBeenCalledWith(
       {
@@ -104,13 +126,10 @@ describe('CatalogSearchTool', () => {
     const tool = new CatalogSearchTool({ searchProducts });
 
     await expect(
-      tool.execute({
-        productName: null,
-        category: null,
-        maxPrice: null,
-        ...noPreferenceFilters,
-        context,
-      }),
+      tool.execute(
+        { productName: null, category: null, maxPrice: null, ...noPreferenceFilters },
+        invocation,
+      ),
     ).resolves.toBe('{"catalogStatus":"no_results","products":[]}');
     expect(searchProducts).toHaveBeenCalledWith({ limit: 20 }, context);
   });
@@ -130,13 +149,10 @@ describe('CatalogSearchTool', () => {
     const searchProducts = jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([product]);
     const tool = new CatalogSearchTool({ searchProducts });
 
-    const output = await tool.execute({
-      productName: 'Cappuccino Nube',
-      category: null,
-      maxPrice: null,
-      ...noPreferenceFilters,
-      context,
-    });
+    const output = await tool.execute(
+      { productName: 'Cappuccino Nube', category: null, maxPrice: null, ...noPreferenceFilters },
+      invocation,
+    );
 
     expect(searchProducts).toHaveBeenNthCalledWith(
       1,
@@ -172,13 +188,10 @@ describe('CatalogSearchTool', () => {
     const tool = new CatalogSearchTool({ searchProducts });
 
     const output = JSON.parse(
-      await tool.execute({
-        productName: null,
-        category: null,
-        maxPrice: null,
-        ...noPreferenceFilters,
-        context,
-      }),
+      await tool.execute(
+        { productName: null, category: null, maxPrice: null, ...noPreferenceFilters },
+        invocation,
+      ),
     ) as { products: unknown[] };
 
     expect(output.products).toEqual([
@@ -191,5 +204,63 @@ describe('CatalogSearchTool', () => {
         caffeineFree: null,
       }),
     ]);
+  });
+
+  describe('buildDefinition', () => {
+    it('describes a strict function tool with every filter required', () => {
+      const definition = new CatalogSearchTool({ searchProducts: jest.fn() }).buildDefinition();
+
+      expect(definition).toEqual(
+        expect.objectContaining({ type: 'function', name: 'search_catalog', strict: true }),
+      );
+      expect(definition.parameters).toEqual(
+        expect.objectContaining({
+          additionalProperties: false,
+          required: [
+            'productName',
+            'category',
+            'maxPrice',
+            'maxPriceExclusive',
+            'dietaryTags',
+            'excludedAllergens',
+            'containsCoffee',
+            'decaffeinated',
+            'caffeineFree',
+          ],
+        }),
+      );
+    });
+  });
+
+  describe('parseArguments', () => {
+    const tool = new CatalogSearchTool({ searchProducts: jest.fn() });
+
+    it('accepts and trims a fully specified filter set', () => {
+      expect(
+        tool.parseArguments(
+          JSON.stringify({ ...validArguments, productName: '  latte  ', category: 'HOT_DRINK' }),
+        ),
+      ).toEqual({ ...validArguments, productName: 'latte', category: ProductCategory.HOT_DRINK });
+    });
+
+    it.each([
+      { name: 'a missing key', payload: { category: null } },
+      { name: 'an unknown category', payload: { ...validArguments, category: 'UNKNOWN_CATEGORY' } },
+      { name: 'a negative max price', payload: { ...validArguments, maxPrice: -1 } },
+      { name: 'an unknown dietary tag', payload: { ...validArguments, dietaryTags: ['KETO'] } },
+      {
+        name: 'a duplicated allergen',
+        payload: { ...validArguments, excludedAllergens: ['MILK', 'MILK'] },
+      },
+      {
+        name: 'a non-boolean coffee preference',
+        payload: { ...validArguments, containsCoffee: 'false' },
+      },
+      { name: 'an extra property', payload: { ...validArguments, total: 1 } },
+    ])('throws for $name', ({ payload }) => {
+      expect(() => tool.parseArguments(JSON.stringify(payload))).toThrow(
+        'OpenAI returned invalid search_catalog arguments',
+      );
+    });
   });
 });

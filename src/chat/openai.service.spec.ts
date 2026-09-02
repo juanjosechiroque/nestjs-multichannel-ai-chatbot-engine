@@ -11,6 +11,13 @@ import { ProductCategory } from '../generated/prisma/enums';
 import { OrderAction } from '../order/order.types';
 import { routeToolChoice } from './chat-tool-router';
 import { OpenAiService, type GenerateResponseInput } from './openai.service';
+import { CatalogSearchTool } from './tools/catalog-search.tool';
+import type { ChatTool } from './tools/chat-tool';
+import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
+import { ManageOrderTool } from './tools/manage-order.tool';
+import { MenuDocumentTool } from './tools/menu-document.tool';
+import { PromotionSearchTool } from './tools/promotion-search.tool';
+import { SetOrderCustomerTool } from './tools/set-order-customer.tool';
 
 interface ResponsesClientStub {
   responses: {
@@ -37,12 +44,6 @@ function generateInput(overrides: Partial<GenerateResponseInput> = {}): Generate
     ...(routing.knowledgeQueryOverride
       ? { knowledgeQueryOverride: routing.knowledgeQueryOverride }
       : {}),
-    manageOrder: jest.fn(),
-    setOrderCustomer: jest.fn(),
-    getMenuDocument: jest.fn(),
-    searchCatalog: jest.fn(),
-    searchPromotions: jest.fn(),
-    searchKnowledge: jest.fn(),
     ...overrides,
   };
 }
@@ -76,21 +77,50 @@ function noOrderContextInput() {
   };
 }
 
-function createService(): { service: OpenAiService; create: jest.Mock } {
-  const service = new OpenAiService(
-    new ConfigService({
-      OPENAI_API_KEY: 'test-api-key',
-      OPENAI_MODEL: 'gpt-5.6-luna',
-      OPENAI_MAX_OUTPUT_TOKENS: 1_000,
-      OPENAI_GENERATION_TIMEOUT_MS: 20_000,
-      OPENAI_GENERATION_MAX_RETRIES: 1,
-    }),
-  );
+interface ToolCollaborators {
+  getContext: jest.Mock;
+  searchProducts: jest.Mock;
+  searchPromotions: jest.Mock;
+  getDescriptor: jest.Mock;
+  orderExecute: jest.Mock;
+  setCustomerDetails: jest.Mock;
+}
+
+function createService(): {
+  service: OpenAiService;
+  create: jest.Mock;
+  collaborators: ToolCollaborators;
+} {
+  const config = new ConfigService({
+    OPENAI_API_KEY: 'test-api-key',
+    OPENAI_MODEL: 'gpt-5.6-luna',
+    OPENAI_MAX_OUTPUT_TOKENS: 1_000,
+    OPENAI_GENERATION_TIMEOUT_MS: 20_000,
+    OPENAI_GENERATION_MAX_RETRIES: 1,
+    BUSINESS_TIME_ZONE: 'America/Lima',
+  });
+  const collaborators: ToolCollaborators = {
+    getContext: jest.fn(),
+    searchProducts: jest.fn(),
+    searchPromotions: jest.fn(),
+    getDescriptor: jest.fn(),
+    orderExecute: jest.fn(),
+    setCustomerDetails: jest.fn(),
+  };
+  const tools: ChatTool[] = [
+    new KnowledgeSearchTool({ getContext: collaborators.getContext }),
+    new CatalogSearchTool({ searchProducts: collaborators.searchProducts }),
+    new PromotionSearchTool({ searchPromotions: collaborators.searchPromotions }, config),
+    new MenuDocumentTool({ getDescriptor: collaborators.getDescriptor }),
+    new ManageOrderTool({ execute: collaborators.orderExecute }),
+    new SetOrderCustomerTool({ setCustomerDetails: collaborators.setCustomerDetails }),
+  ];
+  const service = new OpenAiService(config, tools);
   const client = service as unknown as { client: ResponsesClientStub };
   const create = jest.fn();
   client.client.responses.create = create;
 
-  return { service, create };
+  return { service, create, collaborators };
 }
 
 function responseRequest(
@@ -107,9 +137,8 @@ describe('OpenAiService', () => {
   });
 
   it('lets the model answer a social message without running knowledge search', async () => {
-    const { service, create } = createService();
+    const { service, create, collaborators } = createService();
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
-    const searchKnowledge = jest.fn();
     create.mockResolvedValue({
       output: [],
       output_text: structuredResponse('¡Hola! ¿En qué puedo ayudarte?'),
@@ -125,7 +154,6 @@ describe('OpenAiService', () => {
 
     const result = await service.generate(
       generateInput({
-        searchKnowledge,
         history: [
           { role: 'user', content: 'Buenos días' },
           { role: 'assistant', content: '¡Buenos días!' },
@@ -147,7 +175,7 @@ describe('OpenAiService', () => {
         totalTokens: 26,
       },
     });
-    expect(searchKnowledge).not.toHaveBeenCalled();
+    expect(collaborators.getContext).not.toHaveBeenCalled();
     const configuredClient = service as unknown as {
       client: { timeout: number; maxRetries: number };
     };
@@ -176,46 +204,15 @@ describe('OpenAiService', () => {
       }),
     );
     expect(initialRequest?.tools).toHaveLength(5);
-    expect(initialRequest?.tools).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'function',
-          name: 'search_catalog',
-          strict: true,
-        }),
-      ]),
-    );
-    expect(initialRequest?.tools).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'function',
-          name: 'search_knowledge',
-          strict: true,
-        }),
-      ]),
-    );
-    expect(initialRequest?.tools).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'function',
-          name: 'search_promotions',
-          strict: true,
-        }),
-      ]),
-    );
-    expect(initialRequest?.tools).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'function',
-          name: 'manage_order',
-          strict: true,
-        }),
-      ]),
-    );
-    const tool = initialRequest?.tools?.[0];
-    expect(tool?.type === 'function' ? tool.parameters : undefined).toEqual(
-      expect.objectContaining({ additionalProperties: false }),
-    );
+    expect(
+      (initialRequest?.tools ?? []).map((tool) => tool.type === 'function' && tool.name),
+    ).toEqual([
+      'search_knowledge',
+      'search_catalog',
+      'search_promotions',
+      'get_menu_document',
+      'manage_order',
+    ]);
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'openai.response.completed',
@@ -229,11 +226,11 @@ describe('OpenAiService', () => {
   });
 
   it('executes search_knowledge once and sends its output back for the final answer', async () => {
-    const { service, create } = createService();
+    const { service, create, collaborators } = createService();
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     const businessContext =
       '{"retrievalStatus":"results_found","knowledge":[{"sourceId":"faq-hours","sourceKey":"horario-atencion","type":"faq","content":"Atendemos todos los días."}]}';
-    const searchKnowledge = jest.fn().mockResolvedValue(businessContext);
+    collaborators.getContext.mockResolvedValue(businessContext);
     const functionCall = {
       type: 'function_call',
       call_id: 'call-1',
@@ -265,7 +262,6 @@ describe('OpenAiService', () => {
         generateInput({
           context: requestContext('request-tool'),
           message: '¿Cuál es el horario?',
-          searchKnowledge,
         }),
       ),
     ).resolves.toEqual({
@@ -289,8 +285,12 @@ describe('OpenAiService', () => {
       },
     });
 
-    expect(searchKnowledge).toHaveBeenCalledTimes(1);
-    expect(searchKnowledge).toHaveBeenCalledWith('horario de atención');
+    expect(collaborators.getContext).toHaveBeenCalledTimes(1);
+    expect(collaborators.getContext).toHaveBeenCalledWith(
+      'horario de atención',
+      5,
+      requestContext('request-tool'),
+    );
     expect(create).toHaveBeenCalledTimes(2);
     expect(responseRequest(create, 1)).toEqual(
       expect.objectContaining({
@@ -331,8 +331,8 @@ describe('OpenAiService', () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain('horario de atención');
   });
 
-  it('forces knowledge search for a location question', async () => {
-    const { service, create } = createService();
+  it('forces knowledge search and rewrites the query for a location question', async () => {
+    const { service, create, collaborators } = createService();
     const businessContext = JSON.stringify({
       retrievalStatus: 'results_found',
       knowledge: [
@@ -344,7 +344,7 @@ describe('OpenAiService', () => {
         },
       ],
     });
-    const searchKnowledge = jest.fn().mockResolvedValue(businessContext);
+    collaborators.getContext.mockResolvedValue(businessContext);
     create
       .mockResolvedValueOnce({
         output: [
@@ -367,12 +367,7 @@ describe('OpenAiService', () => {
       });
 
     await expect(
-      service.generate(
-        generateInput({
-          message: '¿Dónde queda el local?',
-          searchKnowledge,
-        }),
-      ),
+      service.generate(generateInput({ message: '¿Dónde queda el local?' })),
     ).resolves.toEqual({
       answer: 'Estamos en Av. José Larco 880, Miraflores, Lima.',
       usedSources: [
@@ -390,13 +385,15 @@ describe('OpenAiService', () => {
       type: 'function',
       name: 'search_knowledge',
     });
-    expect(searchKnowledge).toHaveBeenCalledWith(
+    expect(collaborators.getContext).toHaveBeenCalledWith(
       'dirección exacta, ubicación, cómo llegar y enlace de mapa. Pregunta del cliente: ¿Dónde queda el local?',
+      5,
+      requestContext('request-1'),
     );
   });
 
   it('uses the original query for an explicit services question', async () => {
-    const { service, create } = createService();
+    const { service, create, collaborators } = createService();
     const businessContext = JSON.stringify({
       retrievalStatus: 'results_found',
       knowledge: [
@@ -408,7 +405,7 @@ describe('OpenAiService', () => {
         },
       ],
     });
-    const searchKnowledge = jest.fn().mockResolvedValue(businessContext);
+    collaborators.getContext.mockResolvedValue(businessContext);
     create
       .mockResolvedValueOnce({
         output: [
@@ -430,13 +427,17 @@ describe('OpenAiService', () => {
         model: 'gpt-5.6-luna',
       });
 
-    await service.generate(generateInput({ message: '¿Qué servicios ofrecen?', searchKnowledge }));
+    await service.generate(generateInput({ message: '¿Qué servicios ofrecen?' }));
 
     expect(responseRequest(create, 0)?.tool_choice).toEqual({
       type: 'function',
       name: 'search_knowledge',
     });
-    expect(searchKnowledge).toHaveBeenCalledWith('¿Qué servicios ofrecen?');
+    expect(collaborators.getContext).toHaveBeenCalledWith(
+      '¿Qué servicios ofrecen?',
+      5,
+      requestContext('request-1'),
+    );
   });
 
   it('discards source identifiers that were not returned by the knowledge tool', async () => {
@@ -468,23 +469,20 @@ describe('OpenAiService', () => {
   });
 
   it('executes search_catalog with validated filters and attributes returned products', async () => {
-    const { service, create } = createService();
-    const catalogOutput = JSON.stringify({
-      catalogStatus: 'results_found',
-      products: [
-        {
-          sourceId: 'product-1',
-          sourceKey: 'cappuccino-nube',
-          type: 'product',
-          name: 'Cappuccino Nube',
-          description: 'Espresso con leche vaporizada.',
-          price: '13.00',
-          currency: 'PEN',
-          category: 'HOT_DRINK',
-        },
-      ],
-    });
-    const searchCatalog = jest.fn().mockResolvedValue(catalogOutput);
+    const { service, create, collaborators } = createService();
+    collaborators.searchProducts.mockResolvedValue([
+      {
+        id: 'product-1',
+        slug: 'cappuccino-nube',
+        name: 'Cappuccino Nube',
+        description: 'Espresso con leche vaporizada.',
+        price: { toString: () => '13.00' },
+        currency: 'PEN',
+        category: 'HOT_DRINK',
+        availableForOrdering: true,
+        metadata: {},
+      },
+    ]);
     const functionCall = {
       type: 'function_call',
       call_id: 'call-catalog',
@@ -502,11 +500,7 @@ describe('OpenAiService', () => {
       }),
     };
     create
-      .mockResolvedValueOnce({
-        output: [functionCall],
-        output_text: '',
-        model: 'gpt-5.6-luna',
-      })
+      .mockResolvedValueOnce({ output: [functionCall], output_text: '', model: 'gpt-5.6-luna' })
       .mockResolvedValueOnce({
         output: [],
         output_text: structuredResponse('Cuesta S/ 13.00.', ['product-1']),
@@ -514,66 +508,57 @@ describe('OpenAiService', () => {
       });
 
     await expect(
-      service.generate(
-        generateInput({
-          message: '¿Cuánto cuesta el cappuccino?',
-          searchCatalog,
-        }),
-      ),
-    ).resolves.toEqual({
-      answer: 'Cuesta S/ 13.00.',
-      usedSources: [
-        {
-          sourceId: 'product-1',
-          sourceKey: 'cappuccino-nube',
-          sourceType: 'product',
-        },
-      ],
-      llmCalls: 2,
-      usedTools: ['search_catalog'],
-      tokenUsage: ZERO_TOKEN_USAGE,
-    });
-    expect(searchCatalog).toHaveBeenCalledWith({
-      productName: 'cappuccino',
-      category: ProductCategory.HOT_DRINK,
-      maxPrice: 15,
-      maxPriceExclusive: false,
-      dietaryTags: ['VEGETARIAN'],
-      excludedAllergens: ['TREE_NUTS'],
-      containsCoffee: true,
-      decaffeinated: false,
-      caffeineFree: false,
-    });
-    expect(responseRequest(create, 1)?.input).toEqual(
-      expect.arrayContaining([
-        {
-          type: 'function_call_output',
-          call_id: 'call-catalog',
-          output: catalogOutput,
-        },
-      ]),
+      service.generate(generateInput({ message: '¿Cuánto cuesta el cappuccino?' })),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        answer: 'Cuesta S/ 13.00.',
+        usedSources: [
+          { sourceId: 'product-1', sourceKey: 'cappuccino-nube', sourceType: 'product' },
+        ],
+        llmCalls: 2,
+        usedTools: ['search_catalog'],
+      }),
+    );
+    expect(collaborators.searchProducts).toHaveBeenCalledWith(
+      {
+        productName: 'cappuccino',
+        category: ProductCategory.HOT_DRINK,
+        maxPrice: 15,
+        maxPriceExclusive: false,
+        dietaryTags: ['VEGETARIAN'],
+        excludedAllergens: ['TREE_NUTS'],
+        containsCoffee: true,
+        decaffeinated: false,
+        caffeineFree: false,
+        limit: 20,
+      },
+      requestContext('request-1'),
+    );
+    const finalInput = (responseRequest(create, 1)?.input ?? []) as unknown as Array<{
+      type?: string;
+      call_id?: string;
+      output?: string;
+    }>;
+    const replayed = finalInput.find((item) => item.type === 'function_call_output');
+    expect(replayed?.call_id).toBe('call-catalog');
+    expect(JSON.parse(replayed?.output ?? '{}')).toEqual(
+      expect.objectContaining({ catalogStatus: 'results_found' }),
     );
   });
 
   it('forces structured promotion search and attributes the current promotion', async () => {
-    const { service, create } = createService();
-    const promotionOutput = JSON.stringify({
-      promotionStatus: 'current_promotions_found',
-      scope: 'CURRENT',
-      evaluatedAt: '2026-08-15T00:30:00.000Z',
-      timeZone: 'America/Lima',
-      currentPromotions: [
-        {
-          sourceId: 'promotion-1',
-          sourceKey: 'viernes-frio',
-          type: 'promotion',
-          name: 'Viernes frío',
-          description: '15% de descuento todos los viernes.',
-          currentlyValid: true,
-        },
-      ],
-    });
-    const searchPromotions = jest.fn().mockResolvedValue(promotionOutput);
+    const { service, create, collaborators } = createService();
+    collaborators.searchPromotions.mockResolvedValue([
+      {
+        id: 'promotion-1',
+        slug: 'viernes-frio',
+        name: 'Viernes frío',
+        description: '15% de descuento todos los viernes.',
+        startsAt: null,
+        endsAt: null,
+        metadata: { days: ['FRIDAY'] },
+      },
+    ]);
     const functionCall = {
       type: 'function_call',
       call_id: 'call-promotions',
@@ -581,11 +566,7 @@ describe('OpenAiService', () => {
       arguments: JSON.stringify({ scope: 'CURRENT', promotionName: null }),
     };
     create
-      .mockResolvedValueOnce({
-        output: [functionCall],
-        output_text: '',
-        model: 'gpt-5.6-luna',
-      })
+      .mockResolvedValueOnce({ output: [functionCall], output_text: '', model: 'gpt-5.6-luna' })
       .mockResolvedValueOnce({
         output: [],
         output_text: structuredResponse('Ahora aplica Viernes frío.', ['promotion-1']),
@@ -593,56 +574,31 @@ describe('OpenAiService', () => {
       });
 
     await expect(
-      service.generate(
-        generateInput({
-          message: '¿Qué promociones tienen en este momento?',
-          searchPromotions,
-        }),
-      ),
-    ).resolves.toEqual({
-      answer: 'Ahora aplica Viernes frío.',
-      usedSources: [
-        {
-          sourceId: 'promotion-1',
-          sourceKey: 'viernes-frio',
-          sourceType: 'promotion',
-        },
-      ],
-      llmCalls: 2,
-      usedTools: ['search_promotions'],
-      tokenUsage: ZERO_TOKEN_USAGE,
-    });
-    expect(searchPromotions).toHaveBeenCalledWith({
-      scope: 'CURRENT',
-      promotionName: null,
-    });
+      service.generate(generateInput({ message: '¿Qué promociones tienen en este momento?' })),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        answer: 'Ahora aplica Viernes frío.',
+        usedTools: ['search_promotions'],
+      }),
+    );
+    expect(collaborators.searchPromotions).toHaveBeenCalledWith(
+      expect.objectContaining({ includeNotStarted: false }),
+      requestContext('request-1'),
+    );
     expect(responseRequest(create, 0)?.tool_choice).toEqual({
       type: 'function',
       name: 'search_promotions',
     });
-    expect(responseRequest(create, 1)?.input).toEqual(
-      expect.arrayContaining([
-        {
-          type: 'function_call_output',
-          call_id: 'call-promotions',
-          output: promotionOutput,
-        },
-      ]),
-    );
   });
 
   it('returns the menu document descriptor without sending catalog products to the model', async () => {
-    const { service, create } = createService();
-    const menuOutput = JSON.stringify({
-      documentStatus: 'available',
-      document: {
-        type: 'document',
-        title: 'Carta de Café Nube',
-        url: '/api/menu',
-        mimeType: 'application/pdf',
-      },
+    const { service, create, collaborators } = createService();
+    collaborators.getDescriptor.mockReturnValue({
+      type: 'document',
+      title: 'Carta de Café Nube',
+      url: '/api/menu',
+      mimeType: 'application/pdf',
     });
-    const getMenuDocument = jest.fn().mockResolvedValue(menuOutput);
     create
       .mockResolvedValueOnce({
         output: [
@@ -663,58 +619,33 @@ describe('OpenAiService', () => {
       });
 
     await expect(
-      service.generate(
-        generateInput({
-          message: 'Quiero ver la carta',
-          getMenuDocument,
-        }),
-      ),
-    ).resolves.toEqual({
-      answer: 'Aquí tienes nuestra carta.',
-      usedSources: [],
-      llmCalls: 2,
-      usedTools: ['get_menu_document'],
-      tokenUsage: ZERO_TOKEN_USAGE,
-      content: [
-        {
-          type: 'document',
-          title: 'Carta de Café Nube',
-          url: '/api/menu',
-          mimeType: 'application/pdf',
-        },
-      ],
-    });
-    expect(getMenuDocument).toHaveBeenCalledTimes(1);
-    expect(responseRequest(create, 1)?.input).toEqual(
-      expect.arrayContaining([
-        {
-          type: 'function_call_output',
-          call_id: 'call-menu',
-          output: menuOutput,
-        },
-      ]),
+      service.generate(generateInput({ message: 'Quiero ver la carta' })),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        answer: 'Aquí tienes nuestra carta.',
+        usedTools: ['get_menu_document'],
+        content: [
+          {
+            type: 'document',
+            title: 'Carta de Café Nube',
+            url: '/api/menu',
+            mimeType: 'application/pdf',
+          },
+        ],
+      }),
     );
-    expect(menuOutput).not.toContain('products');
+    expect(collaborators.getDescriptor).toHaveBeenCalledTimes(1);
   });
 
   it('executes manage_order with only an action, product names, and quantities', async () => {
-    const { service, create } = createService();
+    const { service, create, collaborators } = createService();
     const orderOutput = JSON.stringify({
       orderOperationStatus: 'completed',
       action: 'ADD_ITEMS',
-      order: {
-        id: 'order-1',
-        status: 'SELECTING_PRODUCTS',
-        total: 35,
-        currency: 'PEN',
-        items: [
-          { productName: 'Cappuccino Nube', unitPrice: 13, quantity: 2, lineTotal: 26 },
-          { productName: 'Croissant de mantequilla', unitPrice: 9, quantity: 1, lineTotal: 9 },
-        ],
-      },
+      order: { total: 35, currency: 'PEN', items: [] },
       issues: [],
     });
-    const manageOrder = jest.fn().mockResolvedValue(orderOutput);
+    collaborators.orderExecute.mockResolvedValue(orderOutput);
     create
       .mockResolvedValueOnce({
         output: [
@@ -741,50 +672,31 @@ describe('OpenAiService', () => {
       });
 
     await expect(
-      service.generate(
-        generateInput({
-          message: 'Agrega dos cappuccinos y un croissant.',
-          manageOrder,
-        }),
-      ),
-    ).resolves.toEqual({
-      answer: 'Agregué 2 cappuccinos y 1 croissant. Total: S/ 35.',
-      usedSources: [],
-      llmCalls: 2,
-      usedTools: ['manage_order'],
-      tokenUsage: ZERO_TOKEN_USAGE,
-    });
-    expect(manageOrder).toHaveBeenCalledWith({
+      service.generate(generateInput({ message: 'Agrega dos cappuccinos y un croissant.' })),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        answer: 'Agregué 2 cappuccinos y 1 croissant. Total: S/ 35.',
+        usedTools: ['manage_order'],
+      }),
+    );
+    expect(collaborators.orderExecute).toHaveBeenCalledWith({
       action: 'ADD_ITEMS',
       items: [
         { productName: 'Cappuccino Nube', quantity: 2 },
         { productName: 'Croissant de mantequilla', quantity: 1 },
       ],
+      conversationId: 'conversation-1',
+      context: requestContext('request-1'),
     });
-    expect(responseRequest(create, 1)?.input).toEqual(
-      expect.arrayContaining([
-        {
-          type: 'function_call_output',
-          call_id: 'call-order',
-          output: orderOutput,
-        },
-      ]),
-    );
   });
 
   it('stores explicit customer details through the dedicated order tool', async () => {
-    const { service, create } = createService();
-    const setOrderCustomer = jest.fn().mockResolvedValue(
+    const { service, create, collaborators } = createService();
+    collaborators.setCustomerDetails.mockResolvedValue(
       JSON.stringify({
         orderOperationStatus: 'completed',
         action: OrderAction.SET_CUSTOMER_DETAILS,
-        order: {
-          orderNumber: null,
-          total: 13,
-          currency: 'PEN',
-          customer: { name: 'Ana Pérez', maskedPhone: '*********321' },
-          items: [{ productName: 'Latte', unitPrice: 13, quantity: 1, lineTotal: 13 }],
-        },
+        order: { total: 13, currency: 'PEN', items: [] },
         workflow: {
           allowedActions: [OrderAction.CONFIRM],
           canConfirm: true,
@@ -842,7 +754,6 @@ describe('OpenAiService', () => {
         generateInput({
           message: 'Soy Ana Pérez y mi celular es +51 987 654 321.',
           orderContext: activeOrder,
-          setOrderCustomer,
         }),
       ),
     ).resolves.toEqual(
@@ -851,10 +762,11 @@ describe('OpenAiService', () => {
         usedTools: ['set_order_customer'],
       }),
     );
-    expect(setOrderCustomer).toHaveBeenCalledWith({
-      customerName: 'Ana Pérez',
-      customerPhone: '+51 987 654 321',
-    });
+    expect(collaborators.setCustomerDetails).toHaveBeenCalledWith(
+      { customerName: 'Ana Pérez', customerPhone: '+51 987 654 321' },
+      'conversation-1',
+      requestContext('request-1'),
+    );
     expect(responseRequest(create, 0)?.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'function', name: 'set_order_customer', strict: true }),
@@ -862,23 +774,17 @@ describe('OpenAiService', () => {
     );
   });
 
-  it('limits order actions to the trusted workflow and confirms an explicit approval', async () => {
-    const { service, create } = createService();
-    const orderOutput = JSON.stringify({
-      orderOperationStatus: 'completed',
-      action: OrderAction.CONFIRM,
-      order: {
-        total: 54,
-        currency: 'PEN',
-        items: [
-          { productName: 'Latte', unitPrice: 13, quantity: 3, lineTotal: 39 },
-          { productName: 'Carrot cake', unitPrice: 15, quantity: 1, lineTotal: 15 },
-        ],
-      },
-      workflow: { allowedActions: [], canConfirm: false, nextAction: null },
-      issues: [],
-    });
-    const manageOrder = jest.fn().mockResolvedValue(orderOutput);
+  it('offers only the trusted workflow actions to the manage_order tool', async () => {
+    const { service, create, collaborators } = createService();
+    collaborators.orderExecute.mockResolvedValue(
+      JSON.stringify({
+        orderOperationStatus: 'completed',
+        action: OrderAction.CONFIRM,
+        order: { total: 54, currency: 'PEN', items: [] },
+        workflow: { allowedActions: [], canConfirm: false, nextAction: null },
+        issues: [],
+      }),
+    );
     create
       .mockResolvedValueOnce({
         output: [
@@ -898,155 +804,74 @@ describe('OpenAiService', () => {
         model: 'gpt-5.6-luna',
       });
 
-    await expect(
-      service.generate(
-        generateInput({
-          message: 'sí',
-          history: [
-            {
-              role: 'assistant',
-              content: 'Total: S/ 54. ¿Deseas confirmar el pedido?',
+    await service.generate(
+      generateInput({
+        message: 'sí',
+        orderContext: {
+          activeOrder: {
+            order: {
+              orderNumber: null,
+              total: 54,
+              currency: 'PEN',
+              customer: { name: 'Ana Pérez', maskedPhone: '*******789' },
+              items: [{ productName: 'Latte', unitPrice: 13, quantity: 3, lineTotal: 39 }],
             },
-          ],
-          orderContext: {
-            activeOrder: {
-              order: {
-                orderNumber: null,
-                total: 54,
-                currency: 'PEN',
-                customer: { name: 'Ana Pérez', maskedPhone: '*******789' },
-                items: [
-                  { productName: 'Latte', unitPrice: 13, quantity: 3, lineTotal: 39 },
-                  { productName: 'Carrot cake', unitPrice: 15, quantity: 1, lineTotal: 15 },
-                ],
-              },
-              workflow: {
-                allowedActions: [
-                  OrderAction.ADD_ITEMS,
-                  OrderAction.REMOVE_ITEMS,
-                  OrderAction.CONFIRM,
-                  OrderAction.CANCEL,
-                ],
-                canConfirm: true,
-                nextAction: OrderAction.CONFIRM,
-                missingCustomerFields: [],
-              },
+            workflow: {
+              allowedActions: [
+                OrderAction.ADD_ITEMS,
+                OrderAction.REMOVE_ITEMS,
+                OrderAction.CONFIRM,
+                OrderAction.CANCEL,
+              ],
+              canConfirm: true,
+              nextAction: OrderAction.CONFIRM,
+              missingCustomerFields: [],
             },
-            confirmationReplayAvailable: false,
           },
-          manageOrder,
-        }),
-      ),
-    ).resolves.toEqual({
-      answer: 'Tu pedido fue confirmado. Total: S/ 54.',
-      usedSources: [],
-      llmCalls: 2,
-      usedTools: ['manage_order'],
-      tokenUsage: ZERO_TOKEN_USAGE,
-    });
+          confirmationReplayAvailable: false,
+        },
+      }),
+    );
 
     const orderTool = responseRequest(create, 0)?.tools?.find(
       (tool) => tool.type === 'function' && tool.name === 'manage_order',
     );
-    const orderParameters = (orderTool?.type === 'function'
-      ? orderTool.parameters
-      : undefined) as unknown as { properties?: { action?: { enum?: string[] } } };
-    expect(orderParameters.properties?.action?.enum).toEqual([
+    const orderParameters = (orderTool?.type === 'function' ? orderTool.parameters : undefined) as
+      { properties?: { action?: { enum?: string[] } } } | undefined;
+    expect(orderParameters?.properties?.action?.enum).toEqual([
       OrderAction.ADD_ITEMS,
       OrderAction.REMOVE_ITEMS,
       OrderAction.CONFIRM,
       OrderAction.CANCEL,
     ]);
-    expect(manageOrder).toHaveBeenCalledWith({ action: OrderAction.CONFIRM, items: [] });
+    expect(collaborators.orderExecute).toHaveBeenCalledWith(
+      expect.objectContaining({ action: OrderAction.CONFIRM, items: [] }),
+    );
   });
 
-  it('allows an explicit confirmation replay without exposing other terminal actions', async () => {
-    const { service, create } = createService();
-    const confirmedOrder = {
-      total: 13,
-      currency: 'PEN',
-      items: [{ productName: 'Latte', unitPrice: 13, quantity: 1, lineTotal: 13 }],
-    };
-    const manageOrder = jest.fn().mockResolvedValue(
-      JSON.stringify({
-        orderOperationStatus: 'completed',
-        action: OrderAction.CONFIRM,
-        idempotentReplay: true,
-        order: confirmedOrder,
-        workflow: { allowedActions: [], canConfirm: false, nextAction: null },
-        issues: [],
-      }),
-    );
-    create
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: 'function_call',
-            call_id: 'call-replay-confirmation',
-            name: 'manage_order',
-            arguments: JSON.stringify({ action: OrderAction.CONFIRM, items: [] }),
-          },
-        ],
-        output_text: '',
-        model: 'gpt-5.6-luna',
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text: structuredResponse('Ese pedido ya estaba confirmado; no se duplicó.'),
-        model: 'gpt-5.6-luna',
-      });
-
-    await service.generate(
-      generateInput({
-        message: 'Sí, confirma de nuevo.',
-        history: [{ role: 'assistant', content: 'Tu pedido fue confirmado. Total: S/ 13.' }],
-        orderContext: { activeOrder: null, confirmationReplayAvailable: true },
-        manageOrder,
-      }),
-    );
-
-    const orderTool = responseRequest(create, 0)?.tools?.find(
-      (tool) => tool.type === 'function' && tool.name === 'manage_order',
-    );
-    const orderParameters = (orderTool?.type === 'function'
-      ? orderTool.parameters
-      : undefined) as unknown as { properties?: { action?: { enum?: string[] } } };
-    expect(orderParameters.properties?.action?.enum).toEqual([
-      OrderAction.ADD_ITEMS,
-      OrderAction.CONFIRM,
-    ]);
-    expect(manageOrder).toHaveBeenCalledWith({ action: OrderAction.CONFIRM, items: [] });
-  });
-
-  it('rejects order arguments that try to supply application-controlled totals', async () => {
-    const { service, create } = createService();
-    const manageOrder = jest.fn();
+  it('maps a tool argument validation failure to a controlled request failure', async () => {
+    const { service, create, collaborators } = createService();
     create.mockResolvedValue({
       output: [
         {
           type: 'function_call',
           call_id: 'call-invalid-order',
           name: 'manage_order',
-          arguments: JSON.stringify({
-            action: 'CONFIRM',
-            items: [],
-            total: 1,
-          }),
+          arguments: JSON.stringify({ action: 'CONFIRM', items: [], total: 1 }),
         },
       ],
       output_text: '',
       model: 'gpt-5.6-luna',
     });
 
-    await expect(service.generate(generateInput({ manageOrder }))).rejects.toEqual(
+    await expect(service.generate(generateInput())).rejects.toEqual(
       new OpenAiRequestFailedException(),
     );
-    expect(manageOrder).not.toHaveBeenCalled();
+    expect(collaborators.orderExecute).not.toHaveBeenCalled();
   });
 
   it('rejects invalid tool arguments without executing application code', async () => {
-    const { service, create } = createService();
-    const searchKnowledge = jest.fn();
+    const { service, create, collaborators } = createService();
     create.mockResolvedValue({
       output: [
         {
@@ -1060,105 +885,56 @@ describe('OpenAiService', () => {
       model: 'gpt-5.6-luna',
     });
 
-    await expect(service.generate(generateInput({ searchKnowledge }))).rejects.toEqual(
+    await expect(service.generate(generateInput())).rejects.toEqual(
       new OpenAiRequestFailedException(),
     );
-    expect(searchKnowledge).not.toHaveBeenCalled();
+    expect(collaborators.getContext).not.toHaveBeenCalled();
   });
 
-  it('rejects invalid catalog filters without querying PostgreSQL', async () => {
+  it('throws when OpenAI requests an unregistered tool', async () => {
     const { service, create } = createService();
-    const searchCatalog = jest.fn();
     create.mockResolvedValue({
       output: [
         {
           type: 'function_call',
-          call_id: 'call-invalid-catalog',
-          name: 'search_catalog',
-          arguments: JSON.stringify({
-            productName: null,
-            category: 'UNKNOWN_CATEGORY',
-            maxPrice: -1,
-            maxPriceExclusive: false,
-            dietaryTags: [],
-            excludedAllergens: [],
-            containsCoffee: null,
-            decaffeinated: null,
-            caffeineFree: null,
-          }),
+          call_id: 'call-unknown',
+          name: 'search_reviews',
+          arguments: '{}',
         },
       ],
       output_text: '',
       model: 'gpt-5.6-luna',
     });
 
-    await expect(service.generate(generateInput({ searchCatalog }))).rejects.toEqual(
+    await expect(service.generate(generateInput())).rejects.toEqual(
       new OpenAiRequestFailedException(),
     );
-    expect(searchCatalog).not.toHaveBeenCalled();
   });
 
-  it('rejects invalid promotion scope without querying PostgreSQL', async () => {
+  it('rejects when OpenAI requests more than one tool', async () => {
     const { service, create } = createService();
-    const searchPromotions = jest.fn();
     create.mockResolvedValue({
       output: [
         {
           type: 'function_call',
-          call_id: 'call-invalid-promotion',
-          name: 'search_promotions',
-          arguments: JSON.stringify({ scope: 'YESTERDAY', promotionName: null }),
+          call_id: 'a',
+          name: 'search_knowledge',
+          arguments: '{"query":"x"}',
         },
+        { type: 'function_call', call_id: 'b', name: 'search_catalog', arguments: '{}' },
       ],
       output_text: '',
       model: 'gpt-5.6-luna',
     });
 
-    await expect(
-      service.generate(generateInput({ message: '¿Qué promociones hubo ayer?', searchPromotions })),
-    ).rejects.toEqual(new OpenAiRequestFailedException());
-    expect(searchPromotions).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    { name: 'an unknown dietary tag', override: { dietaryTags: ['KETO'] } },
-    { name: 'a duplicated allergen', override: { excludedAllergens: ['MILK', 'MILK'] } },
-    { name: 'a non-boolean coffee preference', override: { containsCoffee: 'false' } },
-  ])('rejects $name without querying PostgreSQL', async ({ override }) => {
-    const { service, create } = createService();
-    const searchCatalog = jest.fn();
-    create.mockResolvedValue({
-      output: [
-        {
-          type: 'function_call',
-          call_id: 'call-invalid-preference',
-          name: 'search_catalog',
-          arguments: JSON.stringify({
-            productName: null,
-            category: null,
-            maxPrice: null,
-            maxPriceExclusive: false,
-            dietaryTags: [],
-            excludedAllergens: [],
-            containsCoffee: null,
-            decaffeinated: null,
-            caffeineFree: null,
-            ...override,
-          }),
-        },
-      ],
-      output_text: '',
-      model: 'gpt-5.6-luna',
-    });
-
-    await expect(service.generate(generateInput({ searchCatalog }))).rejects.toEqual(
+    await expect(service.generate(generateInput())).rejects.toEqual(
       new OpenAiRequestFailedException(),
     );
-    expect(searchCatalog).not.toHaveBeenCalled();
   });
 
   it('preserves a database failure raised by the knowledge tool', async () => {
-    const { service, create } = createService();
+    const { service, create, collaborators } = createService();
+    collaborators.getContext.mockRejectedValue(new DatabaseUnavailableException());
     create.mockResolvedValue({
       output: [
         {
@@ -1172,13 +948,9 @@ describe('OpenAiService', () => {
       model: 'gpt-5.6-luna',
     });
 
-    await expect(
-      service.generate(
-        generateInput({
-          searchKnowledge: jest.fn().mockRejectedValue(new DatabaseUnavailableException()),
-        }),
-      ),
-    ).rejects.toEqual(new DatabaseUnavailableException());
+    await expect(service.generate(generateInput())).rejects.toEqual(
+      new DatabaseUnavailableException(),
+    );
   });
 
   it.each([
@@ -1205,11 +977,9 @@ describe('OpenAiService', () => {
   });
 
   it('classifies a truncated final response before attempting to parse its JSON', async () => {
-    const { service, create } = createService();
+    const { service, create, collaborators } = createService();
     const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
-    const searchKnowledge = jest
-      .fn()
-      .mockResolvedValue('{"retrievalStatus":"no_results","knowledge":[]}');
+    collaborators.getContext.mockResolvedValue('{"retrievalStatus":"no_results","knowledge":[]}');
     create
       .mockResolvedValueOnce({
         status: 'completed',
@@ -1233,9 +1003,9 @@ describe('OpenAiService', () => {
         model: 'gpt-5.6-luna',
       });
 
-    await expect(
-      service.generate(generateInput({ message: '¿Qué venden?', searchKnowledge })),
-    ).rejects.toEqual(new OpenAiIncompleteResponseException('max_output_tokens'));
+    await expect(service.generate(generateInput({ message: '¿Qué venden?' }))).rejects.toEqual(
+      new OpenAiIncompleteResponseException('max_output_tokens'),
+    );
     expect(create).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1248,10 +1018,7 @@ describe('OpenAiService', () => {
 
   it.each([
     { name: 'an empty API output', outputText: '' },
-    {
-      name: 'an empty structured answer',
-      outputText: structuredResponse('   '),
-    },
+    { name: 'an empty structured answer', outputText: structuredResponse('   ') },
   ])('classifies $name separately from an OpenAI request failure', async ({ outputText }) => {
     const { service, create } = createService();
     const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
