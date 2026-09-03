@@ -6,4 +6,6 @@ module.exports = {
   testMatch: ['<rootDir>/test/**/*.integration-spec.ts'],
   testTimeout: 60_000,
   maxWorkers: 1,
+  globalSetup: '<rootDir>/test/support/integration-global-setup.ts',
+  globalTeardown: '<rootDir>/test/support/integration-global-teardown.ts',
 };
