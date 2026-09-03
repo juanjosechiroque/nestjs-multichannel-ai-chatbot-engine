@@ -13,8 +13,10 @@ interface OpenApiDocumentResponse {
 describe('HTTP contract and security headers', () => {
   const harness = setupHttpE2E();
 
-  it('returns application health through the global API prefix', async () => {
-    await request(harness.server).get('/api/health').expect(200, { status: 'ok' });
+  it('returns application health with the Nest runtime state through the global API prefix', async () => {
+    await request(harness.server)
+      .get('/api/health')
+      .expect(200, { status: 'ok', nest: { state: 'ready' } });
   });
 
   it('applies global security headers without exposing the Express signature', async () => {
