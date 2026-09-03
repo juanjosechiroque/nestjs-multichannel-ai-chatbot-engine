@@ -11,6 +11,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   type RawBodyRequest,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -27,7 +28,16 @@ import { ApiErrorResponseDto } from '../../common/api-error-response.dto';
 import { WhatsAppWebhookVerificationDto } from './dto/whatsapp-webhook-verification.dto';
 import { WhatsAppChatService } from './whatsapp-chat.service';
 import { WhatsAppOutboundMessageService } from './whatsapp-outbound-message.service';
-import { WhatsAppWebhookReceiptService } from './whatsapp-webhook-receipt.service';
+import {
+  WhatsAppWebhookReceiptService,
+  type WhatsAppInboundMessage,
+} from './whatsapp-webhook-receipt.service';
+
+/** Subset of the Express response used to acknowledge Meta, typed locally to avoid an Express dependency. */
+interface WhatsAppWebhookAcknowledgement {
+  status(code: number): WhatsAppWebhookAcknowledgement;
+  end(): void;
+}
 
 @ApiTags('WhatsApp webhooks')
 @Controller('webhook/whatsapp')
@@ -76,13 +86,14 @@ export class WhatsAppController {
     required: true,
   })
   @ApiOkResponse({
-    description: 'The signed notification was processed and acknowledged with an empty response.',
+    description: 'The signed notification was accepted and acknowledged with an empty response.',
   })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async receive(
     @Req() request: RawBodyRequest<Record<string, unknown>>,
     @Headers('x-hub-signature-256') signature: string | undefined,
     @Body() payload: unknown,
+    @Res() response: WhatsAppWebhookAcknowledgement,
   ): Promise<void> {
     if (!request.rawBody || !this.hasValidSignature(request.rawBody, signature)) {
       this.logger.warn({ event: 'whatsapp.webhook.signature.invalid' });
@@ -90,14 +101,18 @@ export class WhatsAppController {
     }
 
     const deliveryStatuses = await this.outboundMessages.processStatuses(payload);
+
+    // Must succeed before the 200: a failed reservation surfaces as an HTTP error so Meta retries.
     const receipt = await this.webhookReceipts.reserve(payload);
+
+    // Best-effort: acknowledge now so Meta does not retry, then process in-process via setImmediate.
+    // A deploy, restart, or crash after this 200 drops the message; there is no durable queue.
+    response.status(200).end();
+
     for (const message of receipt.acceptedMessages) {
-      try {
-        await this.whatsappChat.handle(message);
-      } catch (error: unknown) {
-        await this.webhookReceipts.release(message);
-        throw error;
-      }
+      setImmediate(() => {
+        void this.processSafely(message);
+      });
     }
 
     this.logger.log({
@@ -108,6 +123,22 @@ export class WhatsAppController {
       updatedStatuses: deliveryStatuses.updatedStatuses,
       ignoredStatuses: deliveryStatuses.ignoredStatuses,
     });
+  }
+
+  /**
+   * Runs one reserved message after the 200. Failures are logged with the message ID and
+   * swallowed; the reservation is not released because Meta will not retry this webhook.
+   */
+  private async processSafely(message: WhatsAppInboundMessage): Promise<void> {
+    try {
+      await this.whatsappChat.handle(message);
+    } catch (error: unknown) {
+      this.logger.error({
+        event: 'whatsapp.webhook.message.processing.failed',
+        messageId: message.messageId,
+        errorName: error instanceof Error ? error.name : 'UnknownWhatsAppProcessingError',
+      });
+    }
   }
 
   private hasValidSignature(rawBody: Buffer, signature: string | undefined): boolean {

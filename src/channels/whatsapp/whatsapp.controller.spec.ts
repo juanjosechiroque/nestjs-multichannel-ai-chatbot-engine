@@ -28,6 +28,19 @@ const release = jest.fn();
 const handle = jest.fn();
 const processStatuses = jest.fn();
 
+interface AcknowledgementSpy {
+  status: jest.Mock;
+  end: jest.Mock;
+}
+
+function createAcknowledgement(): AcknowledgementSpy {
+  const acknowledgement: AcknowledgementSpy = {
+    status: jest.fn(() => acknowledgement),
+    end: jest.fn(),
+  };
+  return acknowledgement;
+}
+
 function createController(): WhatsAppController {
   return new WhatsAppController(
     new ConfigService({
@@ -46,6 +59,13 @@ function rawRequest(rawBody: Buffer): RawBodyRequest<Record<string, unknown>> {
 
 function sign(rawBody: Buffer): string {
   return `sha256=${createHmac('sha256', APP_SECRET).update(rawBody).digest('hex')}`;
+}
+
+/** Lets every pending `setImmediate` callback and its awaited chain settle. */
+async function flushBackgroundProcessing(): Promise<void> {
+  for (let round = 0; round < 3; round += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 describe('WhatsAppController', () => {
@@ -100,14 +120,16 @@ describe('WhatsAppController', () => {
   it('acknowledges a notification with a valid Meta signature', async () => {
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     const controller = createController();
+    const acknowledgement = createAcknowledgement();
     const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
 
-    await expect(controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD)).resolves.toBe(
-      undefined,
-    );
+    await expect(
+      controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD, acknowledgement),
+    ).resolves.toBe(undefined);
+    expect(acknowledgement.status).toHaveBeenCalledWith(200);
+    expect(acknowledgement.end).toHaveBeenCalledTimes(1);
     expect(reserve).toHaveBeenCalledWith(PAYLOAD);
     expect(processStatuses).toHaveBeenCalledWith(PAYLOAD);
-    expect(handle).toHaveBeenCalledWith(ACCEPTED_MESSAGE);
     expect(log).toHaveBeenCalledWith({
       event: 'whatsapp.webhook.notification.acknowledged',
       acceptedMessages: 1,
@@ -116,17 +138,77 @@ describe('WhatsAppController', () => {
       updatedStatuses: 0,
       ignoredStatuses: 0,
     });
+
+    await flushBackgroundProcessing();
+    expect(handle).toHaveBeenCalledWith(ACCEPTED_MESSAGE);
+  });
+
+  it('returns 200 before the chat handling settles', async () => {
+    jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    let releaseHandle: () => void = () => undefined;
+    handle.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseHandle = resolve;
+        }),
+    );
+    const controller = createController();
+    const acknowledgement = createAcknowledgement();
+    const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
+
+    await controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD, acknowledgement);
+    await flushBackgroundProcessing();
+
+    // Meta was acknowledged even though handle() is still pending.
+    expect(acknowledgement.status).toHaveBeenCalledWith(200);
+    expect(acknowledgement.end).toHaveBeenCalledTimes(1);
+    expect(handle).toHaveBeenCalledWith(ACCEPTED_MESSAGE);
+
+    releaseHandle();
+    await flushBackgroundProcessing();
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it('logs a background processing failure without disturbing the 200 or the reservation', async () => {
+    jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    handle.mockRejectedValueOnce(new WhatsAppDeliveryFailedException());
+    const controller = createController();
+    const acknowledgement = createAcknowledgement();
+    const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
+
+    await expect(
+      controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD, acknowledgement),
+    ).resolves.toBe(undefined);
+    await flushBackgroundProcessing();
+
+    expect(acknowledgement.status).toHaveBeenCalledWith(200);
+    expect(acknowledgement.end).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith({
+      event: 'whatsapp.webhook.message.processing.failed',
+      messageId: ACCEPTED_MESSAGE.messageId,
+      errorName: 'WhatsAppDeliveryFailedException',
+    });
+    expect(release).not.toHaveBeenCalled();
+    const loggedFailure = JSON.stringify(error.mock.calls);
+    expect(loggedFailure).not.toContain(String(ACCEPTED_MESSAGE.text));
+    expect(loggedFailure).not.toContain(ACCEPTED_MESSAGE.recipientPhoneNumber);
   });
 
   it('does not send a second response for a duplicate notification', async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
     reserve.mockResolvedValueOnce({ acceptedMessages: [], duplicateMessages: 1 });
     const controller = createController();
+    const acknowledgement = createAcknowledgement();
     const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
 
-    await expect(controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD)).resolves.toBe(
-      undefined,
-    );
+    await expect(
+      controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD, acknowledgement),
+    ).resolves.toBe(undefined);
+    expect(acknowledgement.status).toHaveBeenCalledWith(200);
+    expect(acknowledgement.end).toHaveBeenCalledTimes(1);
+
+    await flushBackgroundProcessing();
     expect(handle).not.toHaveBeenCalled();
   });
 
@@ -139,24 +221,31 @@ describe('WhatsAppController', () => {
     });
     reserve.mockResolvedValueOnce({ acceptedMessages: [], duplicateMessages: 0 });
     const controller = createController();
+    const acknowledgement = createAcknowledgement();
     const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
 
-    await controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD);
+    await controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD, acknowledgement);
+    await flushBackgroundProcessing();
 
     expect(processStatuses).toHaveBeenCalledWith(PAYLOAD);
+    expect(acknowledgement.status).toHaveBeenCalledWith(200);
     expect(handle).not.toHaveBeenCalled();
   });
 
-  it('releases the reservation when delivery through Meta fails', async () => {
+  it('lets a PostgreSQL reservation failure surface before the 200 so Meta retries', async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
-    handle.mockRejectedValueOnce(new WhatsAppDeliveryFailedException());
+    const reservationError = new Error('PostgreSQL unavailable');
+    reserve.mockRejectedValueOnce(reservationError);
     const controller = createController();
+    const acknowledgement = createAcknowledgement();
     const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
 
     await expect(
-      controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD),
-    ).rejects.toBeInstanceOf(WhatsAppDeliveryFailedException);
-    expect(release).toHaveBeenCalledWith(ACCEPTED_MESSAGE);
+      controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD, acknowledgement),
+    ).rejects.toBe(reservationError);
+    expect(acknowledgement.status).not.toHaveBeenCalled();
+    expect(acknowledgement.end).not.toHaveBeenCalled();
+    expect(handle).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -166,11 +255,14 @@ describe('WhatsAppController', () => {
   ])('rejects %s without logging the signature', async (_scenario, signature) => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const controller = createController();
+    const acknowledgement = createAcknowledgement();
     const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
 
-    await expect(controller.receive(rawRequest(rawBody), signature, PAYLOAD)).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(
+      controller.receive(rawRequest(rawBody), signature, PAYLOAD, acknowledgement),
+    ).rejects.toThrow(ForbiddenException);
+    expect(acknowledgement.status).not.toHaveBeenCalled();
+    expect(acknowledgement.end).not.toHaveBeenCalled();
     expect(reserve).not.toHaveBeenCalled();
     expect(processStatuses).not.toHaveBeenCalled();
     expect(handle).not.toHaveBeenCalled();
@@ -181,12 +273,14 @@ describe('WhatsAppController', () => {
   it('rejects a valid signature when the request body was modified', async () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const controller = createController();
+    const acknowledgement = createAcknowledgement();
     const originalBody = Buffer.from('{"object":"whatsapp_business_account"}');
     const modifiedBody = Buffer.from('{"object":"different"}');
 
     await expect(
-      controller.receive(rawRequest(modifiedBody), sign(originalBody), PAYLOAD),
+      controller.receive(rawRequest(modifiedBody), sign(originalBody), PAYLOAD, acknowledgement),
     ).rejects.toThrow(ForbiddenException);
+    expect(acknowledgement.end).not.toHaveBeenCalled();
     expect(reserve).not.toHaveBeenCalled();
     expect(handle).not.toHaveBeenCalled();
   });
