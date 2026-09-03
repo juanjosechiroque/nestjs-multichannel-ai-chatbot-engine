@@ -64,6 +64,7 @@ generation and embeddings are replaced by deterministic test doubles. They cover
 - Swagger/OpenAPI route coverage, schemas, operations, and documented HTTP responses.
 - Global security headers and removal of the Express signature.
 - Allowed and disallowed browser origins, including CORS preflight behavior.
+- WhatsApp callback verification success, invalid credentials, and missing query parameters.
 - Backend-managed conversations and persistent history.
 - Completed-message replay, conflicting IDs, failed retries, and concurrent duplicate rejection.
 - Catalog endpoints, typed catalog search, and menu documents.

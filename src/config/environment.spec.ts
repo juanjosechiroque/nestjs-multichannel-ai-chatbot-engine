@@ -14,6 +14,7 @@ const VALID_ENVIRONMENT: Record<string, unknown> = {
   RAG_MIN_SIMILARITY: '0.5',
   OPENAI_MAX_OUTPUT_TOKENS: '500',
   DATABASE_URL: 'postgresql://chatbot:chatbot@localhost:5432/chatbot_engine',
+  WHATSAPP_VERIFY_TOKEN: 'whatsapp-test-verify-token-32-chars',
   BUSINESS_NAME: 'Café Nube',
   BUSINESS_TIME_ZONE: 'America/Lima',
 };
@@ -66,6 +67,11 @@ describe('validateEnvironment', () => {
     ['a wildcard CORS origin', { CORS_ALLOWED_ORIGINS: '*' }, 'CORS_ALLOWED_ORIGINS'],
     ['an empty OpenAI API key', { OPENAI_API_KEY: '' }, 'OPENAI_API_KEY'],
     ['an empty database URL', { DATABASE_URL: '' }, 'DATABASE_URL'],
+    [
+      'a short WhatsApp verify token',
+      { WHATSAPP_VERIFY_TOKEN: 'too-short' },
+      'WHATSAPP_VERIFY_TOKEN',
+    ],
     ['an invalid business time zone', { BUSINESS_TIME_ZONE: 'Lima' }, 'BUSINESS_TIME_ZONE'],
     ['a similarity below zero', { RAG_MIN_SIMILARITY: '-0.1' }, 'RAG_MIN_SIMILARITY'],
     ['a similarity above one', { RAG_MIN_SIMILARITY: '1.1' }, 'RAG_MIN_SIMILARITY'],
