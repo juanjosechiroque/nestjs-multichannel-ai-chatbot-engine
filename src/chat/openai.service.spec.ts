@@ -36,7 +36,7 @@ function generateInput(overrides: Partial<GenerateResponseInput> = {}): Generate
   return {
     context: requestContext('request-1'),
     message,
-    instructions: 'Only answer questions about Café Nube.',
+    instructions: 'Only answer questions about Aurora Bistró.',
     history: [],
     orderContext: { activeOrder: null, confirmationReplayAvailable: false },
     conversationId: 'conversation-1',
@@ -184,7 +184,7 @@ describe('OpenAiService', () => {
     expect(initialRequest).toEqual(
       expect.objectContaining({
         model: 'gpt-5.6-luna',
-        instructions: 'Only answer questions about Café Nube.',
+        instructions: 'Only answer questions about Aurora Bistró.',
         input: [
           noOrderContextInput(),
           { role: 'user', content: 'Buenos días' },
@@ -351,7 +351,7 @@ describe('OpenAiService', () => {
             type: 'function_call',
             call_id: 'call-location',
             name: 'search_knowledge',
-            arguments: '{"query":"local de Café Nube"}',
+            arguments: '{"query":"local de Aurora Bistró"}',
           },
         ],
         output_text: '',
@@ -546,7 +546,7 @@ describe('OpenAiService', () => {
     const { service, create, collaborators } = createService();
     collaborators.getDescriptor.mockReturnValue({
       type: 'document',
-      title: 'Carta de Café Nube',
+      title: 'Carta de Aurora Bistró',
       url: '/api/menu',
       mimeType: 'application/pdf',
     });
@@ -578,7 +578,7 @@ describe('OpenAiService', () => {
         content: [
           {
             type: 'document',
-            title: 'Carta de Café Nube',
+            title: 'Carta de Aurora Bistró',
             url: '/api/menu',
             mimeType: 'application/pdf',
           },

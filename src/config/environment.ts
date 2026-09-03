@@ -7,7 +7,6 @@ import {
   IsNotEmpty,
   IsNumber,
   IsString,
-  IsTimeZone,
   IsUrl,
   Max,
   MinLength,
@@ -103,14 +102,11 @@ class EnvironmentVariables {
   @IsNotEmpty()
   @MinLength(20)
   WHATSAPP_ACCESS_TOKEN!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  BUSINESS_NAME!: string;
-
-  @IsTimeZone()
-  BUSINESS_TIME_ZONE = 'America/Lima';
 }
+
+// The business identity (name, time zone, menu document) is not an environment
+// concern: it is authored in `business/profile.json` and loaded by
+// `src/config/business.config.ts`. There is no runtime business selector.
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {
   const validated = plainToInstance(EnvironmentVariables, config, {

@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { cafeNubeProducts } from '../../prisma/seed-data/cafe-nube';
+import { businessSeed } from '../../business/seed';
 import { PrismaService } from '../database/prisma.service';
 import { ORDER_CONVERSATION_EVALUATION_CASES } from './evaluation/order-conversation-evaluation.cases';
 import { OrderConversationEvaluationService } from './evaluation/order-conversation-evaluation.service';
@@ -79,7 +79,7 @@ async function evaluateOrders(): Promise<void> {
 }
 
 async function seedProducts(prisma: PrismaService): Promise<void> {
-  for (const product of cafeNubeProducts) {
+  for (const product of businessSeed.products) {
     await prisma.product.create({ data: product });
   }
 }

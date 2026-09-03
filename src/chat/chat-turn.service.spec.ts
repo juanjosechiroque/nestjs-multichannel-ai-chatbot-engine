@@ -61,7 +61,7 @@ describe('ChatTurnService', () => {
         content: [
           {
             type: 'document',
-            title: 'Carta de Café Nube',
+            title: 'Carta de Aurora Bistró',
             url: '/api/menu',
             mimeType: 'application/pdf',
           },
@@ -79,7 +79,7 @@ describe('ChatTurnService', () => {
         content: [
           {
             type: 'document',
-            title: 'Carta de Café Nube',
+            title: 'Carta de Aurora Bistró',
             url: '/api/menu',
             mimeType: 'application/pdf',
           },

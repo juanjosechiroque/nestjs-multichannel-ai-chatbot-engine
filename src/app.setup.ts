@@ -39,7 +39,7 @@ export function configureApplication(
   const openApiConfig = new DocumentBuilder()
     .setTitle('Multichannel AI Chatbot Engine API')
     .setDescription(
-      'Multichannel AI chat API for Web and WhatsApp, with the Café Nube demo catalog, orders, RAG, and health checks.',
+      'Multichannel AI chat API for Web and WhatsApp, with the configured business demo catalog, orders, RAG, and health checks.',
     )
     .setVersion('0.1.0')
     .build();

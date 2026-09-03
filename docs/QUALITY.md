@@ -31,7 +31,10 @@ The current global coverage thresholds are:
 | Functions  |     80% |
 | Lines      |     85% |
 
-Unit tests mock OpenAI and do not require Docker, a database, network access, or API credits.
+Unit tests mock OpenAI and do not require Docker, a database, network access, or API credits. They
+cover `src/**` and the business boundary in `business/**` (profile validation, the `BusinessProfile`
+/ `BusinessSeed` contracts, the idempotent seed runner, and the reuse guarantee against an alternate
+business fixture); both trees count toward the coverage thresholds.
 
 ### Test logging policy
 

@@ -1,12 +1,9 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
-import {
-  cafeNubeFaqs,
-  cafeNubeProducts,
-  cafeNubePromotions,
-  obsoleteCafeNubeFaqSlugs,
-} from './seed-data/cafe-nube';
+import { businessProfile } from '../business/profile';
+import { businessSeed } from '../business/seed';
+import { seedBusiness, type BusinessSeedWriter } from '../business/seed-runner';
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -17,41 +14,40 @@ if (!connectionString) {
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
-async function seed(): Promise<void> {
-  for (const product of cafeNubeProducts) {
+const writer: BusinessSeedWriter = {
+  upsertProductBySlug: async (record) => {
     await prisma.product.upsert({
-      where: { slug: product.slug },
-      update: product,
-      create: product,
+      where: { slug: record.slug },
+      update: record,
+      create: record,
     });
-  }
-
-  for (const promotion of cafeNubePromotions) {
+  },
+  upsertPromotionBySlug: async (record) => {
     await prisma.promotion.upsert({
-      where: { slug: promotion.slug },
-      update: promotion,
-      create: promotion,
+      where: { slug: record.slug },
+      update: record,
+      create: record,
     });
-  }
-
-  for (const faq of cafeNubeFaqs) {
+  },
+  upsertFaqBySlug: async (record) => {
     await prisma.faq.upsert({
-      where: { slug: faq.slug },
-      update: faq,
-      create: faq,
+      where: { slug: record.slug },
+      update: record,
+      create: record,
     });
-  }
+  },
+  deleteFaqsBySlug: async (slugs) => {
+    if (slugs.length === 0) return;
+    await prisma.faq.deleteMany({ where: { slug: { in: [...slugs] } } });
+  },
+};
 
-  await prisma.faq.deleteMany({
-    where: { slug: { in: [...obsoleteCafeNubeFaqSlugs] } },
-  });
-
-  console.log(
-    `Seed completed: ${cafeNubeProducts.length} products, ${cafeNubePromotions.length} promotions and ${cafeNubeFaqs.length} FAQs.`,
-  );
-}
-
-seed()
+seedBusiness(writer, businessSeed)
+  .then((summary) => {
+    console.log(
+      `Seed completed for "${businessProfile.name}": ${summary.products} products, ${summary.promotions} promotions and ${summary.faqs} FAQs.`,
+    );
+  })
   .catch((error: unknown) => {
     console.error('Seed failed', error);
     process.exitCode = 1;

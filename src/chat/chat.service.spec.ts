@@ -54,7 +54,7 @@ function createService(options: {
   const turns = options.turns ?? chatTurnMock();
   const service = new ChatService(
     { generate: options.generate },
-    new ConfigService({ BUSINESS_NAME: 'Café Nube' }),
+    new ConfigService({ BUSINESS_NAME: 'Aurora Bistró' }),
     orderTool,
     memory,
     turns,
@@ -128,7 +128,7 @@ describe('ChatService', () => {
       { role: 'assistant', content: 'Tenemos espresso y cappuccino.' },
     ]);
     expect(receivedInput?.instructions).toContain(
-      'virtual customer service assistant for Café Nube',
+      'virtual customer service assistant for Aurora Bistró',
     );
     expect(turns.complete).toHaveBeenCalledWith(
       {
@@ -316,7 +316,7 @@ describe('ChatService', () => {
     let receivedInput: GenerateResponseInput | undefined;
     const generate = jest.fn((input: GenerateResponseInput) => {
       receivedInput = input;
-      return Promise.resolve(directResult('Solo puedo ayudarte con Café Nube.'));
+      return Promise.resolve(directResult('Solo puedo ayudarte con Aurora Bistró.'));
     });
     const { service } = createService({ generate });
 
@@ -409,7 +409,7 @@ describe('ChatService', () => {
       content: [
         {
           type: 'document' as const,
-          title: 'Carta de Café Nube',
+          title: 'Carta de Aurora Bistró',
           url: '/api/menu',
           mimeType: 'application/pdf' as const,
         },
