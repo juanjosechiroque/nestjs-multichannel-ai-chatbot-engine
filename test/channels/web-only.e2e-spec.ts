@@ -12,8 +12,6 @@ import { OpenAiService } from '../../src/chat/openai.service';
 import { PrismaService } from '../../src/database/prisma.service';
 import { EmbeddingService } from '../../src/rag/embedding.service';
 
-// A Web-only deployment: WhatsApp is explicitly disabled and NO Meta credential
-// is provided. This is the documented quick-start configuration.
 const WEB_ONLY_ENVIRONMENT: Record<string, string> = {
   NODE_ENV: 'test',
   PORT: '3000',
@@ -56,8 +54,6 @@ describe('Web-only deployment (WHATSAPP_ENABLED=false)', () => {
 
     const { AppModule } = await import('../../src/app.module');
 
-    // Only the OpenAI ports are stubbed. No WhatsApp provider is registered or
-    // needed: the channel module is never part of the application.
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(OpenAiService)
       .useValue({ generate: jest.fn() })
@@ -89,10 +85,15 @@ describe('Web-only deployment (WHATSAPP_ENABLED=false)', () => {
     await prisma.conversation.deleteMany();
   });
 
-  it('boots with no Meta credential provided and serves health', async () => {
+  it('boots with no Meta credential and passes liveness and readiness', async () => {
+    await request(server).get('/api/health').expect(200, { status: 'ok' });
+    await request(server).get('/api/health/live').expect(200, { status: 'ok' });
     await request(server)
-      .get('/api/health')
-      .expect(200, { status: 'ok', nest: { state: 'ready' } });
+      .get('/api/health/ready')
+      .expect(200, {
+        status: 'ok',
+        checks: { nest: 'ready', postgresql: 'up' },
+      });
   });
 
   it('never constructs the Meta WhatsApp client or provider', () => {

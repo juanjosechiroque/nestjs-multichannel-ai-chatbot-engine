@@ -9,10 +9,7 @@ module.exports = {
     '<rootDir>/business/**/*.spec.ts',
     '<rootDir>/test/support/**/*.spec.ts',
   ],
-  // `isolatedModules` transpiles each file without a full type-check, which is
-  // the dominant cost of a cold Jest run. Type safety is still enforced by the
-  // standalone `tsc --noEmit` step in `npm run validate`.
-  transform: { '^.+\\.ts$': ['ts-jest', { isolatedModules: true }] },
+  transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
   setupFiles: ['reflect-metadata'],
   setupFilesAfterEnv: ['<rootDir>/test/support/silence-logging.ts'],

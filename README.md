@@ -211,16 +211,26 @@ to the chatbot core.
 
 ### Health
 
+`/api/health` remains a compatibility alias for the liveness probe.
+
 ```bash
-curl http://localhost:3000/api/health
+curl http://localhost:3000/api/health/live
 ```
 
 ```json
-{ "status": "ok", "nest": { "state": "ready" } }
+{ "status": "ok" }
 ```
 
-`nest.state` is the NestJS application lifecycle state: `initializing`, `ready`, or
-`shutting_down` once graceful shutdown begins.
+Readiness checks both the NestJS lifecycle and PostgreSQL. It returns `503` with the same component
+states when either dependency is unavailable.
+
+```bash
+curl http://localhost:3000/api/health/ready
+```
+
+```json
+{ "status": "ok", "checks": { "nest": "ready", "postgresql": "up" } }
+```
 
 ### Create a web conversation
 

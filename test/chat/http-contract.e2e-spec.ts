@@ -13,10 +13,14 @@ interface OpenApiDocumentResponse {
 describe('HTTP contract and security headers', () => {
   const harness = setupHttpE2E();
 
-  it('returns application health with the Nest runtime state through the global API prefix', async () => {
+  it('exposes liveness and PostgreSQL readiness through the global API prefix', async () => {
+    await request(harness.server).get('/api/health/live').expect(200, { status: 'ok' });
     await request(harness.server)
-      .get('/api/health')
-      .expect(200, { status: 'ok', nest: { state: 'ready' } });
+      .get('/api/health/ready')
+      .expect(200, {
+        status: 'ok',
+        checks: { nest: 'ready', postgresql: 'up' },
+      });
   });
 
   it('applies global security headers without exposing the Express signature', async () => {
@@ -84,6 +88,8 @@ describe('HTTP contract and security headers', () => {
     expect(Object.keys(document.paths)).toEqual(
       expect.arrayContaining([
         '/api/health',
+        '/api/health/live',
+        '/api/health/ready',
         '/api/conversations',
         '/api/chat',
         '/api/products',
@@ -112,6 +118,8 @@ describe('HTTP contract and security headers', () => {
         WebChatResponseDto: expect.any(Object) as object,
         ProductResponseDto: expect.any(Object) as object,
         ApiErrorResponseDto: expect.any(Object) as object,
+        LivenessResponseDto: expect.any(Object) as object,
+        ReadinessResponseDto: expect.any(Object) as object,
       }),
     );
   });

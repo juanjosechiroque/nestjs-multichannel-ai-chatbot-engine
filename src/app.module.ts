@@ -20,11 +20,7 @@ import { CatalogModule } from './catalog/catalog.module';
     CatalogModule,
     HealthModule,
     WebChannelModule,
-    // WhatsApp is an optional adapter. The decision happens once, here at the
-    // composition boundary: enabled -> the whole module is imported; disabled ->
-    // it is not part of the application, so `MetaWhatsAppClient` is never built
-    // and `/api/webhook/whatsapp` is never registered. `ConditionalModule` waits
-    // for `ConfigModule` to load `.env` before evaluating the flag.
+    // Disabled adapters stay outside the application composition entirely.
     ConditionalModule.registerWhen(WhatsAppChannelModule, (env: NodeJS.ProcessEnv) =>
       isWhatsAppEnabled(env),
     ),

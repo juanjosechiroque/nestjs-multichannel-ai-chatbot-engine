@@ -91,14 +91,9 @@ class EnvironmentVariables {
   @IsNotEmpty()
   DATABASE_URL!: string;
 
-  // WhatsApp is an optional adapter. The flag is parsed by `parseWhatsAppEnabled`
-  // (strict `"true"` / `"false"`) before validation, so by the time it reaches
-  // class-validator it is already a real boolean.
   @IsBoolean()
   WHATSAPP_ENABLED = false;
 
-  // Meta credentials are required and validated only when the channel is enabled.
-  // When disabled they may be absent entirely and must not block startup.
   @ValidateIf((env: EnvironmentVariables) => env.WHATSAPP_ENABLED)
   @IsString()
   @IsNotEmpty()
@@ -117,10 +112,6 @@ class EnvironmentVariables {
   @MinLength(20)
   WHATSAPP_ACCESS_TOKEN!: string;
 }
-
-// The business identity (name, time zone, menu document) is not an environment
-// concern: it is authored in `business/profile.json` and loaded by
-// `src/config/business.config.ts`. There is no runtime business selector.
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {
   const validated = plainToInstance(
