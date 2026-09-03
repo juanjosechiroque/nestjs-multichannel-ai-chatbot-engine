@@ -11,9 +11,19 @@ const VALID_ENVIRONMENT: Record<string, unknown> = {
   OPENAI_MAX_RETRIES: '1',
   RAG_MIN_SIMILARITY: '0.5',
   DATABASE_URL: 'postgresql://chatbot:chatbot@localhost:5432/chatbot_engine',
+  WHATSAPP_ENABLED: 'true',
   WHATSAPP_VERIFY_TOKEN: 'whatsapp-test-verify-token-32-chars',
   WHATSAPP_APP_SECRET: 'whatsapp-test-app-secret-32-chars',
   WHATSAPP_ACCESS_TOKEN: 'whatsapp-test-access-token-at-least-20-chars',
+};
+
+const WEB_ONLY_ENVIRONMENT: Record<string, unknown> = {
+  NODE_ENV: 'development',
+  PORT: '3000',
+  CORS_ALLOWED_ORIGINS: 'http://localhost:4173',
+  OPENAI_API_KEY: 'test-key',
+  RAG_MIN_SIMILARITY: '0.5',
+  DATABASE_URL: 'postgresql://chatbot:chatbot@localhost:5432/chatbot_engine',
 };
 
 describe('validateEnvironment', () => {
@@ -86,6 +96,79 @@ describe('validateEnvironment', () => {
   ])('rejects %s', (_scenario, override, expectedProperty) => {
     expect(() => validateEnvironment({ ...VALID_ENVIRONMENT, ...override })).toThrow(
       expectedProperty,
+    );
+  });
+
+  describe('WHATSAPP_ENABLED', () => {
+    it('defaults to false when the flag is absent', () => {
+      expect(validateEnvironment(WEB_ONLY_ENVIRONMENT).WHATSAPP_ENABLED).toBe(false);
+    });
+
+    it('parses the string "false" as false', () => {
+      expect(
+        validateEnvironment({ ...WEB_ONLY_ENVIRONMENT, WHATSAPP_ENABLED: 'false' })
+          .WHATSAPP_ENABLED,
+      ).toBe(false);
+    });
+
+    it('parses the string "true" as true', () => {
+      expect(
+        validateEnvironment({ ...VALID_ENVIRONMENT, WHATSAPP_ENABLED: 'true' }).WHATSAPP_ENABLED,
+      ).toBe(true);
+    });
+
+    it.each([['yes'], ['1'], [''], ['TRUE'], ['off']])(
+      'rejects the ambiguous value %j with a clear error',
+      (value) => {
+        expect(() =>
+          validateEnvironment({ ...WEB_ONLY_ENVIRONMENT, WHATSAPP_ENABLED: value }),
+        ).toThrow('WHATSAPP_ENABLED');
+      },
+    );
+  });
+
+  describe('Meta credentials', () => {
+    it('accepts a disabled WhatsApp channel with no Meta credentials', () => {
+      expect(() => validateEnvironment(WEB_ONLY_ENVIRONMENT)).not.toThrow();
+    });
+
+    it('ignores short Meta credentials while the channel is disabled', () => {
+      expect(() =>
+        validateEnvironment({
+          ...WEB_ONLY_ENVIRONMENT,
+          WHATSAPP_ENABLED: 'false',
+          WHATSAPP_VERIFY_TOKEN: 'x',
+          WHATSAPP_APP_SECRET: 'x',
+          WHATSAPP_ACCESS_TOKEN: 'x',
+        }),
+      ).not.toThrow();
+    });
+
+    it('accepts an enabled WhatsApp channel with valid Meta credentials', () => {
+      const environment = validateEnvironment(VALID_ENVIRONMENT);
+
+      expect(environment.WHATSAPP_ENABLED).toBe(true);
+      expect(environment.WHATSAPP_VERIFY_TOKEN).toBe(VALID_ENVIRONMENT.WHATSAPP_VERIFY_TOKEN);
+    });
+
+    it.each([
+      ['verify token', 'WHATSAPP_VERIFY_TOKEN'],
+      ['app secret', 'WHATSAPP_APP_SECRET'],
+      ['access token', 'WHATSAPP_ACCESS_TOKEN'],
+    ])('rejects an enabled WhatsApp channel missing the %s', (_scenario, property) => {
+      const environmentInput = { ...VALID_ENVIRONMENT };
+      delete environmentInput[property];
+
+      expect(() => validateEnvironment(environmentInput)).toThrow(property);
+    });
+
+    it.each([['WHATSAPP_VERIFY_TOKEN'], ['WHATSAPP_APP_SECRET'], ['WHATSAPP_ACCESS_TOKEN']])(
+      'rejects an enabled WhatsApp channel with a too-short %s',
+      (property) => {
+        expect(() => validateEnvironment({ ...VALID_ENVIRONMENT, [property]: 'short' })).toThrow(
+          property,
+        );
+      },
     );
   });
 });

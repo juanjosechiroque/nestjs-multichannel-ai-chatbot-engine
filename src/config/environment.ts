@@ -2,6 +2,7 @@ import { plainToInstance, Transform, type TransformFnParams, Type } from 'class-
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -11,8 +12,10 @@ import {
   Max,
   MinLength,
   Min,
+  ValidateIf,
   validateSync,
 } from 'class-validator';
+import { parseWhatsAppEnabled, WHATSAPP_ENABLED_ENV_VAR } from './whatsapp-enabled';
 
 function parseCorsAllowedOrigins(value: unknown): unknown {
   if (typeof value !== 'string') return value;
@@ -88,16 +91,27 @@ class EnvironmentVariables {
   @IsNotEmpty()
   DATABASE_URL!: string;
 
+  // WhatsApp is an optional adapter. The flag is parsed by `parseWhatsAppEnabled`
+  // (strict `"true"` / `"false"`) before validation, so by the time it reaches
+  // class-validator it is already a real boolean.
+  @IsBoolean()
+  WHATSAPP_ENABLED = false;
+
+  // Meta credentials are required and validated only when the channel is enabled.
+  // When disabled they may be absent entirely and must not block startup.
+  @ValidateIf((env: EnvironmentVariables) => env.WHATSAPP_ENABLED)
   @IsString()
   @IsNotEmpty()
   @MinLength(32)
   WHATSAPP_VERIFY_TOKEN!: string;
 
+  @ValidateIf((env: EnvironmentVariables) => env.WHATSAPP_ENABLED)
   @IsString()
   @IsNotEmpty()
   @MinLength(32)
   WHATSAPP_APP_SECRET!: string;
 
+  @ValidateIf((env: EnvironmentVariables) => env.WHATSAPP_ENABLED)
   @IsString()
   @IsNotEmpty()
   @MinLength(20)
@@ -109,9 +123,14 @@ class EnvironmentVariables {
 // `src/config/business.config.ts`. There is no runtime business selector.
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {
-  const validated = plainToInstance(EnvironmentVariables, config, {
-    enableImplicitConversion: true,
-  });
+  const validated = plainToInstance(
+    EnvironmentVariables,
+    {
+      ...config,
+      [WHATSAPP_ENABLED_ENV_VAR]: parseWhatsAppEnabled(config[WHATSAPP_ENABLED_ENV_VAR]),
+    },
+    { enableImplicitConversion: true },
+  );
   const errors = validateSync(validated, { skipMissingProperties: false });
 
   if (errors.length > 0) {

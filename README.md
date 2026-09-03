@@ -93,6 +93,8 @@ that are not implemented.
 
 ### WhatsApp channel
 
+- Optional adapter, enabled with `WHATSAPP_ENABLED=true` (see [Run modes](#run-modes)). When
+  disabled, none of the routes and behavior below are registered.
 - `GET /api/webhook/whatsapp` implements Meta's callback verification handshake.
 - Verification requires a private, validated token and never logs the supplied credential.
 - The endpoint returns Meta's challenge exactly when mode and token are valid.
@@ -160,7 +162,34 @@ npm run knowledge:ingest
 npm run start:dev
 ```
 
-The API starts at `http://localhost:3000/api` by default. It serves the business defined under
+The API starts at `http://localhost:3000/api` by default.
+
+### Run modes
+
+WhatsApp is an optional adapter selected at application composition. Choose a mode with a single
+explicit flag; a placeholder credential never enables the channel on its own.
+
+**Web-only** (default, no Meta account required):
+
+```bash
+WHATSAPP_ENABLED=false
+```
+
+The WhatsApp module is not loaded, `MetaWhatsAppClient` is never constructed, and
+`/api/webhook/whatsapp` returns `404`. Web, catalog, RAG, memory, and orders are unaffected.
+
+**Web + WhatsApp** (requires WhatsApp Cloud API credentials):
+
+```bash
+WHATSAPP_ENABLED=true
+WHATSAPP_VERIFY_TOKEN=...   # 32+ characters
+WHATSAPP_APP_SECRET=...     # Meta App secret, 32+ characters
+WHATSAPP_ACCESS_TOKEN=...   # Meta access token, 20+ characters
+```
+
+All three credentials are then required and validated at startup; the application fails fast if one
+is missing or too short. `WHATSAPP_ENABLED` accepts only `true` or `false` — any other value
+(`yes`, `1`, empty, …) is rejected explicitly. It serves the business defined under
 [`business/`](business/README.md). The seed is safe to run again: stable slugs update the records
 without creating duplicates. Run `knowledge:ingest` whenever products, promotions, or FAQs change.
 
@@ -328,9 +357,10 @@ Important controls include:
 | `RAG_MIN_SIMILARITY`                | `0.5`                      |
 | `RATE_LIMIT_CONVERSATIONS_PER_HOUR` | `5`                        |
 | `RATE_LIMIT_MESSAGES_PER_MINUTE`    | `10`                       |
-| `WHATSAPP_VERIFY_TOKEN`             | Required, 32+ characters   |
-| `WHATSAPP_APP_SECRET`               | Required Meta App Secret   |
-| `WHATSAPP_ACCESS_TOKEN`             | Required Meta access token |
+| `WHATSAPP_ENABLED`                  | `false` (Web-only)         |
+| `WHATSAPP_VERIFY_TOKEN`             | Required when enabled, 32+ |
+| `WHATSAPP_APP_SECRET`               | Required when enabled, 32+ |
+| `WHATSAPP_ACCESS_TOKEN`             | Required when enabled, 20+ |
 
 The current rate-limit store is in memory and intentionally targets one application instance. A
 distributed deployment requires shared Redis storage. A reverse proxy must also be trusted

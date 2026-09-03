@@ -330,6 +330,21 @@ provider-neutral send attempt, WAMID persistence, delivery-state transitions, an
 New and duplicate valid deliveries both receive an empty `200`, but only the first is processed and
 answered.
 
+### Optional WhatsApp adapter
+
+WhatsApp is an optional adapter selected at application composition, not a always-on dependency.
+`AppModule` imports `WhatsAppChannelModule` only when `WHATSAPP_ENABLED=true`
+(`ConditionalModule.registerWhen` with the shared `parseWhatsAppEnabled` interpreter). The flag is
+strict: only `true` or `false` are accepted. The decision is made once at the composition boundary,
+not by individual providers:
+
+- Enabled: the whole module is imported; the Meta credentials (`WHATSAPP_VERIFY_TOKEN`,
+  `WHATSAPP_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`) are required and validated at startup, and the
+  runtime request flow below applies unchanged.
+- Disabled (default): the module is not part of the application. `MetaWhatsAppClient` is never
+  constructed, `/api/webhook/whatsapp` is not registered (it returns `404`), and no Meta
+  credential is needed to boot Web, catalog, RAG, memory, and orders.
+
 A channel adapter may:
 
 - Validate its transport payload.
