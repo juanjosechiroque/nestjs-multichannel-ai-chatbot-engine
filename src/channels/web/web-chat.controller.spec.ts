@@ -132,7 +132,7 @@ describe('WebChatController', () => {
     });
   });
 
-  it('returns plain text when the channel-neutral reply contains Markdown', async () => {
+  it('preserves widget-supported emphasis and removes unsupported Markdown', async () => {
     const reply = jest.fn<Promise<ChatResult>, [ChatRequest]>().mockResolvedValue({
       reply: '**Pedido confirmado:** total `S/ 28`.',
     });
@@ -153,7 +153,7 @@ describe('WebChatController', () => {
         message: 'Sí',
       }),
     ).resolves.toEqual({
-      reply: 'Pedido confirmado: total S/ 28.',
+      reply: '**Pedido confirmado:** total S/ 28.',
     });
   });
 

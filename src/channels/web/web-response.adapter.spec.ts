@@ -4,7 +4,7 @@ import { WebResponseAdapter } from './web-response.adapter';
 describe('WebResponseAdapter', () => {
   const adapter = new WebResponseAdapter();
 
-  it('removes Markdown formatting without producing model-controlled HTML', () => {
+  it('keeps supported bold emphasis and removes other Markdown without producing HTML', () => {
     const result: ChatResult = {
       reply: [
         '## Resumen',
@@ -20,11 +20,21 @@ describe('WebResponseAdapter', () => {
       reply: [
         'Resumen',
         '',
-        '- 3 Lattes: S/ 39',
-        '- 1 Carrot cake: S/ 16 S/ 15',
+        '- **3 Lattes:** S/ 39',
+        '- **1 Carrot cake:** S/ 16 S/ 15',
         '',
-        '¿Deseas confirmar?',
+        'Deseas confirmar?',
       ].join('\n'),
+    });
+  });
+
+  it('normalizes casual Spanish punctuation, redundant currency, and masked phone wording', () => {
+    expect(
+      adapter.adapt({
+        reply: '¡Listo! Total: S/ 22 PEN. Teléfono: 998.\n\n¿Confirmas el pedido?',
+      }),
+    ).toEqual({
+      reply: 'Listo! Total: S/ 22. Teléfono terminado en 998.\n\nConfirmas el pedido?',
     });
   });
 
@@ -74,7 +84,7 @@ describe('WebResponseAdapter', () => {
         },
       }),
     ).toEqual({
-      reply: 'Aquí tienes nuestra carta.',
+      reply: '**Aquí tienes nuestra carta.**',
       content,
     });
   });

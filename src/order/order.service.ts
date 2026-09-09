@@ -6,6 +6,14 @@ import { OrderStatus as PrismaOrderStatus } from '../generated/prisma/enums';
 import { Prisma, type Order as PersistedOrder, type Product } from '../generated/prisma/client';
 import {
   ActiveOrderNotFoundError,
+  CUSTOMER_NAME_MAX_LENGTH,
+  CUSTOMER_NAME_MIN_LENGTH,
+  CUSTOMER_PHONE_MAX_DIGITS,
+  CUSTOMER_PHONE_MIN_DIGITS,
+  CustomerDetailsRequiredError,
+  CustomerNameValidationError,
+  CustomerPhoneFormatError,
+  CustomerPhoneLengthError,
   OrderCurrencyMismatchError,
   OrderError,
   OrderItemNotFoundError,
@@ -434,30 +442,30 @@ export class OrderService {
     customerPhone?: string;
   } {
     if (customerName === undefined && customerPhone === undefined) {
-      throw new RangeError('At least one customer detail is required');
+      throw new CustomerDetailsRequiredError();
     }
 
     const details: { customerName?: string; customerPhone?: string } = {};
     if (customerName !== undefined) {
       const normalizedName = customerName.trim().replace(/\s+/g, ' ');
       if (
-        normalizedName.length < 2 ||
-        normalizedName.length > 100 ||
+        normalizedName.length < CUSTOMER_NAME_MIN_LENGTH ||
+        normalizedName.length > CUSTOMER_NAME_MAX_LENGTH ||
         !/\p{L}/u.test(normalizedName)
       ) {
-        throw new RangeError('Customer name must contain between 2 and 100 characters');
+        throw new CustomerNameValidationError();
       }
       details.customerName = normalizedName;
     }
     if (customerPhone !== undefined) {
       const trimmedPhone = customerPhone.trim();
       if (!/^\+?[\d\s()-]+$/.test(trimmedPhone)) {
-        throw new RangeError('Customer phone contains unsupported characters');
+        throw new CustomerPhoneFormatError();
       }
       const hasInternationalPrefix = trimmedPhone.startsWith('+');
       const digits = trimmedPhone.replace(/\D/g, '');
-      if (digits.length < 8 || digits.length > 15) {
-        throw new RangeError('Customer phone must contain between 8 and 15 digits');
+      if (digits.length < CUSTOMER_PHONE_MIN_DIGITS || digits.length > CUSTOMER_PHONE_MAX_DIGITS) {
+        throw new CustomerPhoneLengthError();
       }
       details.customerPhone = `${hasInternationalPrefix ? '+' : ''}${digits}`;
     }
