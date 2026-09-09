@@ -106,6 +106,13 @@ that are not implemented.
   sender number. Unsupported media receives a text-only capability message.
 - The conversational adapter depends on a provider-neutral `WhatsAppProvider` port. Meta-specific
   URLs, credentials, payloads, timeouts, and response parsing live in `MetaWhatsAppClient`.
+- A successful Graph API response must include a WAMID. The application persists that identifier
+  and advances it idempotently through `ACCEPTED`, `SENT`, `DELIVERED`, `READ`, or `FAILED` from
+  signed Meta status webhooks, including out-of-order delivery protection.
+- Delivery telemetry reports webhook-to-acceptance and provider-to-status latency without storing
+  the customer phone number or generated text in the operational delivery table.
+- Chatbot failures produce only a fixed customer-safe fallback. Provider exceptions, response
+  bodies, credentials, phone numbers, and internal failure codes are never used as reply content.
 - Repeated Meta deliveries are acknowledged but neither processed nor answered twice. If outbound
   delivery fails, the webhook reservation is released so Meta can retry the stored chatbot result.
 - Processing is synchronous in the current single-process portfolio deployment; a production
@@ -264,15 +271,21 @@ uses the same typed PostgreSQL catalog search as the Web adapter. A repeated del
 acknowledged but is not reserved, sent to OpenAI, written to memory, or answered twice. Missing or
 invalid signatures return `403`.
 
+The same signed endpoint also processes Meta delivery statuses. Every generated reply is recorded
+without its text or recipient phone, using the inbound message ID and Meta's required outbound
+WAMID. `sent`, `delivered`, `read`, and `failed` events update that record monotonically, so duplicate
+or delayed status notifications cannot move a message backwards. A Graph API `200` without a WAMID
+is treated as a controlled delivery failure because later delivery cannot be verified.
+
 The current adapter accepts text messages up to 2,000 characters. Images, audio, video, documents,
 and other unsupported message types receive a short text response explaining that text is currently
 required. The webhook processes the chatbot turn synchronously, so a production deployment should
 introduce a durable job queue before scaling or tightening provider acknowledgment latency.
 
 The current provider implementation is `MetaWhatsAppClient`. It translates the internal text-send
-contract to Graph API, returns Meta's outbound message identifier when available, and maps transport
-or HTTP failures to the channel's controlled delivery error. The rest of the application does not
-depend on Meta's HTTP payload shape.
+contract to Graph API, requires Meta's outbound message identifier, and maps transport, HTTP, or
+invalid-success responses to the channel's controlled delivery error. The rest of the application
+does not depend on Meta's HTTP payload shape.
 
 ### Catalog and menu
 

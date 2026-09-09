@@ -25,6 +25,15 @@ enum ConversationTurnStatus {
   FAILED
 }
 
+enum WhatsAppOutboundStatus {
+  PENDING
+  ACCEPTED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
 enum OrderStatus {
   STARTED
   SELECTING_PRODUCTS
@@ -146,6 +155,29 @@ model WhatsAppWebhookMessage {
   @@id([wabaId, messageId])
   @@index([receivedAt])
   @@map("whatsapp_webhook_messages")
+}
+
+model WhatsAppOutboundMessage {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  wabaId             String                 @map("waba_id") @db.VarChar(64)
+  inboundMessageId   String                 @map("inbound_message_id") @db.VarChar(255)
+  providerMessageId  String?                @unique @map("provider_message_id") @db.VarChar(255)
+  status             WhatsAppOutboundStatus @default(PENDING)
+  attemptCount       Int                    @default(1) @map("attempt_count")
+  webhookReceivedAt  DateTime               @map("webhook_received_at") @db.Timestamptz(3)
+  customerSentAt     DateTime?              @map("customer_sent_at") @db.Timestamptz(3)
+  providerAcceptedAt DateTime?              @map("provider_accepted_at") @db.Timestamptz(3)
+  sentAt             DateTime?              @map("sent_at") @db.Timestamptz(3)
+  deliveredAt        DateTime?              @map("delivered_at") @db.Timestamptz(3)
+  readAt             DateTime?              @map("read_at") @db.Timestamptz(3)
+  failedAt           DateTime?              @map("failed_at") @db.Timestamptz(3)
+  failureCode        String?                @map("failure_code") @db.VarChar(100)
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([wabaId, inboundMessageId])
+  @@index([status, createdAt])
+  @@map("whatsapp_outbound_messages")
 }
 
 model Order {

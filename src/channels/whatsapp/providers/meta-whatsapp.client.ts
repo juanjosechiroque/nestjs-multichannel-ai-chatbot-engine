@@ -53,21 +53,25 @@ export class MetaWhatsAppClient implements WhatsAppProvider {
       throw new WhatsAppDeliveryFailedException();
     }
 
-    const result = await this.readResult(response);
+    const providerMessageId = await this.readProviderMessageId(response);
+    if (!providerMessageId) {
+      this.logFailure('Meta Graph API returned no message ID');
+      throw new WhatsAppDeliveryFailedException();
+    }
     this.logger.log({ event: 'whatsapp.provider.message.accepted', provider: 'meta' });
-    return result;
+    return { providerMessageId };
   }
 
-  private async readResult(response: Response): Promise<SendWhatsAppTextResult> {
+  private async readProviderMessageId(response: Response): Promise<string | undefined> {
     try {
       const body: unknown = await response.json();
-      if (!this.isRecord(body) || !this.isUnknownArray(body.messages)) return {};
+      if (!this.isRecord(body) || !this.isUnknownArray(body.messages)) return undefined;
       const firstMessage = body.messages[0];
       return this.isRecord(firstMessage) && typeof firstMessage.id === 'string'
-        ? { providerMessageId: firstMessage.id }
-        : {};
+        ? firstMessage.id
+        : undefined;
     } catch {
-      return {};
+      return undefined;
     }
   }
 

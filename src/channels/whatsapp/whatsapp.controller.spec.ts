@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { WhatsAppDeliveryFailedException } from '../../common/application-error';
 import type { WhatsAppChatService } from './whatsapp-chat.service';
 import { WhatsAppController } from './whatsapp.controller';
+import type { WhatsAppOutboundMessageService } from './whatsapp-outbound-message.service';
 import type {
   WhatsAppInboundMessage,
   WhatsAppWebhookReceiptService,
@@ -18,12 +19,14 @@ const ACCEPTED_MESSAGE: WhatsAppInboundMessage = {
   phoneNumberId: '1220572421149962',
   recipientPhoneNumber: '51999999999',
   messageType: 'text',
+  webhookReceivedAt: new Date('2026-08-31T17:00:00.000Z'),
   text: '¿Qué productos tienen?',
   customerName: 'Ana',
 };
 const reserve = jest.fn();
 const release = jest.fn();
 const handle = jest.fn();
+const processStatuses = jest.fn();
 
 function createController(): WhatsAppController {
   return new WhatsAppController(
@@ -33,6 +36,7 @@ function createController(): WhatsAppController {
     }),
     { reserve, release } as unknown as WhatsAppWebhookReceiptService,
     { handle } as unknown as WhatsAppChatService,
+    { processStatuses } as unknown as WhatsAppOutboundMessageService,
   );
 }
 
@@ -51,6 +55,11 @@ describe('WhatsAppController', () => {
       .mockResolvedValue({ acceptedMessages: [ACCEPTED_MESSAGE], duplicateMessages: 0 });
     release.mockReset().mockResolvedValue(undefined);
     handle.mockReset().mockResolvedValue(undefined);
+    processStatuses.mockReset().mockResolvedValue({
+      receivedStatuses: 0,
+      updatedStatuses: 0,
+      ignoredStatuses: 0,
+    });
   });
 
   afterEach(() => {
@@ -97,11 +106,15 @@ describe('WhatsAppController', () => {
       undefined,
     );
     expect(reserve).toHaveBeenCalledWith(PAYLOAD);
+    expect(processStatuses).toHaveBeenCalledWith(PAYLOAD);
     expect(handle).toHaveBeenCalledWith(ACCEPTED_MESSAGE);
     expect(log).toHaveBeenCalledWith({
       event: 'whatsapp.webhook.notification.acknowledged',
       acceptedMessages: 1,
       duplicateMessages: 0,
+      receivedStatuses: 0,
+      updatedStatuses: 0,
+      ignoredStatuses: 0,
     });
   });
 
@@ -114,6 +127,23 @@ describe('WhatsAppController', () => {
     await expect(controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD)).resolves.toBe(
       undefined,
     );
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it('processes delivery statuses without invoking the chatbot', async () => {
+    jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    processStatuses.mockResolvedValueOnce({
+      receivedStatuses: 1,
+      updatedStatuses: 1,
+      ignoredStatuses: 0,
+    });
+    reserve.mockResolvedValueOnce({ acceptedMessages: [], duplicateMessages: 0 });
+    const controller = createController();
+    const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
+
+    await controller.receive(rawRequest(rawBody), sign(rawBody), PAYLOAD);
+
+    expect(processStatuses).toHaveBeenCalledWith(PAYLOAD);
     expect(handle).not.toHaveBeenCalled();
   });
 
@@ -142,6 +172,7 @@ describe('WhatsAppController', () => {
       ForbiddenException,
     );
     expect(reserve).not.toHaveBeenCalled();
+    expect(processStatuses).not.toHaveBeenCalled();
     expect(handle).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith({ event: 'whatsapp.webhook.signature.invalid' });
     if (signature) expect(JSON.stringify(warn.mock.calls)).not.toContain(signature);
