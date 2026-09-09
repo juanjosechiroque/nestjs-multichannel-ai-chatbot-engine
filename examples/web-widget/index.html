@@ -3,71 +3,322 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Ejemplo de integración del chatbot de Café Nube." />
-    <title>Café Nube — Web widget example</title>
+    <meta
+      name="description"
+      content="Café Nube, café peruano de especialidad y pedidos para recojo en Miraflores."
+    />
+    <title>Café Nube — Café peruano en Miraflores</title>
     <style>
       :root {
-        color: #34231d;
-        background: #f7f0e3;
-        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        color: #26352a;
+        background: #f5f1e7;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        font-synthesis: none;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       body {
+        min-width: 20rem;
         min-height: 100vh;
         margin: 0;
         background:
-          radial-gradient(circle at 15% 20%, rgb(255 255 255 / 85%) 0 11rem, transparent 25rem),
-          linear-gradient(135deg, #faf4e9, #e9efe4);
+          radial-gradient(circle at 78% 20%, rgb(181 204 176 / 46%), transparent 25rem),
+          radial-gradient(circle at 10% 15%, rgb(255 255 255 / 78%), transparent 22rem),
+          linear-gradient(135deg, #f8f4ea 0%, #f0eee4 58%, #e5eee2 100%);
+      }
+
+      button,
+      a {
+        font: inherit;
+      }
+
+      .site-header {
+        display: flex;
+        width: min(100% - 3rem, 76rem);
+        min-height: 5.25rem;
+        align-items: center;
+        justify-content: space-between;
+        gap: 2rem;
+        margin: 0 auto;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.7rem;
+        color: inherit;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 1.22rem;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        text-decoration: none;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 2.2rem;
+        height: 2.2rem;
+        place-items: center;
+        border-radius: 50%;
+        color: #fffaf1;
+        background: #36563e;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.68rem;
+        font-weight: 850;
+        letter-spacing: 0.05em;
+      }
+
+      nav {
+        display: flex;
+        align-items: center;
+        gap: clamp(1rem, 3vw, 2.1rem);
+        color: #606b61;
+        font-size: 0.86rem;
+        font-weight: 650;
+      }
+
+      nav a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      nav a:last-child {
+        padding: 0.7rem 1rem;
+        border-radius: 999px;
+        color: #fffaf1;
+        background: #36563e;
       }
 
       main {
-        max-width: 58rem;
+        width: min(100% - 3rem, 76rem);
+        min-height: calc(100vh - 5.25rem);
         margin: 0 auto;
-        padding: clamp(4rem, 12vw, 9rem) 1.5rem;
+      }
+
+      .hero {
+        display: grid;
+        min-height: calc(100vh - 5.25rem);
+        grid-template-columns: minmax(0, 42rem) 1fr;
+        align-items: center;
+        padding: 1.5rem 0 6rem;
+      }
+
+      .copy {
+        position: relative;
+        z-index: 1;
       }
 
       .eyebrow {
-        color: #405943;
-        font-size: 0.8rem;
-        font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        margin: 0 0 1.15rem;
+        color: #55725a;
+        font-size: 0.72rem;
+        font-weight: 850;
         letter-spacing: 0.13em;
         text-transform: uppercase;
       }
 
-      h1 {
-        max-width: 11ch;
-        margin: 0.75rem 0 1.25rem;
-        font-family: Georgia, 'Times New Roman', serif;
-        font-size: clamp(3.2rem, 10vw, 6rem);
-        line-height: 0.98;
-        letter-spacing: -0.055em;
+      .eyebrow::before {
+        width: 1.75rem;
+        height: 1px;
+        background: currentColor;
+        content: '';
       }
 
-      p {
-        max-width: 38rem;
-        color: #746a63;
-        font-size: 1.1rem;
+      h1 {
+        max-width: 9.5ch;
+        margin: 0;
+        color: #26352a;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: clamp(4rem, 7.3vw, 6.65rem);
+        font-weight: 500;
+        line-height: 0.91;
+        letter-spacing: -0.065em;
+      }
+
+      .tagline {
+        margin: 1.35rem 0 0;
+        color: #405844;
+        font-size: clamp(1.2rem, 2vw, 1.55rem);
+        font-weight: 650;
+        letter-spacing: -0.025em;
+      }
+
+      .intro {
+        max-width: 34rem;
+        margin: 0.9rem 0 0;
+        color: #687068;
+        font-size: clamp(1rem, 1.4vw, 1.12rem);
         line-height: 1.7;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.8rem;
+        margin-top: 2rem;
+      }
+
+      .primary-action {
+        display: inline-flex;
+        min-height: 3rem;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.78rem 1.2rem;
+        border: 0;
+        border-radius: 999px;
+        color: #fffaf1;
+        background: #36563e;
+        box-shadow: 0 12px 28px rgb(54 86 62 / 18%);
+        font-size: 0.9rem;
+        font-weight: 750;
+        cursor: pointer;
+      }
+
+      .primary-action span {
+        font-size: 1.08rem;
+      }
+
+      .details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.8rem 1.35rem;
+        margin-top: 2.2rem;
+        color: #657066;
+        font-size: 0.77rem;
+        font-weight: 650;
+      }
+
+      .details span {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+      }
+
+      .details span::before {
+        width: 0.38rem;
+        height: 0.38rem;
+        border-radius: 50%;
+        background: #6f936f;
+        content: '';
+      }
+
+      .coffee-shape {
+        position: absolute;
+        right: clamp(7rem, 14vw, 13rem);
+        bottom: -4rem;
+        width: 21rem;
+        height: 21rem;
+        border: 1px solid rgb(54 86 62 / 10%);
+        border-radius: 50%;
+        background:
+          radial-gradient(circle, #c29a75 0 18%, #f8eee0 19% 41%, #d9c5ad 42% 45%, transparent 46%),
+          rgb(255 255 255 / 16%);
+        box-shadow: 0 32px 70px rgb(48 65 49 / 10%);
+        opacity: 0.8;
+        transform: rotate(-8deg);
+      }
+
+      @media (max-width: 52rem) {
+        nav a:not(:last-child) {
+          display: none;
+        }
+
+        .hero {
+          grid-template-columns: 1fr;
+        }
+
+        .coffee-shape {
+          right: -8rem;
+          opacity: 0.42;
+        }
+      }
+
+      @media (max-width: 38rem) {
+        .site-header,
+        main {
+          width: min(100% - 2rem, 76rem);
+        }
+
+        nav {
+          display: none;
+        }
+
+        h1 {
+          font-size: clamp(3.6rem, 18vw, 5rem);
+        }
+
+        .hero {
+          padding-bottom: 8rem;
+        }
       }
     </style>
   </head>
   <body>
-    <main>
-      <div class="eyebrow">Ejemplo de integración</div>
-      <h1>Café, conversación y código.</h1>
-      <p>
-        Esta página representa el sitio de un negocio externo. El widget consume el canal HTTP del
-        motor sin incorporar lógica del chatbot dentro del cliente.
-      </p>
+    <header class="site-header">
+      <a class="brand" href="#inicio" aria-label="Café Nube, inicio">
+        <span class="brand-mark" aria-hidden="true">CN</span>
+        Café Nube
+      </a>
+      <nav aria-label="Navegación principal">
+        <a href="../cafe-nube/assets/menu.pdf" target="_blank" rel="noreferrer">Carta</a>
+        <a href="#visitanos">Visítanos</a>
+        <a id="nav-open-chat" href="#pedido">Hacer un pedido</a>
+      </nav>
+    </header>
+
+    <main id="inicio">
+      <section class="hero">
+        <div class="copy">
+          <p class="eyebrow">Café de especialidad · Miraflores</p>
+          <h1>Café Nube</h1>
+          <p class="tagline">Café peruano, momentos sin prisa</p>
+          <p class="intro">
+            Descubre nuestra selección de temporada y algo rico para acompañarla, Nube puede
+            recomendarte opciones de la carta y preparar tu pedido en minutos
+          </p>
+          <div class="actions" id="pedido">
+            <button class="primary-action" id="open-chat" type="button">
+              Pedir con Nube <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          <div class="details" id="visitanos">
+            <span>Av. José Larco 880</span>
+            <span>recojo en tienda</span>
+            <span>pet friendly</span>
+          </div>
+        </div>
+        <div class="coffee-shape" aria-hidden="true"></div>
+      </section>
     </main>
 
     <chatbot-widget
       api-url="http://localhost:3000/api"
-      title="Cafetería Nube"
-      subtitle="Asistente virtual"
-      greeting="¡Hola! Soy el asistente de Cafetería Nube. ¿En qué puedo ayudarte hoy?"
-      accent-color="#405943"
+      title="Café Nube"
+      subtitle="asistente disponible"
+      greeting="Hola, soy Nube, puedo ayudarte con la carta, recomendarte algo o preparar tu pedido"
+      accent-color="#36563e"
     ></chatbot-widget>
     <script src="./chatbot-widget.js"></script>
+    <script>
+      const openChat = () => {
+        document.querySelector('chatbot-widget').shadowRoot.querySelector('.launcher').click();
+      };
+
+      document.querySelector('#open-chat').addEventListener('click', openChat);
+      document.querySelector('#nav-open-chat').addEventListener('click', openChat);
+    </script>
   </body>
 </html>

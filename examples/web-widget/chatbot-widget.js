@@ -222,6 +222,7 @@
           }
           .status { align-self: center; color: var(--chatbot-muted); text-align: center; }
           .message a { color: var(--chatbot-accent); font-weight: 700; }
+          .message strong { font-weight: 800; }
 
           .document {
             display: grid;
@@ -525,13 +526,22 @@
     }
 
     appendLinkedText(container, text) {
-      const urlPattern = /https?:\/\/[^\s]+/g;
+      const richTextPattern = /\*\*[^*\n]+\*\*|https?:\/\/[^\s]+/g;
       let currentIndex = 0;
-      for (const match of text.matchAll(urlPattern)) {
+      for (const match of text.matchAll(richTextPattern)) {
         const matchIndex = match.index ?? currentIndex;
+        container.append(document.createTextNode(text.slice(currentIndex, matchIndex)));
+
+        if (match[0].startsWith('**')) {
+          const strong = document.createElement('strong');
+          strong.textContent = match[0].slice(2, -2);
+          container.append(strong);
+          currentIndex = matchIndex + match[0].length;
+          continue;
+        }
+
         const rawUrl = match[0];
         const url = rawUrl.replace(/[.,;:!?]+$/, '');
-        container.append(document.createTextNode(text.slice(currentIndex, matchIndex)));
         const link = document.createElement('a');
         link.href = url;
         link.target = '_blank';
