@@ -1,9 +1,18 @@
 # Reusable NestJS AI Chatbot Backend
 
 [![CI](https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Reusable NestJS AI chatbot backend with OpenAI tool calling, pgvector RAG, persistent memory,
 hybrid catalog search, and deterministic order workflows.
+
+## Demo
+
+![Café Nube conversational ordering demo](docs/assets/chatbot-cafe-nube-demo.gif)
+
+Accelerated Web adapter demo: product recommendation, dietary catalog search, order changes, and a
+database-backed review with authoritative prices and totals. The WhatsApp adapter uses this same
+channel-independent conversational core.
 
 The repository demonstrates a channel-independent conversational core built for product backends.
 Web HTTP and WhatsApp Cloud API are implemented adapters: both call the same `ChatService` without
@@ -344,3 +353,7 @@ can vary with model behavior, and have token cost.
 - [Architecture](ARCHITECTURE.md): C4 views, runtime boundaries, tools, data ownership, and order states.
 - [Quality and evaluations](docs/QUALITY.md): testing layers, safe test databases, live evals, and cost reports.
 - [Café Nube example](examples/cafe-nube/README.md): demo data, assets, loading, and replacement boundaries.
+
+## License
+
+This project is available under the [MIT License](LICENSE).

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Reusable multichannel AI chatbot engine built with NestJS and OpenAI",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=24"
   },
