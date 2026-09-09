@@ -6,8 +6,8 @@ Reusable NestJS AI chatbot backend with OpenAI tool calling, pgvector RAG, persi
 hybrid catalog search, and deterministic order workflows.
 
 The repository demonstrates a channel-independent conversational core built for product backends.
-Web is the current adapter; additional channels can translate their transport payloads and call the
-same `ChatService` without duplicating prompts, retrieval, memory, catalog, or order rules.
+Web HTTP and WhatsApp Cloud API are implemented adapters: both call the same `ChatService` without
+duplicating prompts, retrieval, memory, catalog, or order rules.
 
 It is intentionally more than a prompt wrapper: the model interprets language and selects typed
 tools, while PostgreSQL-backed application code owns business facts, prices, totals, order state, and
@@ -25,16 +25,17 @@ confirmation guarantees.
 ## Scope and current boundaries
 
 This repository is a reusable backend engine with one configured Café Nube example, not a hosted
-multi-tenant SaaS product. The implemented customer-chat path is the Web HTTP adapter backed by
-PostgreSQL and OpenAI. WhatsApp currently exposes callback verification only; message ingestion and
-delivery are not implemented yet.
+multi-tenant SaaS product. Web HTTP and WhatsApp text messages both use the same PostgreSQL- and
+OpenAI-backed conversational core. The WhatsApp adapter authenticates Meta notifications, maps each
+WABA/customer pair to stable conversation memory, suppresses duplicate delivery, and sends the
+generated answer through Meta Graph API.
 
 The current release does not claim to provide:
 
-- Inbound or outbound WhatsApp messaging, Instagram, Messenger, or other production channel adapters.
+- WhatsApp media understanding, Instagram, Messenger, or other channel adapters.
 - Payment processing, kitchen dispatch, delivery orchestration, or real-time inventory.
 - Authentication, tenant isolation, billing, or an administrative catalog panel.
-- Distributed rate limiting, a worker queue, or a deployed application image.
+- Distributed rate limiting, background webhook workers, or a deployed application image.
 
 Those boundaries are explicit so the architecture and demo do not imply operational capabilities
 that are not implemented.
@@ -79,13 +80,25 @@ that are not implemented.
 - Global HTTP security headers through Helmet.
 - Graceful shutdown hooks that close Prisma connections on process termination.
 
-### WhatsApp integration foundation
+### WhatsApp channel
 
 - `GET /api/webhook/whatsapp` implements Meta's callback verification handshake.
 - Verification requires a private, validated token and never logs the supplied credential.
 - The endpoint returns Meta's challenge exactly when mode and token are valid.
-- No incoming message processing, background queue, Graph API delivery, or chatbot invocation is
-  claimed in this increment.
+- `POST /api/webhook/whatsapp` validates Meta's `X-Hub-Signature-256` against the exact raw request
+  body, durably reserves every `(WABA ID, message.id)`, and returns an empty `200` to Meta.
+- Text messages are mapped to the shared `ChatService`, including catalog tools, RAG, promotions,
+  memory, and deterministic order workflows.
+- A SHA-256-derived session key gives each WABA/customer pair stable conversation memory without
+  using the raw phone number as the conversation's public session identifier.
+- Meta-asserted profile name and phone are passed as trusted channel identity when an order needs
+  customer data.
+- Generated text is delivered through Meta Graph API using the webhook's `phone_number_id` and
+  sender number. Unsupported media receives a text-only capability message.
+- Repeated Meta deliveries are acknowledged but neither processed nor answered twice. If outbound
+  delivery fails, the webhook reservation is released so Meta can retry the stored chatbot result.
+- Processing is synchronous in the current single-process portfolio deployment; a production
+  deployment should acknowledge from a durable queue worker boundary.
 
 ### Quality
 
@@ -105,6 +118,7 @@ See [Architecture](ARCHITECTURE.md) for the C4 diagrams and component boundaries
 - npm.
 - Docker Desktop or another Docker environment with Compose.
 - An OpenAI API key.
+- A Meta developer application and WhatsApp Cloud API credentials when enabling that channel.
 
 ## Quick start
 
@@ -229,6 +243,21 @@ A valid request returns the challenge as plain text. Missing parameters return `
 mode or token returns `403`. This handshake does not require the WhatsApp access token and does not
 process customer messages.
 
+Signed notifications use the same URL with `POST`. The application calculates an HMAC-SHA256 over
+the exact raw body using `WHATSAPP_APP_SECRET`, compares it with `X-Hub-Signature-256` using a
+constant-time operation, and returns an empty `200` when valid. Before acknowledging, it reserves
+every `(WABA ID, message.id)` in PostgreSQL. Each new text message resolves a stable WhatsApp
+conversation, calls `ChatService`, and sends its generated reply through Meta Graph API using the
+webhook's `phone_number_id` and `from` fields. This means a question such as “¿Qué productos tienen?”
+uses the same typed PostgreSQL catalog search as the Web adapter. A repeated delivery is still
+acknowledged but is not reserved, sent to OpenAI, written to memory, or answered twice. Missing or
+invalid signatures return `403`.
+
+The current adapter accepts text messages up to 2,000 characters. Images, audio, video, documents,
+and other unsupported message types receive a short text response explaining that text is currently
+required. The webhook processes the chatbot turn synchronously, so a production deployment should
+introduce a durable job queue before scaling or tightening provider acknowledgment latency.
+
 ### Catalog and menu
 
 ```bash
@@ -260,16 +289,19 @@ choose the operation and a second response to present the application-controlled
 All supported variables and development defaults are documented in [.env.example](.env.example).
 Important controls include:
 
-| Variable                            | Default                  |
-| ----------------------------------- | ------------------------ |
-| `OPENAI_MODEL`                      | `gpt-5.6-luna`           |
-| `OPENAI_EMBEDDING_MODEL`            | `text-embedding-3-small` |
-| `CORS_ALLOWED_ORIGINS`              | `http://localhost:4173`  |
-| `RAG_MIN_SIMILARITY`                | `0.5`                    |
-| `RATE_LIMIT_CONVERSATIONS_PER_HOUR` | `5`                      |
-| `RATE_LIMIT_MESSAGES_PER_MINUTE`    | `10`                     |
-| `BUSINESS_TIME_ZONE`                | `America/Lima`           |
-| `WHATSAPP_VERIFY_TOKEN`             | Required, 32+ characters |
+| Variable                            | Default                    |
+| ----------------------------------- | -------------------------- |
+| `OPENAI_MODEL`                      | `gpt-5.6-luna`             |
+| `OPENAI_EMBEDDING_MODEL`            | `text-embedding-3-small`   |
+| `CORS_ALLOWED_ORIGINS`              | `http://localhost:4173`    |
+| `RAG_MIN_SIMILARITY`                | `0.5`                      |
+| `RATE_LIMIT_CONVERSATIONS_PER_HOUR` | `5`                        |
+| `RATE_LIMIT_MESSAGES_PER_MINUTE`    | `10`                       |
+| `BUSINESS_TIME_ZONE`                | `America/Lima`             |
+| `WHATSAPP_VERIFY_TOKEN`             | Required, 32+ characters   |
+| `WHATSAPP_APP_SECRET`               | Required Meta App Secret   |
+| `WHATSAPP_ACCESS_TOKEN`             | Required Meta access token |
+| `WHATSAPP_GRAPH_API_VERSION`        | `v25.0`                    |
 
 The current rate-limit store is in memory and intentionally targets one application instance. A
 distributed deployment requires shared Redis storage. A reverse proxy must also be trusted

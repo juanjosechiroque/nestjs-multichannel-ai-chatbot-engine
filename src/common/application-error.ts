@@ -5,7 +5,8 @@ export type ApplicationFailureCode =
   | 'OPENAI_INCOMPLETE_RESPONSE'
   | 'OPENAI_EMPTY_RESPONSE'
   | 'OPENAI_EMBEDDING_FAILED'
-  | 'DATABASE_UNAVAILABLE';
+  | 'DATABASE_UNAVAILABLE'
+  | 'WHATSAPP_DELIVERY_FAILED';
 
 export abstract class ApplicationServiceUnavailableException extends ServiceUnavailableException {
   constructor(
@@ -57,6 +58,15 @@ export class DatabaseUnavailableException extends ApplicationServiceUnavailableE
     super(
       'DATABASE_UNAVAILABLE',
       'No puedo consultar la información del negocio en este momento. Inténtalo nuevamente.',
+    );
+  }
+}
+
+export class WhatsAppDeliveryFailedException extends ApplicationServiceUnavailableException {
+  constructor() {
+    super(
+      'WHATSAPP_DELIVERY_FAILED',
+      'No se pudo enviar la respuesta de WhatsApp en este momento.',
     );
   }
 }

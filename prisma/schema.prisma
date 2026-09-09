@@ -138,6 +138,16 @@ model ConversationTurn {
   @@map("conversation_turns")
 }
 
+model WhatsAppWebhookMessage {
+  wabaId     String   @map("waba_id") @db.VarChar(64)
+  messageId  String   @map("message_id") @db.VarChar(255)
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+
+  @@id([wabaId, messageId])
+  @@index([receivedAt])
+  @@map("whatsapp_webhook_messages")
+}
+
 model Order {
   id             String       @id @default(uuid()) @db.Uuid
   orderNumber    Int?         @unique @map("order_number")

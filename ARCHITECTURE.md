@@ -16,14 +16,14 @@ examples while keeping business-critical operations deterministic.
 
 ## Product boundary
 
-The current implementation is a single-business backend demonstration with a Web HTTP chat adapter
-and a verification-only WhatsApp webhook boundary. It is designed to show how an application can
-combine LLM interpretation with structured catalog queries, semantic retrieval, persistent memory,
-and deterministic order workflows without moving that behavior into a channel.
+The current implementation is a single-business backend demonstration with Web HTTP and WhatsApp
+Cloud API chat adapters. Both combine LLM interpretation with structured catalog queries, semantic
+retrieval, persistent memory, and deterministic order workflows without moving that behavior into a
+channel.
 
 The following capabilities remain intentionally outside the current runtime boundary:
 
-- Inbound or outbound WhatsApp messaging, Instagram, or Messenger integrations.
+- WhatsApp media understanding, Instagram, or Messenger integrations.
 - Payment, kitchen, delivery, and real-time inventory side effects.
 - Multi-tenancy, authentication, billing, and an administrative catalog API.
 - Distributed rate limiting, background workers, and application deployment infrastructure.
@@ -36,18 +36,20 @@ data access rather than by placing more rules in prompts or controllers.
 
 ```mermaid
 flowchart LR
-    customer["Customer or API consumer"]
+    customer["Web or WhatsApp customer"]
     engine["AI Chatbot Engine<br/>Conversational assistance and orders"]
     openai["OpenAI Platform<br/>Generation and embeddings"]
+    meta["Meta WhatsApp Cloud API<br/>Message transport"]
 
-    customer -->|"Sends messages and receives responses"| engine
+    customer -->|"Web HTTPS / JSON"| engine
+    customer <-->|"WhatsApp messages"| meta
+    meta <-->|"Signed webhooks and Graph API"| engine
     engine -->|"Uses model and embedding APIs"| openai
 ```
 
-The current customer entry point is the web HTTP adapter. WhatsApp can verify its future callback
-URL through a separate GET endpoint, but it cannot yet deliver customer messages to the engine. A
-future channel platform can be added without changing the relationship between the user, engine,
-and model provider.
+Web and WhatsApp are current customer entry points. Meta delivers signed webhook notifications and
+the engine returns generated text through Graph API. A future channel platform can be added without
+changing the relationship between the conversational core, business tools, and model provider.
 
 ## C4 Level 2 — Containers
 
@@ -55,6 +57,7 @@ and model provider.
 flowchart LR
     customer["Customer"]
     client["Web client or API consumer<br/>External"]
+    meta["Meta WhatsApp Cloud API<br/>External system"]
     openai["OpenAI APIs<br/>External system"]
 
     subgraph engine["AI Chatbot Engine"]
@@ -65,6 +68,9 @@ flowchart LR
 
     customer --> client
     client -->|"HTTPS / JSON"| api
+    customer -->|"WhatsApp"| meta
+    meta -->|"Signed webhook"| api
+    api -->|"Graph API text reply"| meta
     api -->|"Prisma and vector queries"| database
     api -->|"Responses and embeddings APIs"| openai
     api -->|"Returns document descriptor"| menu
@@ -135,7 +141,7 @@ Guards execute before DTO pipes in NestJS. Conversation creation is tracked by r
 tracked by the public `sessionId`. A blocked request returns `429` before reaching conversation
 persistence, the chatbot core, or OpenAI.
 
-## Runtime request flow
+## Web runtime request flow
 
 1. The web rate limiter accepts or rejects the request.
 2. Global DTO validation normalizes and validates the transport payload.
@@ -153,6 +159,26 @@ persistence, the chatbot core, or OpenAI.
 
 Token usage, tool names, source references, latency, and correlation identifiers remain internal
 telemetry and are not part of the web response contract.
+
+## WhatsApp runtime request flow
+
+1. Meta sends the exact webhook body and `X-Hub-Signature-256` to the callback.
+2. `WhatsAppController` verifies the HMAC-SHA256 signature before reading customer content.
+3. `WhatsAppWebhookReceiptService` extracts messages and durably reserves each
+   `(WABA ID, message.id)`; duplicate deliveries stop here and still receive `200`.
+4. `WhatsAppChatService` hashes the WABA/customer pair into a stable channel session and atomically
+   finds or creates its `Conversation`.
+5. For text messages, the adapter calls the same `ChatService` used by Web, mapping Meta's message
+   identifier to the channel-neutral idempotency contract and Meta profile data to trusted identity.
+6. Catalog, RAG, promotions, memory, and order operations execute through the shared typed tools.
+7. `WhatsAppMessageSenderService` translates the generated text into a Graph API message request.
+8. Unsupported media receives a deterministic text capability response. A controlled chatbot
+   failure receives a safe retry message without exposing provider or database details.
+9. If Graph API delivery fails, the receipt reservation is released so Meta can retry. A completed
+   chatbot turn is replayed from PostgreSQL rather than invoking OpenAI twice.
+
+This flow is synchronous in the portfolio deployment. A production extension should persist a job
+and acknowledge Meta before model execution, then process delivery from a background worker.
 
 ## Information and tool routing
 
@@ -267,14 +293,18 @@ charged a payment method, sent an order to a store, or arranged delivery.
 ```mermaid
 flowchart LR
     web["Web adapter<br/>Implemented"] --> chat["ChatService"]
-    whatsapp["WhatsApp adapter<br/>GET verification only"]
-    future["Future messaging adapters<br/>WhatsApp POST, Instagram, Messenger"] -.-> chat
+    whatsapp["WhatsApp adapter<br/>signature, identity, durable deduplication"] --> chat
+    whatsapp <-->|"Webhook / generated text"| meta["Meta WhatsApp Cloud API"]
+    future["Future adapters<br/>Instagram, Messenger"] -.-> chat
     chat --> behavior["Memory, model, RAG, catalog, and order behavior"]
 ```
 
-`WhatsAppController` currently handles only Meta's callback verification handshake. It validates
-the query contract, compares the private verification token, and returns the supplied challenge.
-It has no dependency on `ChatService`, and it does not accept or process customer messages.
+`WhatsAppController` owns Meta authentication and acknowledgment. `WhatsAppWebhookReceiptService`
+owns payload extraction and the PostgreSQL duplicate ledger. `WhatsAppChatService` maps valid text,
+provider identity, and a hashed stable session to `ChatService`; it contains no prompts, retrieval,
+catalog, or order rules. `WhatsAppMessageSenderService` translates only the resulting text to Meta's
+Graph API contract. New and duplicate valid deliveries both receive an empty `200`, but only the
+first is processed and answered.
 
 A channel adapter may:
 
@@ -288,25 +318,28 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 
 ## Component responsibilities
 
-| Component                        | Owns                                                            | Must not own                               |
-| -------------------------------- | --------------------------------------------------------------- | ------------------------------------------ |
-| Web controllers                  | HTTP input/output and public session mapping                    | Chatbot or order rules                     |
-| Swagger / OpenAPI                | Discoverable HTTP contracts and examples                        | Core or business behavior                  |
-| Web rate-limit configuration     | IP/session tracking and `429` protection                        | Business limits or model behavior          |
-| WhatsApp verification controller | Meta GET challenge validation                                   | Message processing or chatbot behavior     |
-| `ConversationService`            | Conversation creation and public-session resolution             | Prompt or channel payload interpretation   |
-| `ChatService`                    | One complete channel-neutral reply                              | HTTP, WhatsApp, or provider payloads       |
-| `ChatTurnService`                | Message reservation, replay, failure state, atomic memory write | Channel-specific retry policy              |
-| `OpenAiService`                  | OpenAI SDK, tools, structured output, provider errors           | Authoritative business calculations        |
-| `CatalogService`                 | Exact structured business-data queries                          | Semantic retrieval or channel formatting   |
-| `PromotionSearchTool`            | Current/catalog scope and time-zone-aware classification        | Natural-language date calculations         |
-| `RagService`                     | Similarity search and accepted knowledge context                | Transactional catalog ownership            |
-| `KnowledgeIngestionService`      | Derived vector-index synchronization                            | Source-of-truth business data              |
-| `MemoryService`                  | Bounded conversation history                                    | Public session resolution                  |
-| `OrderTool`                      | Structured model action to application operation                | Prices, totals, or transition decisions    |
-| `OrderService`                   | Transactional order mutations and persistence                   | Natural-language interpretation            |
-| `OrderStateMachine`              | Valid actions and deterministic transitions                     | Database, NestJS, model, or channel access |
-| Prisma seed                      | Reproducible demo records                                       | Runtime chatbot dependency                 |
+| Component                    | Owns                                                            | Must not own                                |
+| ---------------------------- | --------------------------------------------------------------- | ------------------------------------------- |
+| Web controllers              | HTTP input/output and public session mapping                    | Chatbot or order rules                      |
+| Swagger / OpenAPI            | Discoverable HTTP contracts and examples                        | Core or business behavior                   |
+| Web rate-limit configuration | IP/session tracking and `429` protection                        | Business limits or model behavior           |
+| WhatsApp webhook controller  | Meta challenge, signature validation, acknowledgment            | Chatbot or business behavior                |
+| WhatsApp receipt service     | Payload extraction and durable message deduplication            | Chatbot invocation or outbound formatting   |
+| WhatsApp chat adapter        | Stable session/identity mapping and `ChatService` invocation    | Prompts, retrieval, catalog, or order rules |
+| WhatsApp message sender      | Text delivery through Meta Graph API                            | Prompts or business behavior                |
+| `ConversationService`        | Conversation creation and channel-session resolution            | Prompt or channel payload interpretation    |
+| `ChatService`                | One complete channel-neutral reply                              | HTTP, WhatsApp, or provider payloads        |
+| `ChatTurnService`            | Message reservation, replay, failure state, atomic memory write | Channel-specific retry policy               |
+| `OpenAiService`              | OpenAI SDK, tools, structured output, provider errors           | Authoritative business calculations         |
+| `CatalogService`             | Exact structured business-data queries                          | Semantic retrieval or channel formatting    |
+| `PromotionSearchTool`        | Current/catalog scope and time-zone-aware classification        | Natural-language date calculations          |
+| `RagService`                 | Similarity search and accepted knowledge context                | Transactional catalog ownership             |
+| `KnowledgeIngestionService`  | Derived vector-index synchronization                            | Source-of-truth business data               |
+| `MemoryService`              | Bounded conversation history                                    | Public session resolution                   |
+| `OrderTool`                  | Structured model action to application operation                | Prices, totals, or transition decisions     |
+| `OrderService`               | Transactional order mutations and persistence                   | Natural-language interpretation             |
+| `OrderStateMachine`          | Valid actions and deterministic transitions                     | Database, NestJS, model, or channel access  |
+| Prisma seed                  | Reproducible demo records                                       | Runtime chatbot dependency                  |
 
 ## Decisions and trade-offs
 
@@ -320,6 +353,8 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 | One tool per message            | Bounds orchestration, latency, and failure modes                | Complex requests may require another customer turn  |
 | Backend-created sessions        | Rejects unknown conversations and controls lifecycle            | Requires a session-creation request                 |
 | PostgreSQL message ledger       | Makes channel retries durable across restarts                   | Adds one small row per attempted message            |
+| Hashed WhatsApp session key     | Preserves customer memory without a raw-phone public session ID | Requires deterministic WABA/customer mapping        |
+| Synchronous WhatsApp processing | Keeps the portfolio deployment operationally small              | Production latency needs a durable worker queue     |
 | Last ten history messages       | Bounds prompt growth and cost                                   | Older context is not sent to the model              |
 | PostgreSQL order drafts         | Keeps order state independent from model memory                 | Abandoned drafts need lifecycle cleanup             |
 | Product price snapshots         | Preserves historical order totals                               | Duplicates selected catalog data                    |
@@ -334,8 +369,8 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 
 ```text
 src/
-├── channels/web/     # Current customer transport adapter and rate limiting
-├── channels/whatsapp/ # Verification-only Meta webhook boundary
+├── channels/web/      # HTTP customer transport adapter and rate limiting
+├── channels/whatsapp/ # Meta transport, durable deduplication, and shared-chat mapping
 ├── chat/             # Conversational orchestration, OpenAI, tools, and evaluations
 ├── catalog/          # Structured business data and menu document
 ├── conversation/     # Backend-managed session lifecycle
