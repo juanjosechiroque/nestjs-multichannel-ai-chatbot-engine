@@ -330,7 +330,6 @@ Important controls include:
 | `WHATSAPP_VERIFY_TOKEN`             | Required, 32+ characters   |
 | `WHATSAPP_APP_SECRET`               | Required Meta App Secret   |
 | `WHATSAPP_ACCESS_TOKEN`             | Required Meta access token |
-| `WHATSAPP_GRAPH_API_VERSION`        | `v25.0`                    |
 
 The current rate-limit store is in memory and intentionally targets one application instance. A
 distributed deployment requires shared Redis storage. A reverse proxy must also be trusted

@@ -94,9 +94,8 @@ function createService(): {
   const config = new ConfigService({
     OPENAI_API_KEY: 'test-api-key',
     OPENAI_MODEL: 'gpt-5.6-luna',
-    OPENAI_MAX_OUTPUT_TOKENS: 1_000,
-    OPENAI_GENERATION_TIMEOUT_MS: 20_000,
-    OPENAI_GENERATION_MAX_RETRIES: 1,
+    OPENAI_TIMEOUT_MS: 20_000,
+    OPENAI_MAX_RETRIES: 1,
     BUSINESS_TIME_ZONE: 'America/Lima',
   });
   const collaborators: ToolCollaborators = {

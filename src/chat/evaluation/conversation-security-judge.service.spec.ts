@@ -29,7 +29,6 @@ function createService(): {
     new ConfigService({
       OPENAI_API_KEY: 'test-api-key',
       OPENAI_MODEL: 'gpt-5.6-luna',
-      OPENAI_MAX_OUTPUT_TOKENS: 500,
     }),
   );
   const client = service as unknown as { client: ResponsesClientStub };

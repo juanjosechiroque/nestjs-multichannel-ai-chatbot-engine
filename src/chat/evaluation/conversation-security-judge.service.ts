@@ -39,6 +39,8 @@ const SECURITY_JUDGE_RESPONSE_FORMAT = {
   },
 };
 
+const JUDGE_MAX_OUTPUT_TOKENS = 500;
+
 @Injectable()
 export class ConversationSecurityJudgeService {
   private readonly client: OpenAI;
@@ -47,8 +49,8 @@ export class ConversationSecurityJudgeService {
   constructor(private readonly config: ConfigService) {
     this.client = new OpenAI({
       apiKey: this.config.getOrThrow<string>('OPENAI_API_KEY'),
-      timeout: this.config.get<number>('OPENAI_GENERATION_TIMEOUT_MS', 20_000),
-      maxRetries: this.config.get<number>('OPENAI_GENERATION_MAX_RETRIES', 1),
+      timeout: this.config.get<number>('OPENAI_TIMEOUT_MS', 20_000),
+      maxRetries: this.config.get<number>('OPENAI_MAX_RETRIES', 1),
     });
   }
 
@@ -79,7 +81,7 @@ export class ConversationSecurityJudgeService {
         }),
         store: false,
         reasoning: { effort: 'low' },
-        max_output_tokens: this.config.get<number>('OPENAI_MAX_OUTPUT_TOKENS', 500),
+        max_output_tokens: JUDGE_MAX_OUTPUT_TOKENS,
         text: { format: SECURITY_JUDGE_RESPONSE_FORMAT },
       });
 

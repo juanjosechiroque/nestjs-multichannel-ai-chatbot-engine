@@ -25,8 +25,8 @@ function createService(): { service: EmbeddingService; create: jest.Mock } {
     new ConfigService({
       OPENAI_API_KEY: 'test-api-key',
       OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
-      OPENAI_EMBEDDING_TIMEOUT_MS: 8_000,
-      OPENAI_EMBEDDING_MAX_RETRIES: 1,
+      OPENAI_TIMEOUT_MS: 20_000,
+      OPENAI_MAX_RETRIES: 1,
     }),
   );
   const client = service as unknown as { client: EmbeddingsClientStub };
@@ -68,7 +68,7 @@ describe('EmbeddingService', () => {
     const configuredClient = service as unknown as {
       client: { timeout: number; maxRetries: number };
     };
-    expect(configuredClient.client.timeout).toBe(8_000);
+    expect(configuredClient.client.timeout).toBe(20_000);
     expect(configuredClient.client.maxRetries).toBe(1);
     expect(create).toHaveBeenCalledWith({
       model: 'text-embedding-3-small',

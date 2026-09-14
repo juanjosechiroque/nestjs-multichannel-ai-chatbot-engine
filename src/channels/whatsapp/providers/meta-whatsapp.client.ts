@@ -7,15 +7,16 @@ import type {
   WhatsAppProvider,
 } from './whatsapp-provider';
 
+const GRAPH_API_VERSION = 'v25.0';
+
 @Injectable()
 export class MetaWhatsAppClient implements WhatsAppProvider {
   private readonly logger = new Logger(MetaWhatsAppClient.name);
   private readonly accessToken: string;
-  private readonly graphApiVersion: string;
+  private readonly graphApiVersion = GRAPH_API_VERSION;
 
   constructor(config: ConfigService) {
     this.accessToken = config.getOrThrow<string>('WHATSAPP_ACCESS_TOKEN');
-    this.graphApiVersion = config.getOrThrow<string>('WHATSAPP_GRAPH_API_VERSION');
   }
 
   async sendText({

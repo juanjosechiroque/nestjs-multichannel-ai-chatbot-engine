@@ -14,8 +14,8 @@ export class EmbeddingService {
   constructor(config: ConfigService) {
     this.client = new OpenAI({
       apiKey: config.getOrThrow<string>('OPENAI_API_KEY'),
-      timeout: config.get<number>('OPENAI_EMBEDDING_TIMEOUT_MS', 8_000),
-      maxRetries: config.get<number>('OPENAI_EMBEDDING_MAX_RETRIES', 1),
+      timeout: config.get<number>('OPENAI_TIMEOUT_MS', 20_000),
+      maxRetries: config.get<number>('OPENAI_MAX_RETRIES', 1),
     });
     this.model = config.get<string>('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small');
   }

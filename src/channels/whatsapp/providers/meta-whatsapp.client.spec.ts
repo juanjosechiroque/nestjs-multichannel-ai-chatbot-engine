@@ -13,7 +13,6 @@ function createClient(): MetaWhatsAppClient {
   return new MetaWhatsAppClient(
     new ConfigService({
       WHATSAPP_ACCESS_TOKEN: 'private-access-token',
-      WHATSAPP_GRAPH_API_VERSION: 'v25.0',
     }),
   );
 }
