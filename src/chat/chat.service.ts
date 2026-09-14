@@ -6,11 +6,7 @@ import { MemoryService } from '../memory/memory.service';
 import { routeToolChoice } from './chat-tool-router';
 import { OpenAiService } from './openai.service';
 import { buildSystemPrompt } from './prompts/system-prompt';
-import { CatalogSearchTool } from './tools/catalog-search.tool';
-import { KnowledgeSearchTool } from './tools/knowledge-search.tool';
-import { MenuDocumentTool } from './tools/menu-document.tool';
 import { OrderTool } from './tools/order.tool';
-import { PromotionSearchTool } from './tools/promotion-search.tool';
 import type { ChatRequest, ChatResult, TrustedCustomerIdentity } from './chat.types';
 import { ChatTurnError } from './chat-turn.errors';
 import { ChatTurnService } from './chat-turn.service';
@@ -24,16 +20,8 @@ export class ChatService {
     @Inject(OpenAiService)
     private readonly openAi: Pick<OpenAiService, 'generate'>,
     private readonly config: ConfigService,
-    @Inject(CatalogSearchTool)
-    private readonly catalogSearch: Pick<CatalogSearchTool, 'execute'>,
-    @Inject(KnowledgeSearchTool)
-    private readonly knowledgeSearch: Pick<KnowledgeSearchTool, 'execute'>,
-    @Inject(MenuDocumentTool)
-    private readonly menuDocument: Pick<MenuDocumentTool, 'execute'>,
     @Inject(OrderTool)
-    private readonly orderTool: Pick<OrderTool, 'execute' | 'getContext' | 'setCustomerDetails'>,
-    @Inject(PromotionSearchTool)
-    private readonly promotionSearch: Pick<PromotionSearchTool, 'execute'>,
+    private readonly orderTool: Pick<OrderTool, 'getContext' | 'setCustomerDetails'>,
     @Inject(MemoryService)
     private readonly memory: Pick<MemoryService, 'getRecentMessages'>,
     @Inject(ChatTurnService)
@@ -94,13 +82,6 @@ export class ChatService {
         ...(routing.knowledgeQueryOverride
           ? { knowledgeQueryOverride: routing.knowledgeQueryOverride }
           : {}),
-        manageOrder: (order) => this.orderTool.execute({ ...order, conversationId, context }),
-        setOrderCustomer: (details) =>
-          this.orderTool.setCustomerDetails(details, conversationId, context),
-        getMenuDocument: () => this.menuDocument.execute(),
-        searchCatalog: (filters) => this.catalogSearch.execute({ ...filters, context }),
-        searchPromotions: (filters) => this.promotionSearch.execute({ ...filters, context }),
-        searchKnowledge: (query) => this.knowledgeSearch.execute({ query, context }),
       });
 
       const result: ChatResult = {

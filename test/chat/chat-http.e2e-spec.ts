@@ -17,6 +17,19 @@ import { ConversationService } from '../../src/conversation/conversation.service
 import type { GenerateResponseInput, GenerateResponseResult } from '../../src/chat/openai.service';
 import { OpenAiService } from '../../src/chat/openai.service';
 import type { DocumentChatContent } from '../../src/chat/chat.types';
+import { CatalogSearchTool } from '../../src/chat/tools/catalog-search.tool';
+import type { CatalogSearchArguments } from '../../src/chat/tools/catalog-search.tool';
+import type { ToolInvocationContext } from '../../src/chat/tools/chat-tool';
+import { KnowledgeSearchTool } from '../../src/chat/tools/knowledge-search.tool';
+import { ManageOrderTool } from '../../src/chat/tools/manage-order.tool';
+import { MenuDocumentTool } from '../../src/chat/tools/menu-document.tool';
+import type {
+  OrderCustomerDetailsArguments,
+  OrderToolArguments,
+} from '../../src/chat/tools/order.tool';
+import { PromotionSearchTool } from '../../src/chat/tools/promotion-search.tool';
+import type { PromotionSearchArguments } from '../../src/chat/tools/promotion-search.tool';
+import { SetOrderCustomerTool } from '../../src/chat/tools/set-order-customer.tool';
 import {
   WHATSAPP_PROVIDER,
   type SendWhatsAppTextInput,
@@ -105,6 +118,36 @@ describe('HTTP conversation flow', () => {
   const generate = jest.fn<Promise<GenerateResponseResult>, [GenerateResponseInput]>();
   const embed = jest.fn<Promise<number[]>, [string]>();
   const sendWhatsAppText = jest.fn<Promise<SendWhatsAppTextResult>, [SendWhatsAppTextInput]>();
+  let catalogTool: CatalogSearchTool;
+  let knowledgeTool: KnowledgeSearchTool;
+  let promotionTool: PromotionSearchTool;
+  let menuTool: MenuDocumentTool;
+  let manageOrderTool: ManageOrderTool;
+  let setOrderCustomerTool: SetOrderCustomerTool;
+
+  function toolCtx(input: GenerateResponseInput): ToolInvocationContext {
+    return {
+      requestContext: input.context,
+      conversationId: input.conversationId,
+      orderContext: input.orderContext,
+      message: input.message,
+      ...(input.knowledgeQueryOverride ? { argumentOverride: input.knowledgeQueryOverride } : {}),
+    };
+  }
+
+  function toolBag(input: GenerateResponseInput) {
+    return {
+      searchCatalog: (filters: CatalogSearchArguments) =>
+        catalogTool.execute(filters, toolCtx(input)),
+      searchKnowledge: (query: string) => knowledgeTool.execute({ query }, toolCtx(input)),
+      searchPromotions: (filters: PromotionSearchArguments) =>
+        promotionTool.execute(filters, toolCtx(input)),
+      getMenuDocument: () => menuTool.execute(undefined, toolCtx(input)),
+      manageOrder: (args: OrderToolArguments) => manageOrderTool.execute(args, toolCtx(input)),
+      setOrderCustomer: (details: OrderCustomerDetailsArguments) =>
+        setOrderCustomerTool.execute(details, toolCtx(input)),
+    };
+  }
 
   beforeAll(async () => {
     for (const key of [...Object.keys(TEST_ENVIRONMENT), 'DATABASE_URL'] as EnvironmentKey[]) {
@@ -147,6 +190,13 @@ describe('HTTP conversation flow', () => {
     }
 
     await assertDisposableTestDatabase(prisma, databaseName);
+
+    catalogTool = app.get(CatalogSearchTool);
+    knowledgeTool = app.get(KnowledgeSearchTool);
+    promotionTool = app.get(PromotionSearchTool);
+    menuTool = app.get(MenuDocumentTool);
+    manageOrderTool = app.get(ManageOrderTool);
+    setOrderCustomerTool = app.get(SetOrderCustomerTool);
 
     server = app.getHttpServer() as Server;
   });
@@ -251,7 +301,7 @@ describe('HTTP conversation flow', () => {
       expect(input.message).toBe('¿Qué productos tienen?');
       expect(input.context.channel).toBe('whatsapp');
       const catalog = JSON.parse(
-        await input.searchCatalog({
+        await toolBag(input).searchCatalog({
           productName: null,
           category: null,
           maxPrice: null,
@@ -663,10 +713,8 @@ describe('HTTP conversation flow', () => {
         history: [],
       }),
     );
-    expect(typeof generationInput?.searchKnowledge).toBe('function');
-    expect(typeof generationInput?.searchCatalog).toBe('function');
-    expect(typeof generationInput?.getMenuDocument).toBe('function');
-    expect(typeof generationInput?.manageOrder).toBe('function');
+    expect(generationInput?.conversationId).toEqual(expect.any(String));
+    expect(generationInput?.toolChoice).toBe('auto');
 
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { channel_sessionId: { channel: 'web', sessionId } },
@@ -828,7 +876,7 @@ describe('HTTP conversation flow', () => {
     });
     generate.mockImplementationOnce(async (input) => {
       const promotionOutput = JSON.parse(
-        await input.searchPromotions({ scope: 'CURRENT', promotionName: null }),
+        await toolBag(input).searchPromotions({ scope: 'CURRENT', promotionName: null }),
       ) as {
         currentPromotions: Array<{ sourceId: string; sourceKey: string; currentlyValid: boolean }>;
       };
@@ -899,7 +947,7 @@ describe('HTTP conversation flow', () => {
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
     generate.mockImplementationOnce(async (input) => {
-      const toolOutput: unknown = JSON.parse(await input.getMenuDocument());
+      const toolOutput: unknown = JSON.parse(await toolBag(input).getMenuDocument());
       const document = (toolOutput as { document: DocumentChatContent }).document;
 
       return {
@@ -962,7 +1010,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     let toolOutput: string | undefined;
     generate.mockImplementationOnce(async (input) => {
-      toolOutput = await input.manageOrder({
+      toolOutput = await toolBag(input).manageOrder({
         action: OrderAction.ADD_ITEMS,
         items: [
           { productName: 'cappuccino', quantity: 2 },
@@ -1054,7 +1102,7 @@ describe('HTTP conversation flow', () => {
           activeOrder: null,
           confirmationReplayAvailable: false,
         });
-        await input.manageOrder({
+        await toolBag(input).manageOrder({
           action: OrderAction.ADD_ITEMS,
           items: [{ productName: 'Latte', quantity: 3 }],
         });
@@ -1077,7 +1125,7 @@ describe('HTTP conversation flow', () => {
           nextAction: OrderAction.REVIEW,
           missingCustomerFields: ['customerName', 'customerPhone'],
         });
-        await input.manageOrder({ action: OrderAction.REVIEW, items: [] });
+        await toolBag(input).manageOrder({ action: OrderAction.REVIEW, items: [] });
         return {
           answer: 'Llevas 3 lattes por S/ 39. ¿Cuál es tu nombre y número de celular?',
           usedSources: [],
@@ -1093,7 +1141,7 @@ describe('HTTP conversation flow', () => {
           nextAction: null,
           missingCustomerFields: ['customerName', 'customerPhone'],
         });
-        await input.setOrderCustomer({
+        await toolBag(input).setOrderCustomer({
           customerName: 'Ana Pérez',
           customerPhone: '+51 987 654 321',
         });
@@ -1118,7 +1166,7 @@ describe('HTTP conversation flow', () => {
           missingCustomerFields: [],
         });
         const result = JSON.parse(
-          await input.manageOrder({ action: OrderAction.CONFIRM, items: [] }),
+          await toolBag(input).manageOrder({ action: OrderAction.CONFIRM, items: [] }),
         ) as { order: { orderNumber: number } };
         publicOrderNumber = result.order.orderNumber;
         return {
@@ -1133,7 +1181,7 @@ describe('HTTP conversation flow', () => {
         expect(input.orderContext.activeOrder).toBeNull();
         expect(input.orderContext.confirmationReplayAvailable).toBe(true);
         const result = JSON.parse(
-          await input.manageOrder({ action: OrderAction.CONFIRM, items: [] }),
+          await toolBag(input).manageOrder({ action: OrderAction.CONFIRM, items: [] }),
         ) as { idempotentReplay: boolean };
         expect(result.idempotentReplay).toBe(true);
         return {
@@ -1189,7 +1237,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     generate
       .mockImplementationOnce(async (input) => {
-        await input.manageOrder({
+        await toolBag(input).manageOrder({
           action: OrderAction.ADD_ITEMS,
           items: [{ productName: 'Latte', quantity: 1 }],
         });
@@ -1201,7 +1249,7 @@ describe('HTTP conversation flow', () => {
         };
       })
       .mockImplementationOnce(async (input) => {
-        await input.manageOrder({ action: OrderAction.CANCEL, items: [] });
+        await toolBag(input).manageOrder({ action: OrderAction.CANCEL, items: [] });
         return {
           answer: 'Pedido cancelado.',
           usedSources: [],
@@ -1239,7 +1287,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     generate
       .mockImplementationOnce(async (input) => {
-        await input.manageOrder({
+        await toolBag(input).manageOrder({
           action: OrderAction.ADD_ITEMS,
           items: [{ productName: 'Cappuccino', quantity: 2 }],
         });
@@ -1251,7 +1299,7 @@ describe('HTTP conversation flow', () => {
         };
       })
       .mockImplementationOnce(async (input) => {
-        await input.manageOrder({ action: OrderAction.REVIEW, items: [] });
+        await toolBag(input).manageOrder({ action: OrderAction.REVIEW, items: [] });
         return {
           answer: 'Tu pedido contiene dos cappuccinos. Total: S/ 24. ¿Deseas cambiar algo?',
           usedSources: [],
@@ -1265,7 +1313,7 @@ describe('HTTP conversation flow', () => {
           'customerName',
           'customerPhone',
         ]);
-        await input.manageOrder({
+        await toolBag(input).manageOrder({
           action: OrderAction.REMOVE_ITEMS,
           items: [{ productName: 'Cappuccino', quantity: 1 }],
         });
@@ -1300,7 +1348,7 @@ describe('HTTP conversation flow', () => {
     const conversationResponse = await request(server).post('/api/conversations').expect(201);
     const { sessionId } = conversationResponse.body as ConversationResponse;
     generate.mockImplementationOnce(async (input) => {
-      await input.manageOrder({
+      await toolBag(input).manageOrder({
         action: OrderAction.ADD_ITEMS,
         items: [{ productName: 'Brownie de cacao', quantity: 1 }],
       });
@@ -1349,7 +1397,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     generate
       .mockImplementationOnce(async (input) => {
-        await input.manageOrder({
+        await toolBag(input).manageOrder({
           action: OrderAction.ADD_ITEMS,
           items: [{ productName: 'Latte', quantity: 1 }],
         });
@@ -1371,7 +1419,7 @@ describe('HTTP conversation flow', () => {
       })
       .mockImplementationOnce(async (input) => {
         expect(input.orderContext.activeOrder?.order.total).toBe(13);
-        await input.manageOrder({
+        await toolBag(input).manageOrder({
           action: OrderAction.ADD_ITEMS,
           items: [{ productName: 'Brownie de cacao', quantity: 1 }],
         });
@@ -1420,7 +1468,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     let toolOutput: string | undefined;
     generate.mockImplementationOnce(async (input) => {
-      toolOutput = await input.searchCatalog({
+      toolOutput = await toolBag(input).searchCatalog({
         productName: 'cappuccino',
         category: ProductCategory.HOT_DRINK,
         maxPrice: 15,
@@ -1503,7 +1551,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     let toolOutput: string | undefined;
     generate.mockImplementationOnce(async (input) => {
-      toolOutput = await input.searchCatalog({
+      toolOutput = await toolBag(input).searchCatalog({
         productName: null,
         category: ProductCategory.FOOD,
         maxPrice: 15,
@@ -1597,7 +1645,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     let toolOutput: string | undefined;
     generate.mockImplementationOnce(async (input) => {
-      toolOutput = await input.searchCatalog({
+      toolOutput = await toolBag(input).searchCatalog({
         productName: null,
         category: ProductCategory.FOOD,
         maxPrice: 10,
@@ -1684,7 +1732,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     let toolOutput: string | undefined;
     generate.mockImplementationOnce(async (input) => {
-      toolOutput = await input.searchKnowledge('horario de atención');
+      toolOutput = await toolBag(input).searchKnowledge('horario de atención');
       return {
         answer: 'Atendemos todos los días de 7:00 a. m. a 9:00 p. m.',
         usedSources: [
@@ -1721,7 +1769,7 @@ describe('HTTP conversation flow', () => {
     const { sessionId } = conversationResponse.body as ConversationResponse;
     generate
       .mockImplementationOnce(async (input) => {
-        await input.searchKnowledge('bebidas calientes');
+        await toolBag(input).searchKnowledge('bebidas calientes');
         return {
           answer: 'Tenemos bebidas calientes.',
           usedSources: [],
@@ -1730,7 +1778,7 @@ describe('HTTP conversation flow', () => {
         };
       })
       .mockImplementationOnce(async (input) => {
-        await input.searchKnowledge('la bebida caliente más barata');
+        await toolBag(input).searchKnowledge('la bebida caliente más barata');
         return {
           answer: 'El americano.',
           usedSources: [],

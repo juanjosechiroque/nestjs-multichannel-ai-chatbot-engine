@@ -4,8 +4,13 @@ import { ConfigService } from '@nestjs/config';
 import { routeToolChoice } from '../chat-tool-router';
 import { OpenAiService } from '../openai.service';
 import { buildSystemPrompt } from '../prompts/system-prompt';
-import { CatalogSearchTool } from '../tools/catalog-search.tool';
 import type { CatalogSearchArguments } from '../tools/catalog-search.tool';
+import {
+  CHAT_TOOLS,
+  type ChatTool,
+  type ToolBuildContext,
+  type ToolInvocationContext,
+} from '../tools/chat-tool';
 import type {
   CatalogEvaluationCase,
   CatalogEvaluationReport,
@@ -17,6 +22,53 @@ const EMPTY_KNOWLEDGE_RESULT = JSON.stringify({
   knowledge: [],
 });
 
+class RecordingCatalogTool implements ChatTool {
+  applied: CatalogSearchArguments | null = null;
+
+  constructor(private readonly inner: ChatTool) {}
+
+  get name(): string {
+    return this.inner.name;
+  }
+
+  buildDefinition(context: ToolBuildContext) {
+    return this.inner.buildDefinition(context);
+  }
+
+  parseArguments(argumentsJson: string): unknown {
+    const args = this.inner.parseArguments(argumentsJson);
+    this.applied = args as CatalogSearchArguments;
+    return args;
+  }
+
+  execute(args: unknown, context: ToolInvocationContext): Promise<string> {
+    return this.inner.execute(args, context);
+  }
+}
+
+class UnavailableTool implements ChatTool {
+  constructor(
+    private readonly inner: ChatTool,
+    private readonly outcome: () => Promise<string>,
+  ) {}
+
+  get name(): string {
+    return this.inner.name;
+  }
+
+  buildDefinition(context: ToolBuildContext) {
+    return this.inner.buildDefinition(context);
+  }
+
+  parseArguments(argumentsJson: string): unknown {
+    return this.inner.parseArguments(argumentsJson);
+  }
+
+  execute(): Promise<string> {
+    return this.outcome();
+  }
+}
+
 @Injectable()
 export class CatalogEvaluationService {
   private readonly instructions: string;
@@ -24,13 +76,34 @@ export class CatalogEvaluationService {
   constructor(
     @Inject(OpenAiService)
     private readonly openAi: Pick<OpenAiService, 'generate'>,
-    @Inject(CatalogSearchTool)
-    private readonly catalogSearch: Pick<CatalogSearchTool, 'execute'>,
+    @Inject(CHAT_TOOLS)
+    private readonly chatTools: ChatTool[],
     config: ConfigService,
   ) {
     this.instructions = buildSystemPrompt({
       businessName: config.getOrThrow<string>('BUSINESS_NAME'),
     });
+  }
+
+  private buildEvaluationTools(): { tools: ChatTool[]; recorder: RecordingCatalogTool } {
+    const catalogTool = this.chatTools.find((tool) => tool.name === 'search_catalog');
+    if (!catalogTool) {
+      throw new Error('The catalog search tool is not registered');
+    }
+    const recorder = new RecordingCatalogTool(catalogTool);
+    const tools = this.chatTools.map((tool) => {
+      if (tool.name === 'search_catalog') {
+        return recorder;
+      }
+      if (tool.name === 'search_knowledge') {
+        return new UnavailableTool(tool, () => Promise.resolve(EMPTY_KNOWLEDGE_RESULT));
+      }
+      return new UnavailableTool(tool, () =>
+        Promise.reject(new Error(`${tool.name} is unavailable in catalog evals`)),
+      );
+    });
+
+    return { tools, recorder };
   }
 
   async evaluate(
@@ -45,8 +118,8 @@ export class CatalogEvaluationService {
         conversationId: `catalog-eval-${randomUUID()}`,
         channel: 'evaluation',
       };
-      let appliedFilters: CatalogSearchArguments | null = null;
       const routing = routeToolChoice(evaluationCase.message);
+      const { tools, recorder } = this.buildEvaluationTools();
       const generation = await this.openAi.generate({
         context,
         message: evaluationCase.message,
@@ -58,19 +131,9 @@ export class CatalogEvaluationService {
         ...(routing.knowledgeQueryOverride
           ? { knowledgeQueryOverride: routing.knowledgeQueryOverride }
           : {}),
-        manageOrder: () => Promise.reject(new Error('Order tool is unavailable in catalog evals')),
-        setOrderCustomer: () =>
-          Promise.reject(new Error('Order customer tool is unavailable in catalog evals')),
-        getMenuDocument: () =>
-          Promise.reject(new Error('Menu document tool is unavailable in catalog evals')),
-        searchCatalog: (filters) => {
-          appliedFilters = filters;
-          return this.catalogSearch.execute({ ...filters, context });
-        },
-        searchPromotions: () =>
-          Promise.reject(new Error('Promotion tool is unavailable in catalog evals')),
-        searchKnowledge: () => Promise.resolve(EMPTY_KNOWLEDGE_RESULT),
+        tools,
       });
+      const appliedFilters = recorder.applied;
       const usedSourceKeys = generation.usedSources.map((source) => source.sourceKey);
       const failures = this.getFailures(
         evaluationCase,
