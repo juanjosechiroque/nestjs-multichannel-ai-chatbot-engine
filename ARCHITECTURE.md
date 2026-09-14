@@ -95,16 +95,20 @@ flowchart LR
     subgraph core["Channel-independent conversational core"]
         chat["ChatService<br/>Conversation orchestration"]
         turns["ChatTurnService<br/>Message idempotency"]
-        provider["OpenAiService<br/>Structured response and tool selection"]
+        router["chat-tool-router<br/>Tool-choice heuristics"]
+        provider["OpenAiService<br/>Responses API transport + CHAT_TOOLS loop"]
         memory["MemoryService"]
 
-        subgraph tools["Typed tools"]
+        subgraph tools["ChatTool registry (CHAT_TOOLS)"]
+            knowledgeTool["KnowledgeSearchTool"]
             catalogTool["CatalogSearchTool"]
             promotionTool["PromotionSearchTool"]
-            knowledgeTool["KnowledgeSearchTool"]
             menuTool["MenuDocumentTool"]
-            orderTool["OrderTool"]
+            manageTool["ManageOrderTool"]
+            customerTool["SetOrderCustomerTool"]
         end
+
+        orderTool["OrderTool<br/>Order operation delegate"]
     end
 
     subgraph domain["Application and domain services"]
@@ -126,13 +130,16 @@ flowchart LR
     controller --> chat
     chat --> turns --> postgres
     chat --> memory --> postgres
+    chat --> router
     chat --> provider --> openai
     provider --> catalogTool --> catalog --> postgres
     provider --> promotionTool --> catalog
     provider --> knowledgeTool --> rag --> postgres
     rag --> embedding --> openai
     provider --> menuTool --> document
-    provider --> orderTool --> catalog
+    provider --> manageTool --> orderTool
+    provider --> customerTool --> orderTool
+    orderTool --> catalog
     orderTool --> orders --> state
     orders --> postgres
 ```
@@ -149,9 +156,13 @@ persistence, the chatbot core, or OpenAI.
 4. `ChatTurnService` reserves `(conversationId, messageId)` before any model or tool execution.
 5. A completed duplicate returns its stored response immediately; conflicting, processing, or
    previously failed duplicates are rejected with a channel-mapped conflict.
-6. For a new turn, `ChatService` loads recent history and the current order context.
-7. `OpenAiService` either answers directly or selects one typed tool.
-8. Application code executes the tool and returns controlled JSON to the model.
+6. For a new turn, `ChatService` loads recent history and the current order context, and derives
+   the tool-choice route (forced tool or `auto`, plus any knowledge-query rewrite) from the
+   message via `chat-tool-router`.
+7. `OpenAiService` builds the tool definitions from the `CHAT_TOOLS` registry and either answers
+   directly or runs the single tool the model selects.
+8. That `ChatTool` validates the model arguments and executes, returning controlled JSON to the
+   model.
 9. OpenAI produces the customer-facing answer from the trusted tool result.
 10. One PostgreSQL transaction completes the turn, stores its replay response, and appends both
     user and assistant messages to conversation memory.
@@ -326,56 +337,60 @@ It must not contain prompts, retrieval rules, catalog queries, memory policies, 
 
 ## Component responsibilities
 
-| Component                    | Owns                                                            | Must not own                                |
-| ---------------------------- | --------------------------------------------------------------- | ------------------------------------------- |
-| Web controllers              | HTTP input/output and public session mapping                    | Chatbot or order rules                      |
-| Swagger / OpenAPI            | Discoverable HTTP contracts and examples                        | Core or business behavior                   |
-| Web rate-limit configuration | IP/session tracking and `429` protection                        | Business limits or model behavior           |
-| WhatsApp webhook controller  | Meta challenge, signature validation, acknowledgment            | Chatbot or business behavior                |
-| WhatsApp receipt service     | Payload extraction and durable message deduplication            | Chatbot invocation or outbound formatting   |
-| WhatsApp chat adapter        | Stable session/identity mapping and `ChatService` invocation    | Prompts, retrieval, catalog, or order rules |
-| WhatsApp outbound service    | WAMID lifecycle, safe failures, status ordering, and latency    | Generated text retention or Meta HTTP shape |
-| `WhatsAppProvider` port      | Provider-neutral outbound text contract                         | Meta payloads or business behavior          |
-| `MetaWhatsAppClient`         | Graph API authentication, translation, timeout, and result      | Prompts or conversational behavior          |
-| `ConversationService`        | Conversation creation and channel-session resolution            | Prompt or channel payload interpretation    |
-| `ChatService`                | One complete channel-neutral reply                              | HTTP, WhatsApp, or provider payloads        |
-| `ChatTurnService`            | Message reservation, replay, failure state, atomic memory write | Channel-specific retry policy               |
-| `OpenAiService`              | OpenAI SDK, tools, structured output, provider errors           | Authoritative business calculations         |
-| `CatalogService`             | Exact structured business-data queries                          | Semantic retrieval or channel formatting    |
-| `PromotionSearchTool`        | Current/catalog scope and time-zone-aware classification        | Natural-language date calculations          |
-| `RagService`                 | Similarity search and accepted knowledge context                | Transactional catalog ownership             |
-| `KnowledgeIngestionService`  | Derived vector-index synchronization                            | Source-of-truth business data               |
-| `MemoryService`              | Bounded conversation history                                    | Public session resolution                   |
-| `OrderTool`                  | Structured model action to application operation                | Prices, totals, or transition decisions     |
-| `OrderService`               | Transactional order mutations and persistence                   | Natural-language interpretation             |
-| `OrderStateMachine`          | Valid actions and deterministic transitions                     | Database, NestJS, model, or channel access  |
-| Prisma seed                  | Reproducible demo records                                       | Runtime chatbot dependency                  |
+| Component                    | Owns                                                                                                      | Must not own                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Web controllers              | HTTP input/output and public session mapping                                                              | Chatbot or order rules                                   |
+| Swagger / OpenAPI            | Discoverable HTTP contracts and examples                                                                  | Core or business behavior                                |
+| Web rate-limit configuration | IP/session tracking and `429` protection                                                                  | Business limits or model behavior                        |
+| WhatsApp webhook controller  | Meta challenge, signature validation, acknowledgment                                                      | Chatbot or business behavior                             |
+| WhatsApp receipt service     | Payload extraction and durable message deduplication                                                      | Chatbot invocation or outbound formatting                |
+| WhatsApp chat adapter        | Stable session/identity mapping and `ChatService` invocation                                              | Prompts, retrieval, catalog, or order rules              |
+| WhatsApp outbound service    | WAMID lifecycle, safe failures, status ordering, and latency                                              | Generated text retention or Meta HTTP shape              |
+| `WhatsAppProvider` port      | Provider-neutral outbound text contract                                                                   | Meta payloads or business behavior                       |
+| `MetaWhatsAppClient`         | Graph API authentication, translation, timeout, and result                                                | Prompts or conversational behavior                       |
+| `ConversationService`        | Conversation creation and channel-session resolution                                                      | Prompt or channel payload interpretation                 |
+| `ChatService`                | One complete channel-neutral reply                                                                        | HTTP, WhatsApp, or provider payloads                     |
+| `ChatTurnService`            | Message reservation, replay, failure state, atomic memory write                                           | Channel-specific retry policy                            |
+| `OpenAiService`              | Responses API transport and the `CHAT_TOOLS` registry loop                                                | Tool schemas, argument validation, business calculations |
+| `chat-tool-router`           | Message heuristics that force a tool choice or rewrite the query                                          | Tool execution or transport                              |
+| `chat-response.parser`       | Structured-output and business-context parsing for the transport                                          | Tool selection or business calculations                  |
+| `ChatTool` implementations   | Each tool's own OpenAI definition, argument validation, execution                                         | The transport loop or tool-choice routing                |
+| `CatalogService`             | Exact structured business-data queries                                                                    | Semantic retrieval or channel formatting                 |
+| `PromotionSearchTool`        | Current/catalog scope and time-zone-aware classification                                                  | Natural-language date calculations                       |
+| `RagService`                 | Similarity search and accepted knowledge context                                                          | Transactional catalog ownership                          |
+| `KnowledgeIngestionService`  | Derived vector-index synchronization                                                                      | Source-of-truth business data                            |
+| `MemoryService`              | Bounded conversation history                                                                              | Public session resolution                                |
+| `OrderTool`                  | Structured model action to application operation; delegate for `ManageOrderTool` / `SetOrderCustomerTool` | Prices, totals, or transition decisions                  |
+| `OrderService`               | Transactional order mutations and persistence                                                             | Natural-language interpretation                          |
+| `OrderStateMachine`          | Valid actions and deterministic transitions                                                               | Database, NestJS, model, or channel access               |
+| Prisma seed                  | Reproducible demo records                                                                                 | Runtime chatbot dependency                               |
 
 ## Decisions and trade-offs
 
-| Decision                        | Reason                                                          | Accepted cost                                       |
-| ------------------------------- | --------------------------------------------------------------- | --------------------------------------------------- |
-| NestJS with strict TypeScript   | Explicit modules, dependency injection, and contracts           | More structure than an Express-only application     |
-| OpenAI Responses API            | Structured output and direct tool calling                       | External provider dependency                        |
-| PostgreSQL with Prisma          | Typed catalog, memory, and transactional order persistence      | Requires migrations and local infrastructure        |
-| pgvector for RAG                | Keeps structured and semantic data in one database              | Exact search needs indexing at larger scale         |
-| Hybrid RAG and typed tools      | Uses the appropriate access pattern for each question           | More explicit routing than sending all data to LLM  |
-| One tool per message            | Bounds orchestration, latency, and failure modes                | Complex requests may require another customer turn  |
-| Backend-created sessions        | Rejects unknown conversations and controls lifecycle            | Requires a session-creation request                 |
-| PostgreSQL message ledger       | Makes channel retries durable across restarts                   | Adds one small row per attempted message            |
-| PostgreSQL delivery lifecycle   | Verifies accepted, delivered, read, and failed Meta messages    | Adds operational rows and status handling           |
-| Hashed WhatsApp session key     | Preserves customer memory without a raw-phone public session ID | Requires deterministic WABA/customer mapping        |
-| Synchronous WhatsApp processing | Keeps the portfolio deployment operationally small              | Production latency needs a durable worker queue     |
-| Provider port inside Nest       | Isolates Meta without a separately deployed service             | Adds an interface and DI token                      |
-| Last ten history messages       | Bounds prompt growth and cost                                   | Older context is not sent to the model              |
-| PostgreSQL order drafts         | Keeps order state independent from model memory                 | Abandoned drafts need lifecycle cleanup             |
-| Product price snapshots         | Preserves historical order totals                               | Duplicates selected catalog data                    |
-| Confirmation closes this engine | Gives the chatbot a precise, testable success boundary          | Payment, kitchen, and delivery need later workflows |
-| Boolean ordering availability   | Separates temporary availability from catalog publication       | Does not track exact stock quantities               |
-| Conversation-scoped locking     | Makes order changes and confirmation replay deterministic       | PostgreSQL-specific advisory lock                   |
-| In-memory web rate limiting     | Simple protection for the current single instance               | Multi-instance deployments require Redis            |
-| PDF as presentation only        | Supports rich channel delivery without bloating model context   | Demo PDF must be synchronized with the catalog      |
-| Live evals outside CI           | Measures real model behavior without making CI nondeterministic | Requires intentional execution and API cost         |
+| Decision                        | Reason                                                                     | Accepted cost                                                   |
+| ------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| NestJS with strict TypeScript   | Explicit modules, dependency injection, and contracts                      | More structure than an Express-only application                 |
+| OpenAI Responses API            | Structured output and direct tool calling                                  | External provider dependency                                    |
+| PostgreSQL with Prisma          | Typed catalog, memory, and transactional order persistence                 | Requires migrations and local infrastructure                    |
+| pgvector for RAG                | Keeps structured and semantic data in one database                         | Exact search needs indexing at larger scale                     |
+| Hybrid RAG and typed tools      | Uses the appropriate access pattern for each question                      | More explicit routing than sending all data to LLM              |
+| One tool per message            | Bounds orchestration, latency, and failure modes                           | Complex requests may require another customer turn              |
+| Tools own their OpenAI contract | Adding a tool is one file plus one `CHAT_TOOLS` entry, no transport change | Several small `ChatTool` classes instead of one dispatch switch |
+| Backend-created sessions        | Rejects unknown conversations and controls lifecycle                       | Requires a session-creation request                             |
+| PostgreSQL message ledger       | Makes channel retries durable across restarts                              | Adds one small row per attempted message                        |
+| PostgreSQL delivery lifecycle   | Verifies accepted, delivered, read, and failed Meta messages               | Adds operational rows and status handling                       |
+| Hashed WhatsApp session key     | Preserves customer memory without a raw-phone public session ID            | Requires deterministic WABA/customer mapping                    |
+| Synchronous WhatsApp processing | Keeps the portfolio deployment operationally small                         | Production latency needs a durable worker queue                 |
+| Provider port inside Nest       | Isolates Meta without a separately deployed service                        | Adds an interface and DI token                                  |
+| Last ten history messages       | Bounds prompt growth and cost                                              | Older context is not sent to the model                          |
+| PostgreSQL order drafts         | Keeps order state independent from model memory                            | Abandoned drafts need lifecycle cleanup                         |
+| Product price snapshots         | Preserves historical order totals                                          | Duplicates selected catalog data                                |
+| Confirmation closes this engine | Gives the chatbot a precise, testable success boundary                     | Payment, kitchen, and delivery need later workflows             |
+| Boolean ordering availability   | Separates temporary availability from catalog publication                  | Does not track exact stock quantities                           |
+| Conversation-scoped locking     | Makes order changes and confirmation replay deterministic                  | PostgreSQL-specific advisory lock                               |
+| In-memory web rate limiting     | Simple protection for the current single instance                          | Multi-instance deployments require Redis                        |
+| PDF as presentation only        | Supports rich channel delivery without bloating model context              | Demo PDF must be synchronized with the catalog                  |
+| Live evals outside CI           | Measures real model behavior without making CI nondeterministic            | Requires intentional execution and API cost                     |
 
 ## Project structure
 
