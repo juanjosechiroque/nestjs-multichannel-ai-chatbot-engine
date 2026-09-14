@@ -6,6 +6,7 @@ module.exports = {
   transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
   setupFiles: ['reflect-metadata'],
+  setupFilesAfterEnv: ['<rootDir>/test/support/silence-logging.ts'],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.spec.ts',
