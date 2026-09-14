@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { routeToolChoice } from '../chat-tool-router';
 import { OpenAiService } from '../openai.service';
 import { buildSystemPrompt } from '../prompts/system-prompt';
 import { CatalogSearchTool } from '../tools/catalog-search.tool';
@@ -45,12 +46,18 @@ export class CatalogEvaluationService {
         channel: 'evaluation',
       };
       let appliedFilters: CatalogSearchArguments | null = null;
+      const routing = routeToolChoice(evaluationCase.message);
       const generation = await this.openAi.generate({
         context,
         message: evaluationCase.message,
         instructions: this.instructions,
         history: [],
         orderContext: { activeOrder: null, confirmationReplayAvailable: false },
+        conversationId: context.conversationId,
+        toolChoice: routing.toolChoice,
+        ...(routing.knowledgeQueryOverride
+          ? { knowledgeQueryOverride: routing.knowledgeQueryOverride }
+          : {}),
         manageOrder: () => Promise.reject(new Error('Order tool is unavailable in catalog evals')),
         setOrderCustomer: () =>
           Promise.reject(new Error('Order customer tool is unavailable in catalog evals')),

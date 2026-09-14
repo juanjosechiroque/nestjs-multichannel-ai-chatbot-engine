@@ -9,6 +9,7 @@ import {
 } from '../common/application-error';
 import { ProductCategory } from '../generated/prisma/enums';
 import { OrderAction } from '../order/order.types';
+import { routeToolChoice } from './chat-tool-router';
 import { OpenAiService, type GenerateResponseInput } from './openai.service';
 
 interface ResponsesClientStub {
@@ -22,12 +23,20 @@ function requestContext(requestId: string) {
 }
 
 function generateInput(overrides: Partial<GenerateResponseInput> = {}): GenerateResponseInput {
+  const message = overrides.message ?? 'Hola';
+  const routing = routeToolChoice(message);
+
   return {
     context: requestContext('request-1'),
-    message: 'Hola',
+    message,
     instructions: 'Only answer questions about Café Nube.',
     history: [],
     orderContext: { activeOrder: null, confirmationReplayAvailable: false },
+    conversationId: 'conversation-1',
+    toolChoice: routing.toolChoice,
+    ...(routing.knowledgeQueryOverride
+      ? { knowledgeQueryOverride: routing.knowledgeQueryOverride }
+      : {}),
     manageOrder: jest.fn(),
     setOrderCustomer: jest.fn(),
     getMenuDocument: jest.fn(),
