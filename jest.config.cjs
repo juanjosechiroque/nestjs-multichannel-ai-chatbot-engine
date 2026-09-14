@@ -15,15 +15,12 @@ module.exports = {
     '!src/**/*.types.ts',
     '!src/main.ts',
     '!src/rag/ingest-knowledge.ts',
+    // Offline evaluation harness: a development calibration tool, verified by
+    // running it against the live model, not by unit tests.
+    '!src/chat/evaluate-*.ts',
+    '!src/chat/evaluation/**',
     '!src/rag/evaluate-rag.ts',
-    '!src/rag/evaluation/rag-evaluation.cases.ts',
-    '!src/chat/evaluate-conversation-security.ts',
-    '!src/chat/evaluation/conversation-security-evaluation.cases.ts',
-    '!src/chat/evaluate-catalog.ts',
-    '!src/chat/evaluate-orders.ts',
-    '!src/chat/evaluation/order-conversation-evaluation.cases.ts',
-    '!src/chat/evaluation/order-evaluation-database.ts',
-    '!src/chat/evaluation/catalog-evaluation.cases.ts',
+    '!src/rag/evaluation/**',
   ],
   coveragePathIgnorePatterns: ['/node_modules/', '/src/generated/'],
   coverageThreshold: {

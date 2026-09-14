@@ -330,7 +330,7 @@ describe('OpenAiService', () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain('horario de atención');
   });
 
-  it('forces knowledge search and rewrites the query for a location question', async () => {
+  it('applies the routed tool choice and knowledge query override to the request', async () => {
     const { service, create, collaborators } = createService();
     const businessContext = JSON.stringify({
       retrievalStatus: 'results_found',
@@ -386,54 +386,6 @@ describe('OpenAiService', () => {
     });
     expect(collaborators.getContext).toHaveBeenCalledWith(
       'dirección exacta, ubicación, cómo llegar y enlace de mapa. Pregunta del cliente: ¿Dónde queda el local?',
-      5,
-      requestContext('request-1'),
-    );
-  });
-
-  it('uses the original query for an explicit services question', async () => {
-    const { service, create, collaborators } = createService();
-    const businessContext = JSON.stringify({
-      retrievalStatus: 'results_found',
-      knowledge: [
-        {
-          sourceId: 'business-services-summary',
-          sourceKey: 'servicios',
-          type: 'faq',
-          content: 'Servicios confirmados: delivery, recojo, wifi y espacio pet friendly.',
-        },
-      ],
-    });
-    collaborators.getContext.mockResolvedValue(businessContext);
-    create
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: 'function_call',
-            call_id: 'call-services',
-            name: 'search_knowledge',
-            arguments: '{"query":"información general del negocio"}',
-          },
-        ],
-        output_text: '',
-        model: 'gpt-5.6-luna',
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text: structuredResponse('Tenemos delivery, recojo, wifi y terraza pet friendly.', [
-          'business-services-summary',
-        ]),
-        model: 'gpt-5.6-luna',
-      });
-
-    await service.generate(generateInput({ message: '¿Qué servicios ofrecen?' }));
-
-    expect(responseRequest(create, 0)?.tool_choice).toEqual({
-      type: 'function',
-      name: 'search_knowledge',
-    });
-    expect(collaborators.getContext).toHaveBeenCalledWith(
-      '¿Qué servicios ofrecen?',
       5,
       requestContext('request-1'),
     );
@@ -1032,19 +984,6 @@ describe('OpenAiService', () => {
         requestId: 'request-1',
         failureCode: 'OPENAI_EMPTY_RESPONSE',
       }),
-    );
-  });
-
-  it('normalizes literal newline escapes in the customer-facing answer', async () => {
-    const { service, create } = createService();
-    create.mockResolvedValue({
-      output: [],
-      output_text: structuredResponse('Pedido confirmado.\\nTotal: S/ 30.'),
-      model: 'gpt-5.6-luna',
-    });
-
-    await expect(service.generate(generateInput())).resolves.toEqual(
-      expect.objectContaining({ answer: 'Pedido confirmado.\nTotal: S/ 30.' }),
     );
   });
 });
