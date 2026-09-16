@@ -3,7 +3,7 @@ dist
 coverage
 .env
 *.log
-/output/evaluations/
+/output/
 .DS_Store
 prisma/dev.db
 src/generated/prisma
