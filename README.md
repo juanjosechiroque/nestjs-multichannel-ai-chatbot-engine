@@ -3,161 +3,46 @@
 [![CI](https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Reusable NestJS AI chatbot backend with OpenAI tool calling, pgvector RAG, persistent memory,
-hybrid catalog search, and deterministic order workflows.
+Reusable backend for catalog and ordering businesses. It combines OpenAI tool calling, pgvector RAG,
+structured catalog data, persistent memory and deterministic orders. Web HTTP and WhatsApp Cloud API
+adapters share the same conversational core.
 
-## Demo
+![Café Nube demo](docs/assets/chatbot-cafe-nube-demo.gif)
 
-![Café Nube conversational ordering demo](docs/assets/chatbot-cafe-nube-demo.gif)
+## What it does
 
-Accelerated Web adapter demo: product recommendation, dietary catalog search, order changes, and a
-database-backed review with authoritative prices and totals. The WhatsApp adapter uses this same
-channel-independent conversational core.
+- Searches products, promotions and business knowledge through the appropriate source: PostgreSQL for
+  structured data and pgvector for semantic queries.
+- Persists conversations and handles message retries idempotently.
+- Manages orders with application-controlled prices, totals, availability and transitions.
+- Exposes a documented Web API and, optionally, a Meta-signed WhatsApp webhook.
+- Keeps business identity and catalog data in [`business/`](business/README.md), separate from the
+  engine.
 
-The repository demonstrates a channel-independent conversational core built for product backends.
-Web HTTP and WhatsApp Cloud API are implemented adapters: both call the same `ChatService` without
-duplicating prompts, retrieval, memory, catalog, or order rules.
+OpenAI interprets language and selects typed tools. PostgreSQL owns business facts, orders and
+memory; the model does not determine prices, totals or state transitions.
 
-It is intentionally more than a prompt wrapper: the model interprets language and selects typed
-tools, while PostgreSQL-backed application code owns business facts, prices, totals, order state, and
-confirmation guarantees.
+## Scope
 
-## Design principles
+One deployment serves one business and database; this is not a multi-tenant SaaS. The current domain
+supports configurable catalog and ordering. It does not include payments, kitchen or delivery operations,
+real-time inventory, user authentication or an administrative panel.
 
-- Channel adapters own transport validation and response formatting, not chatbot behavior.
-- PostgreSQL is the source of truth for products, prices, promotions, FAQs, conversations, and orders.
-- RAG is used for semantic business knowledge; exact catalog and order operations use structured queries.
-- OpenAI interprets language and selects tools, but application code owns prices, totals, and state transitions.
-- Provider and database failures produce controlled responses instead of exposing internal errors.
-- The business (identity + catalog) lives under `business/`, loaded as reproducible bootstrap data, never hardcoded chatbot logic. The bundled example is Café Nube.
-
-## Scope and current boundaries
-
-This repository is a reusable backend engine that serves one business per deployment, configured
-under `business/` (Café Nube in this repo), not a hosted multi-tenant SaaS product. It is **not**
-multi-tenancy: there is no `businessId` on domain tables, no per-request tenant resolution, no
-runtime business selector, and the deployment owns its database. Web HTTP and WhatsApp text messages
-both use the same PostgreSQL- and OpenAI-backed conversational core. The WhatsApp adapter authenticates Meta notifications, maps each
-WABA/customer pair to stable conversation memory, suppresses duplicate delivery, and sends the
-generated answer through Meta Graph API.
-
-The current release does not claim to provide:
-
-- WhatsApp media understanding, Instagram, Messenger, or other channel adapters.
-- Payment processing, kitchen dispatch, delivery orchestration, or real-time inventory.
-- Authentication, tenant isolation, billing, or an administrative catalog panel.
-- Distributed rate limiting, background webhook workers, or a deployed application image.
-
-Those boundaries are explicit so the architecture and demo do not imply operational capabilities
-that are not implemented.
-
-## Implemented capabilities
-
-### Conversational core
-
-- OpenAI Responses API with structured output and model-selected tools.
-- Persistent PostgreSQL conversation history with a bounded recent-message window.
-- Direct catalog search by category, price, allergens, dietary tags, and caffeine preferences.
-- Separate catalog publication and ordering availability for every product.
-- Semantic FAQ, location, policy, and service retrieval with pgvector.
-- Date- and time-zone-aware promotion queries backed by PostgreSQL.
-- Channel-neutral PDF menu responses.
-- Prompt-injection and unsupported-claim protections.
-
-### Orders
-
-- Channel-independent order state machine.
-- Add, remove, review, confirm, cancel, and internally expire orders.
-- Transactional PostgreSQL draft persistence and product price snapshots.
-- Database-calculated totals and validated state transitions.
-- Required customer name and phone before confirmation; phones are normalized and masked in order-tool context.
-- A unique public order number is assigned only when confirmation succeeds.
-- Idempotent confirmation: repeated or concurrent confirmation returns the same order.
-- Clarification for unknown or ambiguous product names without partial writes.
-- Availability validation both when products are added and immediately before confirmation.
-- `CONFIRMED` closes the chatbot workflow by persisting an accepted order; it does not claim payment,
-  kitchen dispatch, or delivery fulfillment.
-
-### Web channel and operations
-
-- Backend-created public sessions through `POST /api/conversations`.
-- Chat through `POST /api/chat`.
-- Interactive Swagger UI and machine-readable OpenAPI JSON for the HTTP adapter.
-- Durable message idempotency: safe retries reuse the completed response without calling OpenAI or tools again.
-- Five conversation creations per hour per IP.
-- Ten chat messages per minute per public session.
-- Structured correlated logs for memory, RAG, tools, OpenAI, and completed chat requests.
-- Token and latency telemetry without exposing it in the public response.
-- Global HTTP security headers through Helmet.
-- Graceful shutdown hooks that close Prisma connections on process termination.
-
-### WhatsApp channel
-
-- Optional adapter, enabled with `WHATSAPP_ENABLED=true` (see [Run modes](#run-modes)). When
-  disabled, none of the routes and behavior below are registered.
-- `GET /api/webhook/whatsapp` implements Meta's callback verification handshake.
-- Verification requires a private, validated token and never logs the supplied credential.
-- The endpoint returns Meta's challenge exactly when mode and token are valid.
-- `POST /api/webhook/whatsapp` validates Meta's `X-Hub-Signature-256` against the exact raw request
-  body, durably reserves every `(WABA ID, message.id)`, and returns an empty `200` to Meta.
-- Text messages are mapped to the shared `ChatService`, including catalog tools, RAG, promotions,
-  memory, and deterministic order workflows.
-- A SHA-256-derived session key gives each WABA/customer pair stable conversation memory without
-  using the raw phone number as the conversation's public session identifier.
-- Meta-asserted profile name and phone are passed as trusted channel identity when an order needs
-  customer data.
-- Generated text is delivered through Meta Graph API using the webhook's `phone_number_id` and
-  sender number. Unsupported media receives a text-only capability message.
-- The conversational adapter depends on a provider-neutral `WhatsAppProvider` port. Meta-specific
-  URLs, credentials, payloads, timeouts, and response parsing live in `MetaWhatsAppClient`.
-- A successful Graph API response must include a WAMID. The application persists that identifier
-  and advances it idempotently through `ACCEPTED`, `SENT`, `DELIVERED`, `READ`, or `FAILED` from
-  signed Meta status webhooks, including out-of-order delivery protection.
-- Delivery telemetry reports webhook-to-acceptance and provider-to-status latency without storing
-  the customer phone number or generated text in the operational delivery table.
-- Chatbot failures produce only a fixed customer-safe fallback. Provider exceptions, response
-  bodies, credentials, phone numbers, and internal failure codes are never used as reply content.
-- Repeated Meta deliveries are acknowledged but neither processed nor answered twice.
-- After the `(WABA ID, message.id)` reservation succeeds, the webhook returns `200` immediately and
-  processes each accepted message asynchronously in the same Node process (`setImmediate`). A failure
-  during that background work is logged with the message ID; the reservation is not released, because
-  Meta has already been acknowledged and will not retry.
-- This is best-effort by design: a deploy, restart, or crash after the `200` can drop an accepted
-  message. There is intentionally no durable recovery or queue. A production deployment should
-  acknowledge from a durable queue worker boundary instead.
-
-### Quality
-
-- Strict environment and DTO validation.
-- Unit, PostgreSQL integration, and HTTP end-to-end tests.
-- Disposable Testcontainers databases whose names explicitly include `test` or `e2e`.
-- Live evaluations for RAG, catalog routing, conversational security, and multi-turn orders.
-- Local JSON order-evaluation reports with token totals and estimated OpenAI cost.
-- GitHub Actions quality workflow.
-
-See [Architecture](ARCHITECTURE.md) for the C4 diagrams and component boundaries, and
-[Quality and evaluations](docs/QUALITY.md) for the complete verification strategy.
-
-## Requirements
-
-- Node.js 24 or newer.
-- npm.
-- Docker Desktop or another Docker environment with Compose.
-- An OpenAI API key.
-- A Meta developer application and WhatsApp Cloud API credentials when enabling that channel.
+WhatsApp processes an accepted message in the background after returning `200` to Meta. It is a
+single-process integration: a restart between acknowledgement and processing can lose a message.
+There is not yet a durable queue or recovery worker.
 
 ## Quick start
+
+Requirements: Node.js 24+, npm, Docker/Compose and an `OPENAI_API_KEY`. Meta credentials are only
+needed for WhatsApp.
 
 ```bash
 git clone https://github.com/juanjosechiroque/nestjs-multichannel-ai-chatbot-engine.git
 cd nestjs-multichannel-ai-chatbot-engine
 npm install
 cp .env.example .env
-```
 
-Set `OPENAI_API_KEY` in `.env`, then start PostgreSQL and prepare the demo knowledge base:
-
-```bash
 npm run db:start
 npm run db:generate
 npm run db:migrate
@@ -166,290 +51,90 @@ npm run knowledge:ingest
 npm run start:dev
 ```
 
-The API starts at `http://localhost:3000/api` by default.
+The API is available at `http://localhost:3000/api`; Swagger is at `/api/docs`.
 
 ### Run modes
 
-WhatsApp is an optional adapter selected at application composition. Choose a mode with a single
-explicit flag; a placeholder credential never enables the channel on its own.
-
-**Web-only** (default, no Meta account required):
+Web-only mode is the default:
 
 ```bash
 WHATSAPP_ENABLED=false
 ```
 
-The WhatsApp module is not loaded, `MetaWhatsAppClient` is never constructed, and
-`/api/webhook/whatsapp` returns `404`. Web, catalog, RAG, memory, and orders are unaffected.
-
-**Web + WhatsApp** (requires WhatsApp Cloud API credentials):
+To enable WhatsApp, configure valid values for `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` and
+`WHATSAPP_ACCESS_TOKEN`, then use:
 
 ```bash
 WHATSAPP_ENABLED=true
-WHATSAPP_VERIFY_TOKEN=...   # 32+ characters
-WHATSAPP_APP_SECRET=...     # Meta App secret, 32+ characters
-WHATSAPP_ACCESS_TOKEN=...   # Meta access token, 20+ characters
 ```
 
-All three credentials are then required and validated at startup; the application fails fast if one
-is missing or too short. `WHATSAPP_ENABLED` accepts only `true` or `false` — any other value
-(`yes`, `1`, empty, …) is rejected explicitly. It serves the business defined under
-[`business/`](business/README.md). The seed is safe to run again: stable slugs update the records
-without creating duplicates. Run `knowledge:ingest` whenever products, promotions, or FAQs change.
+The WhatsApp module is not registered when disabled. See [`.env.example`](.env.example) for every
+supported setting.
 
-HTTP documentation is available after startup:
+## API
 
-- Swagger UI: `http://localhost:3000/api/docs`
-- OpenAPI JSON: `http://localhost:3000/api/docs-json`
+| Endpoint                                             | Purpose                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| `GET /api/health/live`                               | Process liveness (`/api/health` is an alias).                |
+| `GET /api/health/ready`                              | NestJS and PostgreSQL readiness.                             |
+| `POST /api/conversations`                            | Creates a public session.                                    |
+| `POST /api/chat`                                     | Sends a chat turn.                                           |
+| `GET /api/products`, `/promotions`, `/faqs`, `/menu` | Reads catalog, knowledge and menu data.                      |
+| `GET` / `POST /api/webhook/whatsapp`                 | WhatsApp verification and receipt when that mode is enabled. |
 
-A framework-free, portable Web Component integration is available in
-[`examples/web-widget`](examples/web-widget). It creates backend-managed sessions, sends idempotent
-message IDs, and renders text, safe links, and document responses without adding frontend concerns
-to the chatbot core.
-
-## API usage
-
-### Health
-
-`/api/health` remains a compatibility alias for the liveness probe.
-
-```bash
-curl http://localhost:3000/api/health/live
-```
-
-```json
-{ "status": "ok" }
-```
-
-Readiness checks both the NestJS lifecycle and PostgreSQL. It returns `503` with the same component
-states when either dependency is unavailable.
-
-```bash
-curl http://localhost:3000/api/health/ready
-```
-
-```json
-{ "status": "ok", "checks": { "nest": "ready", "postgresql": "up" } }
-```
-
-### Create a web conversation
+To chat, first create a conversation and retain the returned `sessionId`:
 
 ```bash
 curl -X POST http://localhost:3000/api/conversations
-```
 
-```json
-{ "sessionId": "a51f973c-4f93-4cc5-832d-63ae2ff86d65" }
-```
-
-The client should persist this backend-generated `sessionId` and reuse it for later messages.
-Unknown session IDs are rejected instead of implicitly creating conversations.
-
-### Send a chat message
-
-```bash
 curl -X POST http://localhost:3000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"sessionId":"a51f973c-4f93-4cc5-832d-63ae2ff86d65","messageId":"d355b4d6-a0dc-4a46-bb7d-f86886ea75dc","message":"¿Qué bebidas calientes tienen y cuánto cuestan?"}'
+  -H 'Content-Type: application/json' \
+  -d '{"sessionId":"<uuid>","messageId":"<uuid-v4>","message":"¿Qué bebidas calientes tienen?"}'
 ```
 
-```json
-{ "reply": "..." }
-```
+Each new message requires a UUID v4 `messageId`. A retry must reuse the same identifier and text; it
+returns the stored response without repeating model calls or order mutations.
 
-The client generates one UUID v4 `messageId` for each new user message and persists it until the
-request finishes. Network retries must reuse that same ID and text. A completed retry receives the
-stored response without repeating OpenAI calls, tool execution, or conversation-memory writes.
-Reusing an ID with different text, retrying while it is still processing, or retrying a previously
-failed turn returns `409`; a genuinely new user message must use a new ID. Future channel adapters
-should map the provider message identifier to this same channel-neutral contract.
+## Configure a business
 
-An explicit request to see the menu returns channel-neutral structured content:
-
-```json
-{
-  "reply": "Aquí tienes nuestra carta.",
-  "content": [
-    {
-      "type": "document",
-      "title": "Carta de Café Nube",
-      "url": "/api/menu",
-      "mimeType": "application/pdf"
-    }
-  ]
-}
-```
-
-The web client decides how to render this descriptor. The PDF is presentation-only: exact product
-facts, price filters, and orders continue to use PostgreSQL.
-
-The public HTTP contract uses controlled status codes:
-
-| Status | Meaning                                                 |
-| -----: | ------------------------------------------------------- |
-|  `400` | Invalid DTO or unsupported property                     |
-|  `404` | Validly shaped but unknown public session               |
-|  `409` | Duplicate message is processing, conflicting, or failed |
-|  `429` | Web conversation or message rate limit exceeded         |
-|  `503` | Required OpenAI or PostgreSQL operation unavailable     |
-
-### Verify a WhatsApp webhook callback
-
-Meta calls this endpoint while registering a callback URL. `WHATSAPP_VERIFY_TOKEN` must contain the
-same private value entered in the Meta application dashboard.
+The bundled example is Café Nube. For another catalog and ordering business, update `business/profile.json`,
+`business/seed.ts` and `business/assets/menu.pdf`, then run:
 
 ```bash
-curl --get http://localhost:3000/api/webhook/whatsapp \
-  --data-urlencode "hub.mode=subscribe" \
-  --data-urlencode "hub.verify_token=YOUR_PRIVATE_VERIFY_TOKEN" \
-  --data-urlencode "hub.challenge=123456789"
+npm run db:seed
+npm run knowledge:ingest
 ```
 
-A valid request returns the challenge as plain text. Missing parameters return `400`; an invalid
-mode or token returns `403`. This handshake does not require the WhatsApp access token and does not
-process customer messages.
+[`business/README.md`](business/README.md) describes those files. The PDF is a presentation asset;
+catalog, prices and orders always come from PostgreSQL.
 
-Signed notifications use the same URL with `POST`. The application calculates an HMAC-SHA256 over
-the exact raw body using `WHATSAPP_APP_SECRET`, compares it with `X-Hub-Signature-256` using a
-constant-time operation, and returns an empty `200` when valid. Before acknowledging, it reserves
-every `(WABA ID, message.id)` in PostgreSQL; a reservation failure surfaces as an HTTP error so Meta
-retries. After the `200`, each new text message is processed asynchronously in the same Node process:
-it resolves a stable WhatsApp conversation, calls `ChatService`, and sends its generated reply through
-Meta Graph API using the webhook's `phone_number_id` and `from` fields. This means a question such as “¿Qué productos tienen?”
-uses the same typed PostgreSQL catalog search as the Web adapter. A repeated delivery is still
-acknowledged but is not reserved, sent to OpenAI, written to memory, or answered twice. Missing or
-invalid signatures return `403`.
-
-The same signed endpoint also processes Meta delivery statuses. Every generated reply is recorded
-without its text or recipient phone, using the inbound message ID and Meta's required outbound
-WAMID. `sent`, `delivered`, `read`, and `failed` events update that record monotonically, so duplicate
-or delayed status notifications cannot move a message backwards. A Graph API `200` without a WAMID
-is treated as a controlled delivery failure because later delivery cannot be verified.
-
-The current adapter accepts text messages up to 2,000 characters. Images, audio, video, documents,
-and other unsupported message types receive a short text response explaining that text is currently
-required. The webhook acknowledges Meta right after the PostgreSQL reservation and runs the chatbot
-turn asynchronously in the same process (`setImmediate`). This is best-effort: a deploy, restart, or
-crash after the `200` can drop that message, and there is no durable recovery or queue. A production
-deployment should introduce a durable job queue before scaling or tightening provider acknowledgment
-latency.
-
-The current provider implementation is `MetaWhatsAppClient`. It translates the internal text-send
-contract to Graph API, requires Meta's outbound message identifier, and maps transport, HTTP, or
-invalid-success responses to the channel's controlled delivery error. The rest of the application
-does not depend on Meta's HTTP payload shape.
-
-### Catalog and menu
-
-```bash
-curl http://localhost:3000/api/products
-curl http://localhost:3000/api/promotions
-curl http://localhost:3000/api/faqs
-curl http://localhost:3000/api/menu --output menu.pdf
-```
-
-## Information routing
-
-| Customer request                         | Application path                                    |
-| ---------------------------------------- | --------------------------------------------------- |
-| “What do you sell?”                      | Catalog categories and representative examples      |
-| “Show me the menu”                       | Channel-neutral PDF document descriptor             |
-| “What cold drinks cost less than S/ 15?” | Typed PostgreSQL catalog query                      |
-| “Explain your allergen policy”           | Semantic knowledge search through RAG               |
-| “Which promotions apply right now?”      | Structured promotion query in the business timezone |
-| “What promotions do you have?”           | Current and scheduled promotion catalog             |
-| “Add two cappuccinos”                    | Order tool, catalog resolution, and state machine   |
-| “I am Ana and my phone is 987 654 321”   | Validated order customer-details tool               |
-| Greeting or thanks                       | Direct model response without retrieval             |
-
-The model may select at most one tool per customer message. A tool call uses one model response to
-choose the operation and a second response to present the application-controlled result.
-
-## Configuration
-
-All supported variables and development defaults are documented in [.env.example](.env.example).
-Important controls include:
-
-| Variable                            | Default                    |
-| ----------------------------------- | -------------------------- |
-| `OPENAI_MODEL`                      | `gpt-5.6-luna`             |
-| `OPENAI_EMBEDDING_MODEL`            | `text-embedding-3-small`   |
-| `CORS_ALLOWED_ORIGINS`              | `http://localhost:4173`    |
-| `RAG_MIN_SIMILARITY`                | `0.5`                      |
-| `RATE_LIMIT_CONVERSATIONS_PER_HOUR` | `5`                        |
-| `RATE_LIMIT_MESSAGES_PER_MINUTE`    | `10`                       |
-| `WHATSAPP_ENABLED`                  | `false` (Web-only)         |
-| `WHATSAPP_VERIFY_TOKEN`             | Required when enabled, 32+ |
-| `WHATSAPP_APP_SECRET`               | Required when enabled, 32+ |
-| `WHATSAPP_ACCESS_TOKEN`             | Required when enabled, 20+ |
-
-The current rate-limit store is in memory and intentionally targets one application instance. A
-distributed deployment requires shared Redis storage. A reverse proxy must also be trusted
-explicitly so the web adapter receives the real client IP.
-
-`CORS_ALLOWED_ORIGINS` is a comma-separated list of exact Web origins, including scheme and optional
-port. Requests without an `Origin` header remain available to server clients and webhooks. CORS is
-a browser policy, not API authentication.
-
-### Business configuration
-
-This deployment serves **one** business, defined entirely under [`business/`](business/README.md).
-It is not selected at runtime and there is no environment variable for it — a different deployment
-edits the folder. See [`business/README.md`](business/README.md) for the full contract.
-
-| File                       | Format     | Holds                                                                                                                                                                                                         |
-| -------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `business/profile.json`    | JSON       | Identity: `name`, `timeZone` (IANA), optional `menuTitle` (defaults to `Carta de <name>`). Validated at startup. The menu is always `business/assets/menu.pdf` at `/api/menu` — engine constants, not config. |
-| `business/seed.ts`         | TypeScript | The bootstrap catalog: `products`, `promotions`, `faqs`, `obsoleteFaqSlugs`. Typed against Prisma's inputs, so a wrong category fails the build, not the seed.                                                |
-| `business/assets/menu.pdf` | file       | Presentation menu. Never a price source.                                                                                                                                                                      |
-
-The profile is the single source of the business name (system prompt), the promotion time zone, and
-the menu document — there are no per-field overrides. `src/config/business.config.ts` is the only
-part of the engine that reads `business/`.
-
-**To run a different (gastronomic) business:** edit `business/profile.json` and `business/seed.ts`,
-replace `business/assets/menu.pdf`, then seed a fresh database. No change to `AppModule`,
-`prisma/seed.ts`, or the conversational core.
-
-```bash
-npm run db:seed          # upserts business/seed.ts into PostgreSQL (idempotent, keyed by slug)
-npm run knowledge:ingest # rebuilds the pgvector index from what was seeded
-```
-
-**What belongs to the engine, not the business:** the prompt, `ChatService`, tools, orders, RAG,
-channels, and the `ProductCategory` (`HOT_DRINK` / `COLD_DRINK` / `FOOD`), allergen, dietary-tag and
-caffeine fields. Those last fields are a deliberate constraint of the **gastronomic
-catalog-with-ordering vertical**; the engine is not industry-agnostic and does not generalize to
-clinics, banks, or other domains. The reuse guarantee (a different gastronomic business runs through
-the same pipeline unchanged) is exercised in `business/business.spec.ts`.
+Categories and product attributes are business data: `business/seed.ts` defines category slugs, labels,
+search terms, and a validated attribute schema. The core is configurable for this catalog-and-ordering
+boundary; it does not claim to support every industry.
 
 ## Commands
 
-| Command                          | Purpose                                                    |
-| -------------------------------- | ---------------------------------------------------------- |
-| `npm run start:dev`              | Start the API in watch mode                                |
-| `npm run db:start`               | Start local PostgreSQL with pgvector                       |
-| `npm run db:migrate`             | Apply development migrations                               |
-| `npm run db:seed`                | Load `business/seed.ts` into PostgreSQL                    |
-| `npm run knowledge:ingest`       | Build or update the derived vector knowledge index         |
-| `npm run format`                 | Apply ESLint and Prettier fixes                            |
-| `npm run validate`               | Lint, format check, type-check, unit coverage, and build   |
-| `npm run test:integration`       | Run deterministic PostgreSQL and pgvector tests            |
-| `npm run test:e2e`               | Run deterministic HTTP flows with disposable PostgreSQL    |
-| `npm run rag:evaluate`           | Run live RAG retrieval evaluation                          |
-| `npm run chat:evaluate:catalog`  | Run live catalog-routing evaluation                        |
-| `npm run chat:evaluate:security` | Run live conversational security evaluation                |
-| `npm run chat:evaluate:orders`   | Run live multi-turn order evaluation and write JSON report |
+| Command                          | Purpose                                                      |
+| -------------------------------- | ------------------------------------------------------------ |
+| `npm run validate`               | Lint, formatting, types, unit tests with coverage and build. |
+| `npm run test:integration`       | Integration against disposable PostgreSQL/pgvector.          |
+| `npm run test:e2e`               | HTTP flows with disposable infrastructure.                   |
+| `npm run rag:evaluate`           | Semantic retrieval using configured models.                  |
+| `npm run chat:evaluate:catalog`  | Catalog tool selection.                                      |
+| `npm run chat:evaluate:security` | Injection and unsupported-claim handling.                    |
+| `npm run chat:evaluate:orders`   | Multi-turn order conversations.                              |
 
-The deterministic test commands do not call OpenAI. Live evaluation commands require an API key,
-can vary with model behavior, and have token cost.
+Live evaluations use credentials and can incur cost. The full strategy is in
+[Quality and evaluations](docs/QUALITY.md).
 
-## Project documentation
+## Documentation
 
-- [Architecture](ARCHITECTURE.md): C4 views, runtime boundaries, tools, data ownership, and order states.
-- [Quality and evaluations](docs/QUALITY.md): testing layers, safe test databases, live evals, and cost reports.
-- [Business configuration](business/README.md): `profile.json` + `seed.ts`, what you edit to serve a different business, and the vertical boundary.
+- [Architecture](ARCHITECTURE.md): boundaries, components, flows and design decisions.
+- [Quality and evaluations](docs/QUALITY.md): what each suite verifies and when to run it.
+- [Business configuration](business/README.md): how to change the example business.
+- [Web widget example](examples/web-widget/README.md): framework-free Web integration.
+- [Privacy note](PRIVACY.md): data handling for the WhatsApp demo.
 
 ## License
 
-This project is available under the [MIT License](LICENSE).
+[MIT](LICENSE)

@@ -16,6 +16,21 @@ type OrderToolMock = {
   getContext: jest.Mock;
 };
 
+type CatalogConfiguration = {
+  categories: Array<{
+    slug: string;
+    label: string;
+    active: boolean;
+    searchTerms: string[];
+  }>;
+  attributes: Array<{
+    key: string;
+    type: string;
+    allowedValues: string[];
+    filterable: boolean;
+  }>;
+};
+
 function orderToolMock(): OrderToolMock {
   return {
     execute: jest.fn(),
@@ -41,6 +56,7 @@ function chatTurnMock(): Pick<ChatTurnService, 'start' | 'complete' | 'fail'> {
 function createService(options: {
   generate: jest.Mock;
   orderTool?: OrderToolMock;
+  catalogConfiguration?: CatalogConfiguration;
   memory?: Pick<MemoryService, 'getRecentMessages'>;
   turns?: Pick<ChatTurnService, 'start' | 'complete' | 'fail'>;
 }): {
@@ -50,12 +66,18 @@ function createService(options: {
   turns: Pick<ChatTurnService, 'start' | 'complete' | 'fail'>;
 } {
   const orderTool = options.orderTool ?? orderToolMock();
+  const catalog = {
+    getCatalogConfiguration: jest
+      .fn()
+      .mockResolvedValue(options.catalogConfiguration ?? { categories: [], attributes: [] }),
+  };
   const memory = options.memory ?? { getRecentMessages: jest.fn().mockResolvedValue([]) };
   const turns = options.turns ?? chatTurnMock();
   const service = new ChatService(
     { generate: options.generate },
     new ConfigService({ BUSINESS_NAME: 'Aurora Bistró' }),
     orderTool,
+    catalog,
     memory,
     turns,
   );
@@ -66,6 +88,38 @@ function createService(options: {
 describe('ChatService', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('passes active category labels and configured aliases to the model', async () => {
+    let receivedInput: GenerateResponseInput | undefined;
+    const generate = jest.fn((input: GenerateResponseInput) => {
+      receivedInput = input;
+      return Promise.resolve(directResult('Tenemos novelas y flores.'));
+    });
+    const { service } = createService({
+      generate,
+      catalogConfiguration: {
+        categories: [
+          { slug: 'books', label: 'Books', active: true, searchTerms: ['novels', 'reading'] },
+          { slug: 'flowers', label: 'Flowers', active: true, searchTerms: ['bouquets'] },
+          { slug: 'archived', label: 'Archived', active: false, searchTerms: ['old items'] },
+        ],
+        attributes: [],
+      },
+    });
+
+    await service.reply({
+      requestId: 'request-catalog',
+      messageId: MESSAGE_ID,
+      conversationId: 'conversation-1',
+      channel: 'web',
+      message: '¿Tienen novelas o bouquets?',
+    });
+
+    expect(receivedInput?.instructions).toContain(
+      '<catalog_configuration>{"categories":[{"slug":"books","label":"Books","searchTerms":["novels","reading"]},{"slug":"flowers","label":"Flowers","searchTerms":["bouquets"]}],"attributes":[]}</catalog_configuration>',
+    );
+    expect(receivedInput?.instructions).not.toContain('old items');
   });
 
   it('forwards history, conversation id and the auto tool choice, then saves the exchange', async () => {
@@ -79,7 +133,7 @@ describe('ChatService', () => {
         usedSources: [
           {
             sourceId: 'product-category-hot-drinks',
-            sourceKey: 'HOT_DRINK',
+            sourceKey: 'hot-drinks',
             sourceType: 'product_category',
           },
         ],
@@ -151,7 +205,7 @@ describe('ChatService', () => {
       usedSources: [
         {
           sourceId: 'product-category-hot-drinks',
-          sourceKey: 'HOT_DRINK',
+          sourceKey: 'hot-drinks',
           sourceType: 'product_category',
         },
       ],

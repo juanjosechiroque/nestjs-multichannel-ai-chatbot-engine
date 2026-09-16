@@ -1,15 +1,17 @@
-import type { ProductCategory } from '../generated/prisma/enums';
-import type { ProductAllergen, ProductDietaryTag } from './catalog-preferences';
+export type CatalogAttributeFilterValue = string | number | boolean;
+
+export interface CatalogAttributeFilter {
+  key: string;
+  value: CatalogAttributeFilterValue;
+  operator: 'MATCHES' | 'EXCLUDES';
+  matchesArray?: boolean;
+}
 
 export interface ProductSearchFilters {
   productName?: string;
-  category?: ProductCategory;
+  category?: string;
   maxPrice?: number;
   maxPriceExclusive?: boolean;
-  dietaryTags?: ProductDietaryTag[];
-  excludedAllergens?: ProductAllergen[];
-  containsCoffee?: boolean;
-  decaffeinated?: boolean;
-  caffeineFree?: boolean;
+  attributeFilters?: CatalogAttributeFilter[];
   limit: number;
 }

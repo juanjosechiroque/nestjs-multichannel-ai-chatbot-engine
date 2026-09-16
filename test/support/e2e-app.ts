@@ -108,6 +108,12 @@ export class HttpE2EHarness {
   private menuTool?: MenuDocumentTool;
   private manageOrderTool?: ManageOrderTool;
   private setOrderCustomerTool?: SetOrderCustomerTool;
+  private testCategoryId?: string;
+
+  get catalogCategoryId(): string {
+    if (!this.testCategoryId) throw new Error('Catalog category is not initialized');
+    return this.testCategoryId;
+  }
 
   get app(): INestApplication {
     if (!this.appInstance) {
@@ -214,6 +220,51 @@ export class HttpE2EHarness {
       prisma.promotion.deleteMany(),
       prisma.faq.deleteMany(),
     ]);
+    await prisma.category.deleteMany();
+    await prisma.catalogAttribute.deleteMany();
+    const category = await prisma.category.create({
+      data: { slug: 'test-products', label: 'Test products', active: true, searchTerms: ['test'] },
+    });
+    this.testCategoryId = category.id;
+    await prisma.catalogAttribute.createMany({
+      data: [
+        {
+          key: 'allergens',
+          label: 'Allergens',
+          type: 'STRING_ARRAY',
+          allowedValues: [],
+          filterable: true,
+        },
+        {
+          key: 'dietaryTags',
+          label: 'Dietary tags',
+          type: 'STRING_ARRAY',
+          allowedValues: [],
+          filterable: true,
+        },
+        {
+          key: 'containsCoffee',
+          label: 'Contains coffee',
+          type: 'BOOLEAN',
+          allowedValues: [],
+          filterable: true,
+        },
+        {
+          key: 'decaffeinated',
+          label: 'Decaffeinated',
+          type: 'BOOLEAN',
+          allowedValues: [],
+          filterable: true,
+        },
+        {
+          key: 'caffeineFree',
+          label: 'Caffeine free',
+          type: 'BOOLEAN',
+          allowedValues: [],
+          filterable: true,
+        },
+      ],
+    });
   }
 
   private toolCtx(input: GenerateResponseInput): ToolInvocationContext {

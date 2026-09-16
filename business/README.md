@@ -5,16 +5,16 @@ engine in `src/` never imports from here except through one seam,
 `src/config/business.config.ts`.
 
 This is **not** multi-tenancy: one deployment serves one business, with its own
-database. To run a different (gastronomic) business, edit the files below — never
+database. To run a different catalog and ordering business, edit the files below — never
 `src/` or `prisma/seed.ts`.
 
 ## What you edit
 
-| File              | Format     | What it is                                                                                                                                                                                                                                                                                  |
-| ----------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `profile.json`    | JSON       | Business identity: `name`, `timeZone` (IANA), and an optional `menuTitle` (defaults to `Carta de <name>`). Validated on startup — a bad time zone or missing field stops the app. The menu file is always `assets/menu.pdf`, served at `/api/menu`; those are engine constants, not config. |
-| `seed.ts`         | TypeScript | The reproducible bootstrap catalog: `products`, `promotions`, `faqs`, `obsoleteFaqSlugs`. Typed against Prisma's input types so a wrong category or a missing field fails the build, not the seed run. PostgreSQL is the runtime source of truth; this is only the initial load.            |
-| `assets/menu.pdf` | file       | The presentation menu. Never a price source.                                                                                                                                                                                                                                                |
+| File              | Format     | What it is                                                                                                                                                                                                                                                                                                                     |
+| ----------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `profile.json`    | JSON       | Business identity: `name`, `timeZone` (IANA), and an optional `menuTitle` (defaults to `Carta de <name>`). Validated on startup — a bad time zone or missing field stops the app. The menu file is always `assets/menu.pdf`, served at `/api/menu`; those are engine constants, not config.                                    |
+| `seed.ts`         | TypeScript | The reproducible bootstrap catalog: `categories`, `attributes`, `products`, `promotions`, `faqs`, `obsoleteFaqSlugs`. Categories carry labels and search terms; attributes declare keys, types, allowed values and filterability. The seed validates product values before writing. PostgreSQL is the runtime source of truth. |
+| `assets/menu.pdf` | file       | The presentation menu. Never a price source.                                                                                                                                                                                                                                                                                   |
 
 `contract.ts` (the `BusinessProfile` / `BusinessSeed` types), `product-metadata.ts`
 (the shared metadata helper) and `seed-runner.ts` (the idempotent upsert-by-slug
@@ -29,10 +29,11 @@ npm run knowledge:ingest # rebuilds the pgvector index from what was seeded
 
 ## Boundary
 
-The engine targets the **gastronomic catalog-with-ordering vertical**.
-`ProductCategory` (`HOT_DRINK` / `COLD_DRINK` / `FOOD`), declared allergens,
-dietary tags and caffeine flags are deliberate constraints of that vertical and
-are defined in `src/` — they are not generalized to other industries. A new
-business varies the data within this vertical, not the domain model. The reuse
-guarantee is exercised in `business/business.spec.ts` against an alternate
-business fixture.
+The engine serves one configurable catalog-and-ordering business per deployment.
+Categories and attributes are data, not engine enums: define only the categories
+and filterable product facts that the deployment needs. This is intentionally not
+a claim of support for every industry. The reuse guarantee is exercised against a
+non-gastronomic fixture in `business/business.spec.ts`.
+
+Only active categories and products are published by catalog search; a product can
+be added to or confirmed in an order only while both records are active.

@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ProductCategory } from '../../generated/prisma/enums';
 
 class CatalogRecordDto {
   @ApiProperty({ format: 'uuid' })
@@ -34,8 +33,8 @@ export class ProductResponseDto extends CatalogRecordDto {
   @ApiProperty({ example: 'PEN' })
   currency!: string;
 
-  @ApiProperty({ enum: ProductCategory })
-  category!: ProductCategory;
+  @ApiProperty({ type: 'object', additionalProperties: true })
+  category!: { slug: string; label: string };
 
   @ApiProperty()
   availableForOrdering!: boolean;

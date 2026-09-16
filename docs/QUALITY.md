@@ -1,28 +1,19 @@
-# Quality and Evaluations
+# Quality and evaluations
 
-This document explains how the reusable AI chatbot backend is verified. It separates deterministic
-software verification from live model evaluation because the two groups answer different questions
-and intentionally run through different commands.
+The project separates deterministic software checks from live model evaluations. Catalog facts,
+prices, totals, persistence and order transitions must remain deterministic even when model output
+varies.
 
-The quality strategy treats the LLM as one component inside a larger system: model output may vary,
-but catalog facts, prices, totals, order transitions, persistence, and safety boundaries must remain
-under application control.
-
-## Deterministic quality gate
+## Deterministic checks
 
 ```bash
 npm run validate
 ```
 
-The command runs:
+This runs ESLint, Prettier verification, strict TypeScript, unit tests with coverage and a production
+NestJS build. Unit tests mock OpenAI and require neither Docker nor API credentials.
 
-1. ESLint without warnings.
-2. Prettier verification.
-3. Strict TypeScript checking.
-4. Unit tests with coverage thresholds.
-5. A production NestJS build.
-
-The current global coverage thresholds are:
+Coverage thresholds:
 
 | Metric     | Minimum |
 | ---------- | ------: |
@@ -31,176 +22,42 @@ The current global coverage thresholds are:
 | Functions  |     80% |
 | Lines      |     85% |
 
-Unit tests mock OpenAI and do not require Docker, a database, network access, or API credits. They
-cover `src/**` and the business boundary in `business/**` (profile validation, the `BusinessProfile`
-/ `BusinessSeed` contracts, the idempotent seed runner, and the reuse guarantee against an alternate
-business fixture); both trees count toward the coverage thresholds.
+## Database and HTTP suites
 
-### Test logging policy
+| Command                    | Verifies                                                                                                   | Requirements                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `npm run test:integration` | Prisma migrations, configurable catalog persistence, pgvector queries and transactional order persistence. | Docker/Testcontainers; no OpenAI.                            |
+| `npm run test:e2e`         | HTTP contract, validation, Web chat, catalog, RAG, orders, rate limits and WhatsApp webhooks.              | Docker/Testcontainers; OpenAI is replaced with test doubles. |
 
-`test/support/silence-logging.ts` runs through `setupFilesAfterEnv` for every Jest project
-(unit, integration, and HTTP end-to-end): all NestJS `Logger` levels are silenced by default, so
-the deliberate error and warning paths the suites exercise never flood the reporter. Specs that
-assert on structured logging re-spy on `Logger.prototype` themselves. Application code logs only
-through `Logger`, never `console`.
-
-## PostgreSQL integration tests
-
-```bash
-npm run test:integration
-```
-
-Testcontainers starts disposable PostgreSQL 17 instances with pgvector. The suites verify:
-
-- The pgvector extension and real similarity queries.
-- Similarity ordering and minimum-threshold filtering.
-- Applied Prisma migrations.
-- Order draft creation, modification, review, customer identity collection, numbered confirmation,
-  and cancellation.
-- Product ordering availability when adding items and immediately before confirmation.
-- Exact persisted products, quantities, price snapshots, and totals.
-
-Integration tests do not call OpenAI.
-
-## HTTP end-to-end tests
-
-```bash
-npm run test:e2e
-```
-
-The HTTP suites start the real NestJS application with disposable PostgreSQL infrastructure. OpenAI
-generation and embeddings are replaced by deterministic test doubles.
-
-A single pgvector container is started once per run by `test/support/e2e-global-setup.ts`
-(`globalSetup`) and migrations are applied once. Each `*.e2e-spec.ts` file builds its own NestJS
-application against that shared database through the `setupHttpE2E()` harness in
-`test/support/e2e-app.ts`, and isolates itself by truncating tables between tests. Splitting the
-former single 1.9k-line spec into focused files (contract, WhatsApp webhook, web chat, catalog,
-orders, knowledge) keeps each suite readable and lets a failure point at one area instead of the
-whole flow. They cover:
-
-- Global DTO validation and controlled errors.
-- Swagger/OpenAPI route coverage, schemas, operations, and documented HTTP responses.
-- Global security headers and removal of the Express signature.
-- Allowed and disallowed browser origins, including CORS preflight behavior.
-- WhatsApp callback verification, POST signatures, shared-chat routing, stable conversation memory,
-  provider-port substitution, safe chatbot/provider failures, required WAMID persistence, monotonic
-  delivery statuses, latency timestamps, Graph API translation, and durable duplicate suppression
-  without repeated OpenAI calls.
-- Backend-managed conversations and persistent history.
-- Completed-message replay, conflicting IDs, failed retries, and concurrent duplicate rejection.
-- Catalog endpoints, typed catalog search, and menu documents.
-- RAG context propagation with real pgvector queries.
-- Multi-turn order changes and confirmation.
-- Web rate limiting by IP and public session.
-- `429` rejection before persistence or the chatbot core.
-- Controlled `503` responses for provider and database failures.
-
-These tests do not call external APIs and have no token cost.
-
-## Disposable database safety
-
-Integration, HTTP E2E, and live order evaluation databases are created by Testcontainers. Their
-database names must include `test` or `e2e`, and safety assertions reject any non-disposable target.
-Containers are removed after each suite. Tests never clear or reseed the local development database.
+Both suites use disposable PostgreSQL databases whose names include `test` or `e2e`. They never clear
+or reseed the local development database.
 
 ## Live evaluations
 
-Live evaluations use the configured OpenAI models and are intentionally excluded from
-`npm run validate` and CI.
+These commands use configured OpenAI models and are intentionally outside CI. Prepare the seed and
+knowledge index first unless noted otherwise.
 
-| Evaluation | Command                          | What it measures                                        |
-| ---------- | -------------------------------- | ------------------------------------------------------- |
-| RAG        | `npm run rag:evaluate`           | Expected-source retrieval and unrelated-query rejection |
-| Catalog    | `npm run chat:evaluate:catalog`  | Tool selection, filters, and product attribution        |
-| Security   | `npm run chat:evaluate:security` | Prompt injection, disclosure, and unsupported claims    |
-| Orders     | `npm run chat:evaluate:orders`   | Multi-turn language interpretation and persisted state  |
+| Command                          | Measures                                                        |
+| -------------------------------- | --------------------------------------------------------------- |
+| `npm run rag:evaluate`           | Expected-source retrieval and unrelated-query rejection.        |
+| `npm run chat:evaluate:catalog`  | Tool choice, typed filters and product attribution.             |
+| `npm run chat:evaluate:security` | Injection resistance, secret disclosure and unsupported claims. |
+| `npm run chat:evaluate:orders`   | Multi-turn interpretation and persisted order state.            |
 
-RAG, catalog, and security evaluations use the `DATABASE_URL` configured in `.env`, so prepare the
-local seed and knowledge index first. The security evaluator creates isolated conversations and
-deletes them after each case. The order evaluator is different: it always starts its own disposable
-Testcontainers database and never reads, clears, or seeds the local development database.
+Set the corresponding `*_EVALUATION_CASE` variable to run one named case. RAG, catalog and security
+evaluations use the configured development database; the order evaluator creates its own disposable
+database. Order reports are written under `output/evaluations/orders/` and include token and estimated
+cost data. They are run artifacts, not invoices.
 
-### RAG retrieval
+## When to run what
 
-The RAG evaluator runs representative business questions and unrelated queries against real
-embeddings and pgvector. It should be used to calibrate `RAG_MIN_SIMILARITY` from evidence rather
-than intuition.
+| Change                                             | Run                                                 |
+| -------------------------------------------------- | --------------------------------------------------- |
+| Normal application change                          | `npm run validate`                                  |
+| Prisma, SQL, RAG query or order persistence        | `npm run test:integration`                          |
+| Controller, DTO, HTTP contract or channel behavior | `npm run test:e2e`                                  |
+| Prompt, tool schema or model change                | Relevant live evaluation case                       |
+| Release candidate                                  | Deterministic checks plus affected live evaluations |
 
-```bash
-npm run rag:evaluate
-RAG_EVALUATION_CASE="food catalog paraphrase" npm run rag:evaluate
-```
-
-### Catalog routing
-
-The catalog evaluator verifies that the model selects `search_catalog`, supplies typed filters, and
-attributes expected products without including forbidden results.
-
-```bash
-npm run chat:evaluate:catalog
-CHAT_CATALOG_EVALUATION_CASE="cold caffeine-free preference" npm run chat:evaluate:catalog
-```
-
-### Conversational security
-
-Security cases cover prompt injection, system-prompt disclosure, unrelated requests, missing
-business information, fabricated prices, and fabricated promotions. Deterministic leak markers are
-combined with a structured model judge.
-
-```bash
-npm run chat:evaluate:security
-CHAT_SECURITY_EVALUATION_CASE="prompt injection" npm run chat:evaluate:security
-```
-
-### Multi-turn orders
-
-The order evaluator runs representative conversations for additions, contextual references,
-review, confirmation, modification, cancellation, unknown products, price manipulation, repeated
-products, excessive removal, required customer identity, public order-number assignment, idempotent
-confirmation, and new orders after a terminal state.
-
-Each case receives a new backend-managed conversation in a disposable database. The evaluator
-checks state after every turn and verifies final products, quantities, totals, status, and persisted
-order count.
-
-```bash
-npm run chat:evaluate:orders
-CHAT_ORDER_EVALUATION_CASE="modify after reviewing" npm run chat:evaluate:orders
-```
-
-## Order evaluation reports and cost
-
-Every order-evaluation run writes a local JSON artifact to:
-
-```text
-output/evaluations/orders/<timestamp>.json
-```
-
-The report contains:
-
-- Model and generation timestamp.
-- Overall pass rate, turns, and duration.
-- Customer message, model answer, expected state, and actual state for every turn.
-- Expected and persisted final order snapshots, including checkout identity and order-number checks.
-- Input, cached-input, cache-write, output, reasoning, and total tokens.
-- Estimated USD cost with the pricing date, source, billable tokens, and breakdown.
-
-Reports are ignored by Git because they are run artifacts. The estimate is not an invoice. Pricing
-is available only for models explicitly documented by the project; an unknown model produces
-`status: unavailable` instead of applying an incorrect rate. Reasoning tokens are a subset of output
-tokens and are not charged a second time by the estimator.
-
-## Recommended workflow
-
-| Situation                             | Run                                                |
-| ------------------------------------- | -------------------------------------------------- |
-| Normal code change                    | `npm run validate`                                 |
-| Prisma, RAG SQL, or order persistence | `npm run test:integration`                         |
-| Controller, DTO, error, or full flow  | `npm run test:e2e`                                 |
-| Prompt or tool-schema adjustment      | Relevant single live evaluation case               |
-| Significant chatbot behavior change   | Complete affected live evaluation                  |
-| Before a release candidate            | Deterministic suites, then all relevant live evals |
-
-When a live case fails, rerun that exact case before changing code. Model output can vary, while
-database invariants, prices, totals, and state transitions must remain deterministic.
+When a live case fails, rerun that exact case before changing implementation. Use its result to
+improve the prompt or tool contract while preserving deterministic business rules.

@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
 import { OpenAiRequestFailedException } from '../../src/common/application-error';
-import { ProductCategory } from '../../src/generated/prisma/enums';
 import { OrderAction, OrderStatus } from '../../src/order/order.types';
 import { chatMessage, setupHttpE2E } from '../support/e2e-app';
 
@@ -25,7 +24,7 @@ describe('Web order workflow HTTP', () => {
           name: 'Cappuccino Nube',
           description: 'Espresso con leche vaporizada.',
           price: '13.00',
-          category: ProductCategory.HOT_DRINK,
+          categoryId: harness.catalogCategoryId,
           active: true,
         },
         {
@@ -34,7 +33,7 @@ describe('Web order workflow HTTP', () => {
           name: 'Croissant de mantequilla',
           description: 'Horneado durante la mañana.',
           price: '9.00',
-          category: ProductCategory.FOOD,
+          categoryId: harness.catalogCategoryId,
           active: true,
         },
       ],
@@ -127,7 +126,7 @@ describe('Web order workflow HTTP', () => {
         name: 'Latte',
         description: 'Espresso con leche vaporizada.',
         price: '13.00',
-        category: ProductCategory.HOT_DRINK,
+        categoryId: harness.catalogCategoryId,
         active: true,
       },
     });
@@ -221,7 +220,7 @@ describe('Web order workflow HTTP', () => {
         name: 'Latte',
         description: 'Espresso con leche vaporizada.',
         price: '13.00',
-        category: ProductCategory.HOT_DRINK,
+        categoryId: harness.catalogCategoryId,
       },
     });
     const conversationResponse = await request(harness.server)
@@ -275,7 +274,7 @@ describe('Web order workflow HTTP', () => {
         name: 'Cappuccino',
         description: 'Espresso con leche vaporizada.',
         price: '12.00',
-        category: ProductCategory.HOT_DRINK,
+        categoryId: harness.catalogCategoryId,
       },
     });
     const conversationResponse = await request(harness.server)
@@ -342,7 +341,7 @@ describe('Web order workflow HTTP', () => {
         name: 'Brownie de cacao',
         description: 'Brownie húmedo con cacao peruano.',
         price: '11.00',
-        category: ProductCategory.FOOD,
+        categoryId: harness.catalogCategoryId,
       },
     });
     const conversationResponse = await request(harness.server)
@@ -387,14 +386,14 @@ describe('Web order workflow HTTP', () => {
           name: 'Latte',
           description: 'Espresso con leche.',
           price: '13.00',
-          category: ProductCategory.HOT_DRINK,
+          categoryId: harness.catalogCategoryId,
         },
         {
           slug: 'context-brownie',
           name: 'Brownie de cacao',
           description: 'Brownie de cacao peruano.',
           price: '11.00',
-          category: ProductCategory.FOOD,
+          categoryId: harness.catalogCategoryId,
         },
       ],
     });

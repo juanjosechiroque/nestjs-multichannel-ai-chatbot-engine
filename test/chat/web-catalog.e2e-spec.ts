@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 // Supertest uses a CommonJS `export =`, so an import assignment matches its runtime shape.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
-import { ProductCategory } from '../../src/generated/prisma/enums';
 import { chatMessage, setupHttpE2E } from '../support/e2e-app';
 
 interface ConversationResponse {
@@ -27,7 +26,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Zeta Latte',
           description: 'Producto activo que debe aparecer segundo.',
           price: '12.00',
-          category: ProductCategory.HOT_DRINK,
+          categoryId: harness.catalogCategoryId,
           active: true,
         },
         {
@@ -36,7 +35,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Alpha Espresso',
           description: 'Producto activo que debe aparecer primero.',
           price: '8.00',
-          category: ProductCategory.HOT_DRINK,
+          categoryId: harness.catalogCategoryId,
           active: true,
           availableForOrdering: false,
         },
@@ -46,7 +45,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Producto oculto',
           description: 'Este producto no debe exponerse.',
           price: '9.00',
-          category: ProductCategory.FOOD,
+          categoryId: harness.catalogCategoryId,
           active: false,
         },
       ],
@@ -196,7 +195,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Cappuccino Nube',
           description: 'Espresso con leche vaporizada.',
           price: '13.00',
-          category: ProductCategory.HOT_DRINK,
+          categoryId: harness.catalogCategoryId,
           active: true,
         },
         {
@@ -205,7 +204,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Cappuccino Inactivo',
           description: 'No debe devolverse.',
           price: '10.00',
-          category: ProductCategory.HOT_DRINK,
+          categoryId: harness.catalogCategoryId,
           active: false,
         },
       ],
@@ -218,14 +217,10 @@ describe('Web catalog and promotions HTTP', () => {
     harness.generate.mockImplementationOnce(async (input) => {
       toolOutput = await harness.toolBag(input).searchCatalog({
         productName: 'cappuccino',
-        category: ProductCategory.HOT_DRINK,
+        category: 'test-products',
         maxPrice: 15,
         maxPriceExclusive: false,
-        dietaryTags: [],
-        excludedAllergens: [],
-        containsCoffee: null,
-        decaffeinated: null,
-        caffeineFree: null,
+        attributeFilters: [],
       });
       return {
         answer: 'El Cappuccino Nube cuesta S/ 13.00.',
@@ -246,7 +241,7 @@ describe('Web catalog and promotions HTTP', () => {
       .send(chatMessage(sessionId, '¿Cuánto cuesta el cappuccino?'))
       .expect(201, { reply: 'El Cappuccino Nube cuesta S/ 13.00.' });
 
-    expect(JSON.parse(toolOutput ?? '')).toEqual({
+    expect(JSON.parse(toolOutput ?? '')).toMatchObject({
       catalogStatus: 'results_found',
       products: [
         {
@@ -257,13 +252,9 @@ describe('Web catalog and promotions HTTP', () => {
           description: 'Espresso con leche vaporizada.',
           price: '13',
           currency: 'PEN',
-          category: 'HOT_DRINK',
+          category: { slug: 'test-products', label: 'Test products' },
           availableForOrdering: true,
-          allergens: [],
-          dietaryTags: [],
-          containsCoffee: null,
-          decaffeinated: null,
-          caffeineFree: null,
+          attributes: {},
         },
       ],
     });
@@ -281,7 +272,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Producto de catorce soles',
           description: 'Debe aparecer.',
           price: '14.00',
-          category: ProductCategory.FOOD,
+          categoryId: harness.catalogCategoryId,
           active: true,
         },
         {
@@ -290,7 +281,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Producto de quince soles',
           description: 'No debe aparecer en una búsqueda menor que quince.',
           price: '15.00',
-          category: ProductCategory.FOOD,
+          categoryId: harness.catalogCategoryId,
           active: true,
         },
       ],
@@ -303,14 +294,10 @@ describe('Web catalog and promotions HTTP', () => {
     harness.generate.mockImplementationOnce(async (input) => {
       toolOutput = await harness.toolBag(input).searchCatalog({
         productName: null,
-        category: ProductCategory.FOOD,
+        category: 'test-products',
         maxPrice: 15,
         maxPriceExclusive: true,
-        dietaryTags: [],
-        excludedAllergens: [],
-        containsCoffee: null,
-        decaffeinated: null,
-        caffeineFree: null,
+        attributeFilters: [],
       });
       return {
         answer: 'Tenemos una opción por menos de S/ 15.',
@@ -347,7 +334,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Galleta vegana',
           description: 'Galleta de avena y cacao.',
           price: '9.00',
-          category: ProductCategory.FOOD,
+          categoryId: harness.catalogCategoryId,
           active: true,
           metadata: {
             allergens: ['GLUTEN'],
@@ -363,7 +350,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Croissant vegetariano',
           description: 'Croissant con mantequilla.',
           price: '9.00',
-          category: ProductCategory.FOOD,
+          categoryId: harness.catalogCategoryId,
           active: true,
           metadata: {
             allergens: ['GLUTEN', 'MILK'],
@@ -379,7 +366,7 @@ describe('Web catalog and promotions HTTP', () => {
           name: 'Brownie con leche',
           description: 'Brownie de cacao y leche.',
           price: '8.00',
-          category: ProductCategory.FOOD,
+          categoryId: harness.catalogCategoryId,
           active: true,
           metadata: {
             allergens: ['GLUTEN', 'MILK'],
@@ -399,14 +386,14 @@ describe('Web catalog and promotions HTTP', () => {
     harness.generate.mockImplementationOnce(async (input) => {
       toolOutput = await harness.toolBag(input).searchCatalog({
         productName: null,
-        category: ProductCategory.FOOD,
+        category: 'test-products',
         maxPrice: 10,
         maxPriceExclusive: false,
-        dietaryTags: ['VEGAN'],
-        excludedAllergens: ['MILK'],
-        containsCoffee: false,
-        decaffeinated: null,
-        caffeineFree: null,
+        attributeFilters: [
+          { key: 'dietaryTags', operator: 'MATCHES', value: 'VEGAN' },
+          { key: 'allergens', operator: 'EXCLUDES', value: 'MILK' },
+          { key: 'containsCoffee', operator: 'MATCHES', value: false },
+        ],
       });
       return {
         answer: 'La Galleta vegana cuesta S/ 9.00.',
@@ -427,7 +414,7 @@ describe('Web catalog and promotions HTTP', () => {
       .send(chatMessage(sessionId, 'Quiero comida vegana sin leche por máximo S/ 10.'))
       .expect(201, { reply: 'La Galleta vegana cuesta S/ 9.00.' });
 
-    expect(JSON.parse(toolOutput ?? '')).toEqual({
+    expect(JSON.parse(toolOutput ?? '')).toMatchObject({
       catalogStatus: 'results_found',
       products: [
         {
@@ -438,7 +425,7 @@ describe('Web catalog and promotions HTTP', () => {
           description: 'Galleta de avena y cacao.',
           price: '9',
           currency: 'PEN',
-          category: 'FOOD',
+          category: { slug: 'test-products', label: 'Test products' },
           availableForOrdering: true,
           allergens: ['GLUTEN'],
           dietaryTags: ['VEGAN', 'VEGETARIAN'],

@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 // Supertest uses a CommonJS `export =`, so an import assignment matches its runtime shape.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
-import { ProductCategory, WhatsAppOutboundStatus } from '../../../src/generated/prisma/enums';
+import { WhatsAppOutboundStatus } from '../../../src/generated/prisma/enums';
 import { E2E_ENVIRONMENT, setupHttpE2E } from '../../support/e2e-app';
 
 /** Polls until `predicate` holds: the webhook acknowledges Meta before the chatbot turn runs. */
@@ -75,7 +75,7 @@ describe('WhatsApp webhook HTTP flow', () => {
         description: 'Café intenso de prueba.',
         price: 8,
         currency: 'PEN',
-        category: ProductCategory.HOT_DRINK,
+        categoryId: harness.catalogCategoryId,
         active: true,
         availableForOrdering: true,
       },
@@ -89,11 +89,7 @@ describe('WhatsApp webhook HTTP flow', () => {
           category: null,
           maxPrice: null,
           maxPriceExclusive: false,
-          dietaryTags: [],
-          excludedAllergens: [],
-          containsCoffee: null,
-          decaffeinated: null,
-          caffeineFree: null,
+          attributeFilters: [],
         }),
       ) as { products: Array<{ name: string; price: string }> };
       expect(catalog.products).toEqual([expect.objectContaining({ name: 'Espresso', price: '8' })]);

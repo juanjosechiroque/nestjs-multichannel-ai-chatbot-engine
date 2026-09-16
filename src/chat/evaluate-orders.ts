@@ -79,8 +79,23 @@ async function evaluateOrders(): Promise<void> {
 }
 
 async function seedProducts(prisma: PrismaService): Promise<void> {
+  for (const category of businessSeed.categories) {
+    await prisma.category.upsert({
+      where: { slug: category.slug },
+      update: { ...category, searchTerms: [...category.searchTerms] },
+      create: { ...category, searchTerms: [...category.searchTerms] },
+    });
+  }
+  for (const attribute of businessSeed.attributes) {
+    await prisma.catalogAttribute.upsert({
+      where: { key: attribute.key },
+      update: { ...attribute, allowedValues: [...attribute.allowedValues] },
+      create: { ...attribute, allowedValues: [...attribute.allowedValues] },
+    });
+  }
   for (const product of businessSeed.products) {
-    await prisma.product.create({ data: product });
+    const { category, ...data } = product;
+    await prisma.product.create({ data: { ...data, category: { connect: { slug: category } } } });
   }
 }
 

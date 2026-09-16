@@ -2,10 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../src/database/prisma.service';
 import { Prisma } from '../../src/generated/prisma/client';
-import {
-  ProductCategory,
-  OrderStatus as PrismaOrderStatus,
-} from '../../src/generated/prisma/enums';
+import { OrderStatus as PrismaOrderStatus } from '../../src/generated/prisma/enums';
 import {
   ActiveOrderNotFoundError,
   OrderCurrencyMismatchError,
@@ -62,7 +59,7 @@ describe('OrderService with PostgreSQL', () => {
           name: 'Cappuccino Nube',
           description: 'Café con leche.',
           price: 13,
-          category: ProductCategory.HOT_DRINK,
+          category: { connect: { slug: 'hot-drinks' } },
         },
       }),
       prisma.product.create({
@@ -71,7 +68,7 @@ describe('OrderService with PostgreSQL', () => {
           name: 'Croissant de mantequilla',
           description: 'Horneado durante la mañana.',
           price: 9,
-          category: ProductCategory.FOOD,
+          category: { connect: { slug: 'food' } },
         },
       }),
     ]);
@@ -471,7 +468,7 @@ describe('OrderService with PostgreSQL', () => {
         description: 'Producto para validar moneda.',
         price: 5,
         currency: 'USD',
-        category: ProductCategory.FOOD,
+        category: { connect: { slug: 'food' } },
       },
     });
     const draft = await orders.addItem({

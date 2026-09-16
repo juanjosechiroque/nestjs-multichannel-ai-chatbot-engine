@@ -90,7 +90,7 @@ function activeProduct(price = 13, currency = 'PEN') {
     description: 'Café con leche.',
     price: new Prisma.Decimal(price),
     currency,
-    category: 'HOT_DRINK' as const,
+    categoryId: 'category-id',
     active: true,
     availableForOrdering: true,
     metadata: null,
@@ -271,7 +271,12 @@ describe('OrderService', () => {
       },
     });
     expect(productFindFirst).toHaveBeenCalledWith({
-      where: { id: PRODUCT_ID, active: true, availableForOrdering: true },
+      where: {
+        id: PRODUCT_ID,
+        active: true,
+        availableForOrdering: true,
+        category: { active: true },
+      },
     });
     expect(conversationLock).toHaveBeenCalledTimes(1);
     const createData = orderItemCreate.mock.calls[0]?.[0].data;
@@ -328,6 +333,28 @@ describe('OrderService', () => {
         quantity: 1,
       }),
     ).rejects.toEqual(new OrderProductNotAvailableError(PRODUCT_ID));
+    expect(orderCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects products from inactive categories without creating an order', async () => {
+    const { service, productFindFirst, orderCreate } = createService();
+    productFindFirst.mockResolvedValue(null);
+
+    await expect(
+      service.addItem({
+        conversationId: CONVERSATION_ID,
+        productId: PRODUCT_ID,
+        quantity: 1,
+      }),
+    ).rejects.toEqual(new OrderProductNotAvailableError(PRODUCT_ID));
+    expect(productFindFirst).toHaveBeenCalledWith({
+      where: {
+        id: PRODUCT_ID,
+        active: true,
+        availableForOrdering: true,
+        category: { active: true },
+      },
+    });
     expect(orderCreate).not.toHaveBeenCalled();
   });
 
@@ -588,6 +615,7 @@ describe('OrderService', () => {
         id: { in: [PRODUCT_ID] },
         active: true,
         availableForOrdering: true,
+        category: { active: true },
       },
       select: { id: true },
     });
@@ -608,6 +636,33 @@ describe('OrderService', () => {
     await expect(service.confirm(CONVERSATION_ID)).rejects.toEqual(
       new OrderProductNotAvailableError(PRODUCT_ID),
     );
+    expect(orderUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects confirmation when a selected product category became inactive', async () => {
+    const { service, productFindMany, orderFindFirst, orderItemFindMany, orderUpdate } =
+      createService();
+    orderFindFirst.mockResolvedValue(
+      persistedOrder(PrismaOrderStatus.CONFIRMING_ORDER, 13, {
+        customerName: 'Ana Pérez',
+        customerPhone: '987654321',
+      }),
+    );
+    orderItemFindMany.mockResolvedValue([persistedItem()]);
+    productFindMany.mockResolvedValue([]);
+
+    await expect(service.confirm(CONVERSATION_ID)).rejects.toEqual(
+      new OrderProductNotAvailableError(PRODUCT_ID),
+    );
+    expect(productFindMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: [PRODUCT_ID] },
+        active: true,
+        availableForOrdering: true,
+        category: { active: true },
+      },
+      select: { id: true },
+    });
     expect(orderUpdate).not.toHaveBeenCalled();
   });
 

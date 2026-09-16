@@ -8,10 +8,11 @@ datasource db {
   provider = "postgresql"
 }
 
-enum ProductCategory {
-  HOT_DRINK
-  COLD_DRINK
-  FOOD
+enum CatalogAttributeType {
+  STRING
+  NUMBER
+  BOOLEAN
+  STRING_ARRAY
 }
 
 enum MessageRole {
@@ -51,15 +52,51 @@ model Product {
   description          String          @db.Text
   price                Decimal         @db.Decimal(10, 2)
   currency             String          @default("PEN") @db.Char(3)
-  category             ProductCategory
+  categoryId           String          @map("category_id") @db.Uuid
   active               Boolean         @default(true)
   availableForOrdering Boolean         @default(true) @map("available_for_ordering")
   metadata             Json?           @db.JsonB
+  category             Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   orderItems           OrderItem[]
   createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("products")
+}
+
+/**
+ * Published catalog grouping for this single-business deployment. Search terms
+ * are business-owned aliases used by retrieval, not application enums.
+ */
+model Category {
+  id          String    @id @default(uuid()) @db.Uuid
+  slug        String    @unique
+  label       String
+  active      Boolean   @default(true)
+  searchTerms String[]  @default([]) @map("search_terms")
+  products    Product[]
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("categories")
+}
+
+/**
+ * Schema for product metadata. Values remain in Product.metadata so catalog
+ * records stay compact, while this table makes accepted keys and filters explicit.
+ */
+model CatalogAttribute {
+  id            String               @id @default(uuid()) @db.Uuid
+  key           String               @unique
+  label         String
+  type          CatalogAttributeType
+  allowedValues String[]             @default([]) @map("allowed_values")
+  filterable    Boolean              @default(false)
+  active        Boolean              @default(true)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("catalog_attributes")
 }
 
 model Promotion {

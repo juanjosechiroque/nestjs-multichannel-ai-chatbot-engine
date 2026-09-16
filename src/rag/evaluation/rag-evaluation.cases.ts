@@ -127,27 +127,27 @@ export const RAG_EVALUATION_CASES: readonly RagEvaluationCase[] = [
   {
     name: 'hot drinks catalog',
     query: '¿Qué bebidas calientes tienen?',
-    expectedSource: { sourceType: 'product_category', sourceKey: 'HOT_DRINK' },
+    expectedSource: { sourceType: 'product_category', sourceKey: 'hot-drinks' },
   },
   {
     name: 'hot drinks catalog paraphrase',
     query: '¿Qué tienen para tomar si quiero algo caliente?',
-    expectedSource: { sourceType: 'product_category', sourceKey: 'HOT_DRINK' },
+    expectedSource: { sourceType: 'product_category', sourceKey: 'hot-drinks' },
   },
   {
     name: 'cold drinks catalog',
     query: 'Muéstrame todas las bebidas frías',
-    expectedSource: { sourceType: 'product_category', sourceKey: 'COLD_DRINK' },
+    expectedSource: { sourceType: 'product_category', sourceKey: 'cold-drinks' },
   },
   {
     name: 'food catalog',
     query: '¿Qué opciones de comida venden?',
-    expectedSource: { sourceType: 'product_category', sourceKey: 'FOOD' },
+    expectedSource: { sourceType: 'product_category', sourceKey: 'food' },
   },
   {
     name: 'food catalog paraphrase',
     query: '¿Puedo ver la carta para comer?',
-    expectedSource: { sourceType: 'product_category', sourceKey: 'FOOD' },
+    expectedSource: { sourceType: 'product_category', sourceKey: 'food' },
   },
   {
     name: 'unrelated recipe',
