@@ -27,11 +27,6 @@ export async function applyMigrations(connectionString: string): Promise<void> {
 
 const TEST_DATABASE_NAME_PATTERN = /(?:^|_)(?:e2e|test)(?:_|$)/;
 
-/**
- * Creates a fresh, uniquely named database inside the shared integration
- * container (booted once by `integration-global-setup.ts`) and returns its
- * connection URI. Cheap compared to starting a new container per suite.
- */
 export async function createIntegrationDatabase(databaseName: string): Promise<string> {
   if (!TEST_DATABASE_NAME_PATTERN.test(databaseName)) {
     throw new Error(`Test database name must contain "test" or "e2e": ${databaseName}`);

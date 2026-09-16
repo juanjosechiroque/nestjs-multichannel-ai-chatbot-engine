@@ -2,10 +2,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { ConditionalModule, ConfigModule } from '@nestjs/config';
 import { isWhatsAppEnabled } from './config/whatsapp-enabled';
 
-// A stand-in for `WhatsAppChannelModule`: this spec verifies the composition
-// mechanism `AppModule` uses (`ConditionalModule.registerWhen` + the shared
-// `isWhatsAppEnabled` predicate), not the WhatsApp module's own wiring, which
-// the E2E suites cover end to end.
+// Module wiring is covered E2E; this isolates the conditional composition predicate.
 @Module({})
 class StubChannelModule {}
 
@@ -35,8 +32,6 @@ async function registerChannelWhen(enabledValue: string | undefined): Promise<Dy
 
 describe('AppModule conditional WhatsApp composition', () => {
   beforeAll(async () => {
-    // `ConditionalModule.registerWhen` waits for `ConfigModule` to signal that
-    // environment variables are loaded before it evaluates the predicate.
     await ConfigModule.forRoot({ ignoreEnvFile: true });
   });
 

@@ -457,7 +457,7 @@ src/
 ├── rag/              # Embeddings, ingestion, pgvector search, and retrieval evals
 ├── database/         # Prisma database integration
 ├── config/           # Strict env validation + business.config seam
-└── health/           # Health endpoint
+└── health/           # Process liveness and PostgreSQL readiness
 
 business/             # The one business this deployment serves
 ├── profile.json      # Identity: name, time zone, optional menuTitle (validated at startup)

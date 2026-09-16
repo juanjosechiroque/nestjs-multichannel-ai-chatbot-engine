@@ -2,10 +2,6 @@ import { BeforeApplicationShutdown, Injectable, OnApplicationBootstrap } from '@
 
 export type NestRuntimeState = 'initializing' | 'ready' | 'shutting_down';
 
-/**
- * Tracks the NestJS application lifecycle so `/health` can report whether the
- * container has finished bootstrapping and is not draining for shutdown.
- */
 @Injectable()
 export class NestRuntimeService implements OnApplicationBootstrap, BeforeApplicationShutdown {
   private state: NestRuntimeState = 'initializing';

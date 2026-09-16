@@ -1,17 +1,41 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { HealthResponseDto } from './dto/health-response.dto';
-import { NestRuntimeService } from './nest-runtime.service';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ApiOkResponse,
+  ApiOperation,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { LivenessResponseDto, ReadinessResponseDto } from './dto/health-response.dto';
+import { HealthService } from './health.service';
 
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
-  constructor(private readonly nestRuntime: NestRuntimeService) {}
+  constructor(private readonly health: HealthService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Check application health' })
-  @ApiOkResponse({ type: HealthResponseDto })
-  check(): HealthResponseDto {
-    return { status: 'ok', nest: { state: this.nestRuntime.getState() } };
+  @ApiOperation({ summary: 'Check process liveness (compatibility alias)' })
+  @ApiOkResponse({ type: LivenessResponseDto })
+  check(): LivenessResponseDto {
+    return { status: 'ok' };
+  }
+
+  @Get('live')
+  @ApiOperation({ summary: 'Check process liveness' })
+  @ApiOkResponse({ type: LivenessResponseDto })
+  checkLiveness(): LivenessResponseDto {
+    return { status: 'ok' };
+  }
+
+  @Get('ready')
+  @ApiOperation({ summary: 'Check NestJS and PostgreSQL readiness' })
+  @ApiOkResponse({ type: ReadinessResponseDto })
+  @ApiServiceUnavailableResponse({ type: ReadinessResponseDto })
+  async checkReadiness(): Promise<ReadinessResponseDto> {
+    const readiness = await this.health.checkReadiness();
+    if (readiness.status === 'unavailable') {
+      throw new ServiceUnavailableException(readiness);
+    }
+    return readiness;
   }
 }
