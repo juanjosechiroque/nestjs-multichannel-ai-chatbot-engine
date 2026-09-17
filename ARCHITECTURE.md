@@ -12,14 +12,19 @@ examples while keeping business-critical operations deterministic.
 - RAG is reserved for semantic knowledge that benefits from similarity search.
 - Tools bridge model intent to typed application operations.
 - The order state machine has no dependency on NestJS, Prisma, OpenAI, or a channel.
-- Café Nube is selected at the application composition boundary and does not leak into generic modules.
+- The business is configured under `business/` (identity in `profile.json`, catalog in `seed.ts`) behind the `BusinessProfile` / `BusinessSeed` contracts. Only `src/config/business.config.ts` reads it; the conversational core and channels never do.
 
 ## Product boundary
 
-The current implementation is a single-business backend demonstration with Web HTTP and WhatsApp
-Cloud API chat adapters. Both combine LLM interpretation with structured catalog queries, semantic
-retrieval, persistent memory, and deterministic order workflows without moving that behavior into a
-channel.
+The current implementation serves one business per deployment (configured under `business/`), with
+Web HTTP and WhatsApp Cloud API chat adapters. Both combine LLM interpretation with structured catalog
+queries, semantic retrieval, persistent memory, and deterministic order workflows without moving
+that behavior into a channel.
+
+The engine targets the **gastronomic catalog-with-ordering vertical**. `ProductCategory`
+(`HOT_DRINK` / `COLD_DRINK` / `FOOD`), declared allergens, dietary tags, and caffeine flags are
+deliberate constraints of that vertical, held in `src/`, and are **not** generalized to clinics,
+banks, or other industries. Profiles vary the data within this vertical, not the domain model.
 
 The following capabilities remain intentionally outside the current runtime boundary:
 
@@ -335,35 +340,61 @@ A channel adapter may:
 
 It must not contain prompts, retrieval rules, catalog queries, memory policies, or order logic.
 
+## Business configuration boundary
+
+```mermaid
+flowchart LR
+    json["business/profile.json\n(identity, per deployment)"] --> loader["src/config/business.config.ts\nloadBusinessConfig()"]
+    loader --> cfg["ConfigModule: BUSINESS_NAME,\nBUSINESS_TIME_ZONE, catalogDocument"]
+    cfg --> engine["ChatService / PromotionSearchTool / CatalogDocumentService"]
+    seedts["business/seed.ts\n(BusinessSeed)"] --> seedrun["prisma/seed.ts → seedBusiness(writer, seed)"]
+```
+
+The deployment serves exactly one business, defined under `business/`. There is no runtime selector
+and no `BUSINESS_PROFILE` variable. `src/config/business.config.ts` is the **only** part of the
+engine that imports from `business/`; the conversational core and channels never do (guarded by a
+test). `business/profile.json` holds only what varies per deployment — `name`, `timeZone`, and an
+optional `menuTitle` (the menu file path and `/api/menu` URL are engine constants) — and is
+validated at startup, so a bad value stops the app before it serves traffic. `business/seed.ts` is typed against Prisma's create
+inputs, so a wrong `ProductCategory` or missing field fails the build; its records are upserted by
+stable `slug`, so a reseed is idempotent.
+
+This is not multi-tenancy: no `businessId` columns, no per-request tenant resolution, one business
+per deployment and database. Serving a different (gastronomic) business means editing
+`business/profile.json`, `business/seed.ts` and `business/assets/menu.pdf` — no engine change. That
+guarantee is exercised in `business/business.spec.ts` against an alternate business fixture.
+
 ## Component responsibilities
 
-| Component                    | Owns                                                                                                      | Must not own                                             |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Web controllers              | HTTP input/output and public session mapping                                                              | Chatbot or order rules                                   |
-| Swagger / OpenAPI            | Discoverable HTTP contracts and examples                                                                  | Core or business behavior                                |
-| Web rate-limit configuration | IP/session tracking and `429` protection                                                                  | Business limits or model behavior                        |
-| WhatsApp webhook controller  | Meta challenge, signature validation, acknowledgment                                                      | Chatbot or business behavior                             |
-| WhatsApp receipt service     | Payload extraction and durable message deduplication                                                      | Chatbot invocation or outbound formatting                |
-| WhatsApp chat adapter        | Stable session/identity mapping and `ChatService` invocation                                              | Prompts, retrieval, catalog, or order rules              |
-| WhatsApp outbound service    | WAMID lifecycle, safe failures, status ordering, and latency                                              | Generated text retention or Meta HTTP shape              |
-| `WhatsAppProvider` port      | Provider-neutral outbound text contract                                                                   | Meta payloads or business behavior                       |
-| `MetaWhatsAppClient`         | Graph API authentication, translation, timeout, and result                                                | Prompts or conversational behavior                       |
-| `ConversationService`        | Conversation creation and channel-session resolution                                                      | Prompt or channel payload interpretation                 |
-| `ChatService`                | One complete channel-neutral reply                                                                        | HTTP, WhatsApp, or provider payloads                     |
-| `ChatTurnService`            | Message reservation, replay, failure state, atomic memory write                                           | Channel-specific retry policy                            |
-| `OpenAiService`              | Responses API transport and the `CHAT_TOOLS` registry loop                                                | Tool schemas, argument validation, business calculations |
-| `chat-tool-router`           | Message heuristics that force a tool choice or rewrite the query                                          | Tool execution or transport                              |
-| `chat-response.parser`       | Structured-output and business-context parsing for the transport                                          | Tool selection or business calculations                  |
-| `ChatTool` implementations   | Each tool's own OpenAI definition, argument validation, execution                                         | The transport loop or tool-choice routing                |
-| `CatalogService`             | Exact structured business-data queries                                                                    | Semantic retrieval or channel formatting                 |
-| `PromotionSearchTool`        | Current/catalog scope and time-zone-aware classification                                                  | Natural-language date calculations                       |
-| `RagService`                 | Similarity search and accepted knowledge context                                                          | Transactional catalog ownership                          |
-| `KnowledgeIngestionService`  | Derived vector-index synchronization                                                                      | Source-of-truth business data                            |
-| `MemoryService`              | Bounded conversation history                                                                              | Public session resolution                                |
-| `OrderTool`                  | Structured model action to application operation; delegate for `ManageOrderTool` / `SetOrderCustomerTool` | Prices, totals, or transition decisions                  |
-| `OrderService`               | Transactional order mutations and persistence                                                             | Natural-language interpretation                          |
-| `OrderStateMachine`          | Valid actions and deterministic transitions                                                               | Database, NestJS, model, or channel access               |
-| Prisma seed                  | Reproducible demo records                                                                                 | Runtime chatbot dependency                               |
+| Component                       | Owns                                                                                                      | Must not own                                             |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Web controllers                 | HTTP input/output and public session mapping                                                              | Chatbot or order rules                                   |
+| Swagger / OpenAPI               | Discoverable HTTP contracts and examples                                                                  | Core or business behavior                                |
+| Web rate-limit configuration    | IP/session tracking and `429` protection                                                                  | Business limits or model behavior                        |
+| WhatsApp webhook controller     | Meta challenge, signature validation, acknowledgment                                                      | Chatbot or business behavior                             |
+| WhatsApp receipt service        | Payload extraction and durable message deduplication                                                      | Chatbot invocation or outbound formatting                |
+| WhatsApp chat adapter           | Stable session/identity mapping and `ChatService` invocation                                              | Prompts, retrieval, catalog, or order rules              |
+| WhatsApp outbound service       | WAMID lifecycle, safe failures, status ordering, and latency                                              | Generated text retention or Meta HTTP shape              |
+| `WhatsAppProvider` port         | Provider-neutral outbound text contract                                                                   | Meta payloads or business behavior                       |
+| `MetaWhatsAppClient`            | Graph API authentication, translation, timeout, and result                                                | Prompts or conversational behavior                       |
+| `ConversationService`           | Conversation creation and channel-session resolution                                                      | Prompt or channel payload interpretation                 |
+| `ChatService`                   | One complete channel-neutral reply                                                                        | HTTP, WhatsApp, or provider payloads                     |
+| `ChatTurnService`               | Message reservation, replay, failure state, atomic memory write                                           | Channel-specific retry policy                            |
+| `OpenAiService`                 | Responses API transport and the `CHAT_TOOLS` registry loop                                                | Tool schemas, argument validation, business calculations |
+| `chat-tool-router`              | Message heuristics that force a tool choice or rewrite the query                                          | Tool execution or transport                              |
+| `chat-response.parser`          | Structured-output and business-context parsing for the transport                                          | Tool selection or business calculations                  |
+| `ChatTool` implementations      | Each tool's own OpenAI definition, argument validation, execution                                         | The transport loop or tool-choice routing                |
+| `CatalogService`                | Exact structured business-data queries                                                                    | Semantic retrieval or channel formatting                 |
+| `PromotionSearchTool`           | Current/catalog scope and time-zone-aware classification                                                  | Natural-language date calculations                       |
+| `RagService`                    | Similarity search and accepted knowledge context                                                          | Transactional catalog ownership                          |
+| `KnowledgeIngestionService`     | Derived vector-index synchronization                                                                      | Source-of-truth business data                            |
+| `MemoryService`                 | Bounded conversation history                                                                              | Public session resolution                                |
+| `OrderTool`                     | Structured model action to application operation; delegate for `ManageOrderTool` / `SetOrderCustomerTool` | Prices, totals, or transition decisions                  |
+| `OrderService`                  | Transactional order mutations and persistence                                                             | Natural-language interpretation                          |
+| `OrderStateMachine`             | Valid actions and deterministic transitions                                                               | Database, NestJS, model, or channel access               |
+| `business/` folder              | The one business: identity (`profile.json`, validated) and catalog (`seed.ts`, typed) plus the menu asset | Engine or channel behavior                               |
+| `src/config/business.config.ts` | Sole seam: `business/profile.json` → `BUSINESS_NAME` / `BUSINESS_TIME_ZONE` / `catalogDocument`           | A business selector or business logic                    |
+| `prisma/seed.ts`                | Wiring `business/seed.ts` into an idempotent slug upsert                                                  | Runtime chatbot dependency; inline catalog data          |
 
 ## Decisions and trade-offs
 
@@ -405,16 +436,22 @@ src/
 ├── order/            # State machine and transactional order operations
 ├── rag/              # Embeddings, ingestion, pgvector search, and retrieval evals
 ├── database/         # Prisma database integration
-├── config/           # Strict environment validation
+├── config/           # Strict env validation + business.config seam
 └── health/           # Health endpoint
+
+business/             # The one business this deployment serves
+├── profile.json      # Identity: name, time zone, optional menuTitle (validated at startup)
+├── seed.ts           # Typed bootstrap catalog: products, promotions, faqs
+├── contract.ts       # BusinessProfile / BusinessSeed types
+├── product-metadata.ts / seed-runner.ts   # shared helper + idempotent upsert runner
+└── assets/menu.pdf   # Presentation menu (never a price source)
 
 prisma/
 ├── migrations/       # Committed PostgreSQL schema history
-├── seed-data/        # Reproducible example records
+├── seed.ts           # Business-agnostic idempotent seed runner (wires business/seed.ts)
 └── schema.prisma     # Products, knowledge, conversations, and orders
 
 examples/
-├── cafe-nube/        # Replaceable business configuration and presentation asset
 └── web-widget/       # Framework-free external integration example
 docs/                 # Quality and evaluation documentation
 ```

@@ -4,7 +4,7 @@ export class WebDocumentContentDto {
   @ApiProperty({ enum: ['document'], example: 'document' })
   type!: 'document';
 
-  @ApiProperty({ example: 'Carta de Café Nube' })
+  @ApiProperty({ example: 'Carta del negocio' })
   title!: string;
 
   @ApiProperty({ example: '/api/menu' })

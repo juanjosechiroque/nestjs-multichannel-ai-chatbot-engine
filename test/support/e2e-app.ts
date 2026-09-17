@@ -44,8 +44,8 @@ export const E2E_ENVIRONMENT = {
   WHATSAPP_VERIFY_TOKEN: 'whatsapp-e2e-verify-token-32-chars',
   WHATSAPP_APP_SECRET: 'whatsapp-e2e-app-secret-32-chars',
   WHATSAPP_ACCESS_TOKEN: 'whatsapp-e2e-access-token-at-least-20-chars',
-  BUSINESS_NAME: 'Café Nube',
-  BUSINESS_TIME_ZONE: 'America/Lima',
+  // The business identity is not an env var: AppModule loads it from
+  // business/profile.json, exactly as a real deployment does.
 } as const;
 
 type EnvironmentKey = keyof typeof E2E_ENVIRONMENT | 'DATABASE_URL';

@@ -29,13 +29,15 @@ confirmation guarantees.
 - RAG is used for semantic business knowledge; exact catalog and order operations use structured queries.
 - OpenAI interprets language and selects tools, but application code owns prices, totals, and state transitions.
 - Provider and database failures produce controlled responses instead of exposing internal errors.
-- The included Café Nube business is reproducible demo data, not hardcoded chatbot logic.
+- The business (identity + catalog) lives under `business/`, loaded as reproducible bootstrap data, never hardcoded chatbot logic. The bundled example is Café Nube.
 
 ## Scope and current boundaries
 
-This repository is a reusable backend engine with one configured Café Nube example, not a hosted
-multi-tenant SaaS product. Web HTTP and WhatsApp text messages both use the same PostgreSQL- and
-OpenAI-backed conversational core. The WhatsApp adapter authenticates Meta notifications, maps each
+This repository is a reusable backend engine that serves one business per deployment, configured
+under `business/` (Café Nube in this repo), not a hosted multi-tenant SaaS product. It is **not**
+multi-tenancy: there is no `businessId` on domain tables, no per-request tenant resolution, no
+runtime business selector, and the deployment owns its database. Web HTTP and WhatsApp text messages
+both use the same PostgreSQL- and OpenAI-backed conversational core. The WhatsApp adapter authenticates Meta notifications, maps each
 WABA/customer pair to stable conversation memory, suppresses duplicate delivery, and sends the
 generated answer through Meta Graph API.
 
@@ -158,9 +160,9 @@ npm run knowledge:ingest
 npm run start:dev
 ```
 
-The API starts at `http://localhost:3000/api` by default. The seed is safe to run again: stable
-slugs update the Café Nube records without creating duplicates. Run `knowledge:ingest` whenever
-products, promotions, or FAQs change.
+The API starts at `http://localhost:3000/api` by default. It serves the business defined under
+[`business/`](business/README.md). The seed is safe to run again: stable slugs update the records
+without creating duplicates. Run `knowledge:ingest` whenever products, promotions, or FAQs change.
 
 HTTP documentation is available after startup:
 
@@ -293,7 +295,7 @@ does not depend on Meta's HTTP payload shape.
 curl http://localhost:3000/api/products
 curl http://localhost:3000/api/promotions
 curl http://localhost:3000/api/faqs
-curl http://localhost:3000/api/menu --output cafe-nube-menu.pdf
+curl http://localhost:3000/api/menu --output menu.pdf
 ```
 
 ## Information routing
@@ -326,7 +328,6 @@ Important controls include:
 | `RAG_MIN_SIMILARITY`                | `0.5`                      |
 | `RATE_LIMIT_CONVERSATIONS_PER_HOUR` | `5`                        |
 | `RATE_LIMIT_MESSAGES_PER_MINUTE`    | `10`                       |
-| `BUSINESS_TIME_ZONE`                | `America/Lima`             |
 | `WHATSAPP_VERIFY_TOKEN`             | Required, 32+ characters   |
 | `WHATSAPP_APP_SECRET`               | Required Meta App Secret   |
 | `WHATSAPP_ACCESS_TOKEN`             | Required Meta access token |
@@ -339,6 +340,38 @@ explicitly so the web adapter receives the real client IP.
 port. Requests without an `Origin` header remain available to server clients and webhooks. CORS is
 a browser policy, not API authentication.
 
+### Business configuration
+
+This deployment serves **one** business, defined entirely under [`business/`](business/README.md).
+It is not selected at runtime and there is no environment variable for it — a different deployment
+edits the folder. See [`business/README.md`](business/README.md) for the full contract.
+
+| File                       | Format     | Holds                                                                                                                                                                                                         |
+| -------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `business/profile.json`    | JSON       | Identity: `name`, `timeZone` (IANA), optional `menuTitle` (defaults to `Carta de <name>`). Validated at startup. The menu is always `business/assets/menu.pdf` at `/api/menu` — engine constants, not config. |
+| `business/seed.ts`         | TypeScript | The bootstrap catalog: `products`, `promotions`, `faqs`, `obsoleteFaqSlugs`. Typed against Prisma's inputs, so a wrong category fails the build, not the seed.                                                |
+| `business/assets/menu.pdf` | file       | Presentation menu. Never a price source.                                                                                                                                                                      |
+
+The profile is the single source of the business name (system prompt), the promotion time zone, and
+the menu document — there are no per-field overrides. `src/config/business.config.ts` is the only
+part of the engine that reads `business/`.
+
+**To run a different (gastronomic) business:** edit `business/profile.json` and `business/seed.ts`,
+replace `business/assets/menu.pdf`, then seed a fresh database. No change to `AppModule`,
+`prisma/seed.ts`, or the conversational core.
+
+```bash
+npm run db:seed          # upserts business/seed.ts into PostgreSQL (idempotent, keyed by slug)
+npm run knowledge:ingest # rebuilds the pgvector index from what was seeded
+```
+
+**What belongs to the engine, not the business:** the prompt, `ChatService`, tools, orders, RAG,
+channels, and the `ProductCategory` (`HOT_DRINK` / `COLD_DRINK` / `FOOD`), allergen, dietary-tag and
+caffeine fields. Those last fields are a deliberate constraint of the **gastronomic
+catalog-with-ordering vertical**; the engine is not industry-agnostic and does not generalize to
+clinics, banks, or other domains. The reuse guarantee (a different gastronomic business runs through
+the same pipeline unchanged) is exercised in `business/business.spec.ts`.
+
 ## Commands
 
 | Command                          | Purpose                                                    |
@@ -346,7 +379,7 @@ a browser policy, not API authentication.
 | `npm run start:dev`              | Start the API in watch mode                                |
 | `npm run db:start`               | Start local PostgreSQL with pgvector                       |
 | `npm run db:migrate`             | Apply development migrations                               |
-| `npm run db:seed`                | Load the Café Nube demo data                               |
+| `npm run db:seed`                | Load `business/seed.ts` into PostgreSQL                    |
 | `npm run knowledge:ingest`       | Build or update the derived vector knowledge index         |
 | `npm run format`                 | Apply ESLint and Prettier fixes                            |
 | `npm run validate`               | Lint, format check, type-check, unit coverage, and build   |
@@ -364,7 +397,7 @@ can vary with model behavior, and have token cost.
 
 - [Architecture](ARCHITECTURE.md): C4 views, runtime boundaries, tools, data ownership, and order states.
 - [Quality and evaluations](docs/QUALITY.md): testing layers, safe test databases, live evals, and cost reports.
-- [Café Nube example](examples/cafe-nube/README.md): demo data, assets, loading, and replacement boundaries.
+- [Business configuration](business/README.md): `profile.json` + `seed.ts`, what you edit to serve a different business, and the vertical boundary.
 
 ## License
 

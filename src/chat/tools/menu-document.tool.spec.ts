@@ -5,7 +5,7 @@ describe('MenuDocumentTool', () => {
   it('returns a channel-neutral PDF descriptor without catalog products', async () => {
     const getDescriptor = jest.fn().mockReturnValue({
       type: 'document',
-      title: 'Carta de Café Nube',
+      title: 'Carta de Aurora Bistró',
       url: '/api/menu',
       mimeType: 'application/pdf',
     });
@@ -17,7 +17,7 @@ describe('MenuDocumentTool', () => {
         documentStatus: 'available',
         document: {
           type: 'document',
-          title: 'Carta de Café Nube',
+          title: 'Carta de Aurora Bistró',
           url: '/api/menu',
           mimeType: 'application/pdf',
         },

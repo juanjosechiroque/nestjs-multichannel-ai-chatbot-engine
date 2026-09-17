@@ -1,14 +1,22 @@
 /** @type {import('jest').Config} */
 module.exports = {
-  moduleFileExtensions: ['js', 'json', 'ts'],
+  // `ts` before `json` so a co-located data file (e.g. business/profile.json)
+  // never shadows its loader module (business/profile.ts) in bare imports.
+  moduleFileExtensions: ['ts', 'js', 'json'],
   rootDir: '.',
-  testMatch: ['<rootDir>/src/**/*.spec.ts', '<rootDir>/test/support/**/*.spec.ts'],
+  testMatch: [
+    '<rootDir>/src/**/*.spec.ts',
+    '<rootDir>/business/**/*.spec.ts',
+    '<rootDir>/test/support/**/*.spec.ts',
+  ],
   transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
   setupFiles: ['reflect-metadata'],
   setupFilesAfterEnv: ['<rootDir>/test/support/silence-logging.ts'],
   collectCoverageFrom: [
     'src/**/*.ts',
+    'business/**/*.ts',
+    '!business/**/*.spec.ts',
     '!src/**/*.spec.ts',
     '!src/generated/**',
     '!src/**/*.module.ts',

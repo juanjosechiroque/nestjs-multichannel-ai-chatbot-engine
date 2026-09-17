@@ -3,7 +3,7 @@ import { validateEnvironment } from './environment';
 const VALID_ENVIRONMENT: Record<string, unknown> = {
   NODE_ENV: 'development',
   PORT: '3000',
-  CORS_ALLOWED_ORIGINS: ' http://localhost:4173/, https://www.cafenube.pe/ ',
+  CORS_ALLOWED_ORIGINS: ' http://localhost:4173/, https://www.example.com/ ',
   OPENAI_API_KEY: 'test-key',
   OPENAI_MODEL: 'gpt-5.6-luna',
   OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
@@ -14,8 +14,6 @@ const VALID_ENVIRONMENT: Record<string, unknown> = {
   WHATSAPP_VERIFY_TOKEN: 'whatsapp-test-verify-token-32-chars',
   WHATSAPP_APP_SECRET: 'whatsapp-test-app-secret-32-chars',
   WHATSAPP_ACCESS_TOKEN: 'whatsapp-test-access-token-at-least-20-chars',
-  BUSINESS_NAME: 'Café Nube',
-  BUSINESS_TIME_ZONE: 'America/Lima',
 };
 
 describe('validateEnvironment', () => {
@@ -24,14 +22,13 @@ describe('validateEnvironment', () => {
     delete environmentInput.OPENAI_EMBEDDING_MODEL;
     delete environmentInput.OPENAI_TIMEOUT_MS;
     delete environmentInput.OPENAI_MAX_RETRIES;
-    delete environmentInput.BUSINESS_TIME_ZONE;
 
     const environment = validateEnvironment(environmentInput);
 
     expect(environment.PORT).toBe(3000);
     expect(environment.CORS_ALLOWED_ORIGINS).toEqual([
       'http://localhost:4173',
-      'https://www.cafenube.pe',
+      'https://www.example.com',
     ]);
     expect(environment.OPENAI_EMBEDDING_MODEL).toBe('text-embedding-3-small');
     expect(environment.OPENAI_TIMEOUT_MS).toBe(20_000);
@@ -39,7 +36,6 @@ describe('validateEnvironment', () => {
     expect(environment.RAG_MIN_SIMILARITY).toBe(0.5);
     expect(environment.RATE_LIMIT_CONVERSATIONS_PER_HOUR).toBe(5);
     expect(environment.RATE_LIMIT_MESSAGES_PER_MINUTE).toBe(10);
-    expect(environment.BUSINESS_TIME_ZONE).toBe('America/Lima');
   });
 
   it('uses the local widget origin when the CORS allowlist is omitted', () => {
@@ -57,7 +53,7 @@ describe('validateEnvironment', () => {
     ['a port above the valid range', { PORT: '70000' }, 'PORT'],
     ['a non-numeric port', { PORT: 'abc' }, 'PORT'],
     ['an empty CORS allowlist', { CORS_ALLOWED_ORIGINS: '' }, 'CORS_ALLOWED_ORIGINS'],
-    ['an invalid CORS origin', { CORS_ALLOWED_ORIGINS: 'cafenube.pe' }, 'CORS_ALLOWED_ORIGINS'],
+    ['an invalid CORS origin', { CORS_ALLOWED_ORIGINS: 'example.com' }, 'CORS_ALLOWED_ORIGINS'],
     ['a wildcard CORS origin', { CORS_ALLOWED_ORIGINS: '*' }, 'CORS_ALLOWED_ORIGINS'],
     ['an empty OpenAI API key', { OPENAI_API_KEY: '' }, 'OPENAI_API_KEY'],
     ['an empty database URL', { DATABASE_URL: '' }, 'DATABASE_URL'],
@@ -72,7 +68,6 @@ describe('validateEnvironment', () => {
       { WHATSAPP_ACCESS_TOKEN: 'too-short' },
       'WHATSAPP_ACCESS_TOKEN',
     ],
-    ['an invalid business time zone', { BUSINESS_TIME_ZONE: 'Lima' }, 'BUSINESS_TIME_ZONE'],
     ['a similarity below zero', { RAG_MIN_SIMILARITY: '-0.1' }, 'RAG_MIN_SIMILARITY'],
     ['a similarity above one', { RAG_MIN_SIMILARITY: '1.1' }, 'RAG_MIN_SIMILARITY'],
     [

@@ -64,7 +64,7 @@ describe('WebResponseAdapter', () => {
     const content = [
       {
         type: 'document' as const,
-        title: 'Carta de Café Nube',
+        title: 'Carta de Aurora Bistró',
         url: '/api/menu',
         mimeType: 'application/pdf' as const,
       },

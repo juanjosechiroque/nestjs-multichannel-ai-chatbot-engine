@@ -89,7 +89,7 @@ describe('WebChatController', () => {
       content: [
         {
           type: 'document',
-          title: 'Carta de Café Nube',
+          title: 'Carta de Aurora Bistró',
           url: '/api/menu',
           mimeType: 'application/pdf',
         },
@@ -124,7 +124,7 @@ describe('WebChatController', () => {
       content: [
         {
           type: 'document',
-          title: 'Carta de Café Nube',
+          title: 'Carta de Aurora Bistró',
           url: '/api/menu',
           mimeType: 'application/pdf',
         },

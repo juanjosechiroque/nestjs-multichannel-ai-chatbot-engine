@@ -1,20 +1,8 @@
-import { ProductCategory } from '../../src/generated/prisma/enums';
-import type { Prisma } from '../../src/generated/prisma/client';
-import type { ProductAllergen, ProductDietaryTag } from '../../src/catalog/catalog-preferences';
+import { ProductCategory } from '../src/generated/prisma/enums';
+import type { BusinessSeed } from './contract';
+import { productMetadata } from './product-metadata';
 
-interface ProductMetadata extends Prisma.InputJsonObject {
-  allergens: ProductAllergen[];
-  dietaryTags: ProductDietaryTag[];
-  containsCoffee: boolean;
-  decaffeinated: boolean;
-  caffeineFree: boolean;
-}
-
-function productMetadata(metadata: ProductMetadata): ProductMetadata {
-  return metadata;
-}
-
-export const cafeNubeProducts = [
+const products = [
   {
     slug: 'espresso-nube',
     name: 'Espresso Nube',
@@ -343,7 +331,7 @@ export const cafeNubeProducts = [
   },
 ] as const;
 
-export const cafeNubePromotions = [
+const promotions = [
   {
     slug: 'frappe-dos-por-uno',
     name: 'Frappé 2x1',
@@ -401,7 +389,7 @@ export const cafeNubePromotions = [
   },
 ] as const;
 
-export const cafeNubeFaqs = [
+const faqs = [
   {
     slug: 'horario-atencion',
     category: 'HOURS',
@@ -559,4 +547,12 @@ export const cafeNubeFaqs = [
   },
 ] as const;
 
-export const obsoleteCafeNubeFaqSlugs = ['wifi-mascotas'] as const;
+const obsoleteFaqSlugs = ['wifi-mascotas'] as const;
+
+/** The reproducible bootstrap catalog for this deployment's business. */
+export const businessSeed = {
+  products,
+  promotions,
+  faqs,
+  obsoleteFaqSlugs,
+} satisfies BusinessSeed;

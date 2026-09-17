@@ -14,7 +14,7 @@ export class CatalogDocumentController {
   constructor(private readonly catalogDocument: CatalogDocumentService) {}
 
   @Get('menu')
-  @ApiOperation({ summary: 'Open the Café Nube example menu PDF' })
+  @ApiOperation({ summary: 'Open the configured business menu PDF' })
   @ApiOkResponse({
     description: 'Menu PDF',
     content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } },

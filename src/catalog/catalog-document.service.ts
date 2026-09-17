@@ -3,13 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { DocumentChatContent } from '../chat/chat.types';
+import type { CatalogDocumentConfig } from './catalog-document.config';
 
-export interface CatalogDocumentConfig {
-  title: string;
-  path: string;
-  url: string;
-  mimeType: DocumentChatContent['mimeType'];
-}
+export type { CatalogDocumentConfig } from './catalog-document.config';
+
+/** Every business serves a single PDF menu at this route (see `CatalogDocumentController`). */
+const MENU_DOCUMENT_URL = '/api/menu';
+const MENU_DOCUMENT_MIME_TYPE = 'application/pdf' as const;
 
 @Injectable()
 export class CatalogDocumentService {
@@ -23,8 +23,8 @@ export class CatalogDocumentService {
     return {
       type: 'document',
       title: this.document.title,
-      url: this.document.url,
-      mimeType: this.document.mimeType,
+      url: MENU_DOCUMENT_URL,
+      mimeType: MENU_DOCUMENT_MIME_TYPE,
     };
   }
 
