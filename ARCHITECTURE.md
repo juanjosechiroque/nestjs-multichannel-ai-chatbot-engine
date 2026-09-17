@@ -182,24 +182,29 @@ telemetry and are not part of the web response contract.
 2. `WhatsAppController` verifies the HMAC-SHA256 signature before reading customer content.
 3. `WhatsAppWebhookReceiptService` extracts messages and durably reserves each
    `(WABA ID, message.id)`; duplicate deliveries stop here and still receive `200`.
-4. `WhatsAppChatService` hashes the WABA/customer pair into a stable channel session and atomically
+4. Once the reservation succeeds, `WhatsAppController` returns an empty `200` to Meta and schedules
+   each accepted message with `setImmediate`; steps 5-10 run asynchronously in the same Node process.
+5. `WhatsAppChatService` hashes the WABA/customer pair into a stable channel session and atomically
    finds or creates its `Conversation`.
-5. For text messages, the adapter calls the same `ChatService` used by Web, mapping Meta's message
+6. For text messages, the adapter calls the same `ChatService` used by Web, mapping Meta's message
    identifier to the channel-neutral idempotency contract and Meta profile data to trusted identity.
-6. Catalog, RAG, promotions, memory, and order operations execute through the shared typed tools.
-7. `WhatsAppChatService` sends the generated text through the `WhatsAppProvider` port;
+7. Catalog, RAG, promotions, memory, and order operations execute through the shared typed tools.
+8. `WhatsAppChatService` sends the generated text through the `WhatsAppProvider` port;
    `MetaWhatsAppClient` translates it into a Graph API message request.
-8. `WhatsAppOutboundMessageService` persists the required WAMID and acceptance latency without
+9. `WhatsAppOutboundMessageService` persists the required WAMID and acceptance latency without
    storing the generated text or recipient phone. A `200` without WAMID is rejected as unverifiable.
-9. Later signed `sent`, `delivered`, `read`, or `failed` events advance the outbound record
-   monotonically; duplicates, unknown IDs, and regressive events are safely ignored.
-10. Unsupported media receives a deterministic text capability response. A controlled chatbot
+10. Later signed `sent`, `delivered`, `read`, or `failed` events advance the outbound record
+    monotonically; duplicates, unknown IDs, and regressive events are safely ignored.
+11. Unsupported media receives a deterministic text capability response. A controlled chatbot
     failure receives a safe retry message without exposing provider or database details.
-11. If Graph API delivery fails, the receipt reservation is released so Meta can retry. A completed
-    chatbot turn is replayed from PostgreSQL rather than invoking OpenAI twice.
+12. A failure during background processing (including Graph API delivery) is logged with the
+    message ID and swallowed. The reservation is **not** released, because Meta was already
+    acknowledged and will not retry this webhook.
 
-This flow is synchronous in the portfolio deployment. A production extension should persist a job
-and acknowledge Meta before model execution, then process delivery from a background worker.
+Steps 4-12 are best-effort: because the `200` precedes processing, a deploy, restart, or crash
+after acknowledgment can drop an accepted message. This is a deliberate single-process trade-off;
+there is no durable recovery or queue. A production extension should persist a job before
+acknowledging Meta and process delivery from a background worker.
 
 ## Information and tool routing
 
@@ -413,30 +418,30 @@ guarantee is exercised in `business/business.spec.ts` against an alternate busin
 
 ## Decisions and trade-offs
 
-| Decision                        | Reason                                                                     | Accepted cost                                                   |
-| ------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| NestJS with strict TypeScript   | Explicit modules, dependency injection, and contracts                      | More structure than an Express-only application                 |
-| OpenAI Responses API            | Structured output and direct tool calling                                  | External provider dependency                                    |
-| PostgreSQL with Prisma          | Typed catalog, memory, and transactional order persistence                 | Requires migrations and local infrastructure                    |
-| pgvector for RAG                | Keeps structured and semantic data in one database                         | Exact search needs indexing at larger scale                     |
-| Hybrid RAG and typed tools      | Uses the appropriate access pattern for each question                      | More explicit routing than sending all data to LLM              |
-| One tool per message            | Bounds orchestration, latency, and failure modes                           | Complex requests may require another customer turn              |
-| Tools own their OpenAI contract | Adding a tool is one file plus one `CHAT_TOOLS` entry, no transport change | Several small `ChatTool` classes instead of one dispatch switch |
-| Backend-created sessions        | Rejects unknown conversations and controls lifecycle                       | Requires a session-creation request                             |
-| PostgreSQL message ledger       | Makes channel retries durable across restarts                              | Adds one small row per attempted message                        |
-| PostgreSQL delivery lifecycle   | Verifies accepted, delivered, read, and failed Meta messages               | Adds operational rows and status handling                       |
-| Hashed WhatsApp session key     | Preserves customer memory without a raw-phone public session ID            | Requires deterministic WABA/customer mapping                    |
-| Synchronous WhatsApp processing | Keeps the portfolio deployment operationally small                         | Production latency needs a durable worker queue                 |
-| Provider port inside Nest       | Isolates Meta without a separately deployed service                        | Adds an interface and DI token                                  |
-| Last ten history messages       | Bounds prompt growth and cost                                              | Older context is not sent to the model                          |
-| PostgreSQL order drafts         | Keeps order state independent from model memory                            | Abandoned drafts need lifecycle cleanup                         |
-| Product price snapshots         | Preserves historical order totals                                          | Duplicates selected catalog data                                |
-| Confirmation closes this engine | Gives the chatbot a precise, testable success boundary                     | Payment, kitchen, and delivery need later workflows             |
-| Boolean ordering availability   | Separates temporary availability from catalog publication                  | Does not track exact stock quantities                           |
-| Conversation-scoped locking     | Makes order changes and confirmation replay deterministic                  | PostgreSQL-specific advisory lock                               |
-| In-memory web rate limiting     | Simple protection for the current single instance                          | Multi-instance deployments require Redis                        |
-| PDF as presentation only        | Supports rich channel delivery without bloating model context              | Demo PDF must be synchronized with the catalog                  |
-| Live evals outside CI           | Measures real model behavior without making CI nondeterministic            | Requires intentional execution and API cost                     |
+| Decision                        | Reason                                                                         | Accepted cost                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| NestJS with strict TypeScript   | Explicit modules, dependency injection, and contracts                          | More structure than an Express-only application                 |
+| OpenAI Responses API            | Structured output and direct tool calling                                      | External provider dependency                                    |
+| PostgreSQL with Prisma          | Typed catalog, memory, and transactional order persistence                     | Requires migrations and local infrastructure                    |
+| pgvector for RAG                | Keeps structured and semantic data in one database                             | Exact search needs indexing at larger scale                     |
+| Hybrid RAG and typed tools      | Uses the appropriate access pattern for each question                          | More explicit routing than sending all data to LLM              |
+| One tool per message            | Bounds orchestration, latency, and failure modes                               | Complex requests may require another customer turn              |
+| Tools own their OpenAI contract | Adding a tool is one file plus one `CHAT_TOOLS` entry, no transport change     | Several small `ChatTool` classes instead of one dispatch switch |
+| Backend-created sessions        | Rejects unknown conversations and controls lifecycle                           | Requires a session-creation request                             |
+| PostgreSQL message ledger       | Makes channel retries durable across restarts                                  | Adds one small row per attempted message                        |
+| PostgreSQL delivery lifecycle   | Verifies accepted, delivered, read, and failed Meta messages                   | Adds operational rows and status handling                       |
+| Hashed WhatsApp session key     | Preserves customer memory without a raw-phone public session ID                | Requires deterministic WABA/customer mapping                    |
+| Best-effort async WhatsApp turn | Acknowledges Meta right after reservation; keeps the deployment single-process | A crash after the `200` drops that message; no durable recovery |
+| Provider port inside Nest       | Isolates Meta without a separately deployed service                            | Adds an interface and DI token                                  |
+| Last ten history messages       | Bounds prompt growth and cost                                                  | Older context is not sent to the model                          |
+| PostgreSQL order drafts         | Keeps order state independent from model memory                                | Abandoned drafts need lifecycle cleanup                         |
+| Product price snapshots         | Preserves historical order totals                                              | Duplicates selected catalog data                                |
+| Confirmation closes this engine | Gives the chatbot a precise, testable success boundary                         | Payment, kitchen, and delivery need later workflows             |
+| Boolean ordering availability   | Separates temporary availability from catalog publication                      | Does not track exact stock quantities                           |
+| Conversation-scoped locking     | Makes order changes and confirmation replay deterministic                      | PostgreSQL-specific advisory lock                               |
+| In-memory web rate limiting     | Simple protection for the current single instance                              | Multi-instance deployments require Redis                        |
+| PDF as presentation only        | Supports rich channel delivery without bloating model context                  | Demo PDF must be synchronized with the catalog                  |
+| Live evals outside CI           | Measures real model behavior without making CI nondeterministic                | Requires intentional execution and API cost                     |
 
 ## Project structure
 

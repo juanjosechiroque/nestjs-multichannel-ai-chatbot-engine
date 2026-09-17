@@ -117,10 +117,14 @@ that are not implemented.
   the customer phone number or generated text in the operational delivery table.
 - Chatbot failures produce only a fixed customer-safe fallback. Provider exceptions, response
   bodies, credentials, phone numbers, and internal failure codes are never used as reply content.
-- Repeated Meta deliveries are acknowledged but neither processed nor answered twice. If outbound
-  delivery fails, the webhook reservation is released so Meta can retry the stored chatbot result.
-- Processing is synchronous in the current single-process portfolio deployment; a production
-  deployment should acknowledge from a durable queue worker boundary.
+- Repeated Meta deliveries are acknowledged but neither processed nor answered twice.
+- After the `(WABA ID, message.id)` reservation succeeds, the webhook returns `200` immediately and
+  processes each accepted message asynchronously in the same Node process (`setImmediate`). A failure
+  during that background work is logged with the message ID; the reservation is not released, because
+  Meta has already been acknowledged and will not retry.
+- This is best-effort by design: a deploy, restart, or crash after the `200` can drop an accepted
+  message. There is intentionally no durable recovery or queue. A production deployment should
+  acknowledge from a durable queue worker boundary instead.
 
 ### Quality
 
@@ -295,9 +299,10 @@ process customer messages.
 Signed notifications use the same URL with `POST`. The application calculates an HMAC-SHA256 over
 the exact raw body using `WHATSAPP_APP_SECRET`, compares it with `X-Hub-Signature-256` using a
 constant-time operation, and returns an empty `200` when valid. Before acknowledging, it reserves
-every `(WABA ID, message.id)` in PostgreSQL. Each new text message resolves a stable WhatsApp
-conversation, calls `ChatService`, and sends its generated reply through Meta Graph API using the
-webhook's `phone_number_id` and `from` fields. This means a question such as “¿Qué productos tienen?”
+every `(WABA ID, message.id)` in PostgreSQL; a reservation failure surfaces as an HTTP error so Meta
+retries. After the `200`, each new text message is processed asynchronously in the same Node process:
+it resolves a stable WhatsApp conversation, calls `ChatService`, and sends its generated reply through
+Meta Graph API using the webhook's `phone_number_id` and `from` fields. This means a question such as “¿Qué productos tienen?”
 uses the same typed PostgreSQL catalog search as the Web adapter. A repeated delivery is still
 acknowledged but is not reserved, sent to OpenAI, written to memory, or answered twice. Missing or
 invalid signatures return `403`.
@@ -310,8 +315,11 @@ is treated as a controlled delivery failure because later delivery cannot be ver
 
 The current adapter accepts text messages up to 2,000 characters. Images, audio, video, documents,
 and other unsupported message types receive a short text response explaining that text is currently
-required. The webhook processes the chatbot turn synchronously, so a production deployment should
-introduce a durable job queue before scaling or tightening provider acknowledgment latency.
+required. The webhook acknowledges Meta right after the PostgreSQL reservation and runs the chatbot
+turn asynchronously in the same process (`setImmediate`). This is best-effort: a deploy, restart, or
+crash after the `200` can drop that message, and there is no durable recovery or queue. A production
+deployment should introduce a durable job queue before scaling or tightening provider acknowledgment
+latency.
 
 The current provider implementation is `MetaWhatsAppClient`. It translates the internal text-send
 contract to Graph API, requires Meta's outbound message identifier, and maps transport, HTTP, or

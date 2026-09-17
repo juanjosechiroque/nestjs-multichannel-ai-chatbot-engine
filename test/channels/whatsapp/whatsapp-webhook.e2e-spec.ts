@@ -5,6 +5,21 @@ import request = require('supertest');
 import { ProductCategory, WhatsAppOutboundStatus } from '../../../src/generated/prisma/enums';
 import { E2E_ENVIRONMENT, setupHttpE2E } from '../../support/e2e-app';
 
+/** Polls until `predicate` holds: the webhook acknowledges Meta before the chatbot turn runs. */
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  { timeoutMs = 5_000, intervalMs = 25 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await predicate()) return;
+    if (Date.now() > deadline) {
+      throw new Error('waitFor: condition was not met before the timeout');
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 describe('WhatsApp webhook HTTP flow', () => {
   const harness = setupHttpE2E();
 
@@ -132,6 +147,14 @@ describe('WhatsApp webhook HTTP flow', () => {
         .send(payload)
         .expect(200, '');
     }
+
+    // The 200 is returned before the chatbot turn runs; wait for its side effect.
+    await waitFor(async () => {
+      const accepted = await harness.prisma.whatsAppOutboundMessage.count({
+        where: { providerMessageId: 'wamid.outbound-e2e' },
+      });
+      return accepted === 1;
+    });
 
     await expect(
       harness.prisma.whatsAppWebhookMessage.count({
