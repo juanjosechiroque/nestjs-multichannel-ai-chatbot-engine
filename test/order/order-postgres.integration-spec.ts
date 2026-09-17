@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { PrismaService } from '../../src/database/prisma.service';
 import { Prisma } from '../../src/generated/prisma/client';
 import {
@@ -19,10 +18,13 @@ import {
 } from '../../src/order/order-state-machine';
 import { OrderService } from '../../src/order/order.service';
 import { OrderStatus } from '../../src/order/order.types';
-import { applyMigrations, assertDisposableTestDatabase } from '../support/test-database';
+import {
+  applyMigrations,
+  assertDisposableTestDatabase,
+  createIntegrationDatabase,
+} from '../support/test-database';
 
 describe('OrderService with PostgreSQL', () => {
-  let container: StartedPostgreSqlContainer;
   let prisma: PrismaService;
   let orders: OrderService;
   let conversationId: string;
@@ -35,14 +37,10 @@ describe('OrderService with PostgreSQL', () => {
     const databaseName = `chatbot_engine_order_integration_test_${randomUUID()
       .replaceAll('-', '')
       .slice(0, 16)}`;
-    container = await new PostgreSqlContainer('pgvector/pgvector:pg17')
-      .withDatabase(databaseName)
-      .withUsername('chatbot')
-      .withPassword('chatbot')
-      .start();
+    const databaseUrl = await createIntegrationDatabase(databaseName);
 
-    await applyMigrations(container.getConnectionUri());
-    prisma = new PrismaService(new ConfigService({ DATABASE_URL: container.getConnectionUri() }));
+    await applyMigrations(databaseUrl);
+    prisma = new PrismaService(new ConfigService({ DATABASE_URL: databaseUrl }));
     await prisma.$connect();
     await assertDisposableTestDatabase(prisma, databaseName);
     orders = new OrderService(prisma, new OrderStateMachine());
@@ -84,7 +82,6 @@ describe('OrderService with PostgreSQL', () => {
 
   afterAll(async () => {
     await prisma?.$disconnect();
-    await container?.stop();
 
     if (previousNodeEnvironment === undefined) {
       delete process.env.NODE_ENV;

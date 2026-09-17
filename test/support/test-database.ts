@@ -27,6 +27,36 @@ export async function applyMigrations(connectionString: string): Promise<void> {
 
 const TEST_DATABASE_NAME_PATTERN = /(?:^|_)(?:e2e|test)(?:_|$)/;
 
+/**
+ * Creates a fresh, uniquely named database inside the shared integration
+ * container (booted once by `integration-global-setup.ts`) and returns its
+ * connection URI. Cheap compared to starting a new container per suite.
+ */
+export async function createIntegrationDatabase(databaseName: string): Promise<string> {
+  if (!TEST_DATABASE_NAME_PATTERN.test(databaseName)) {
+    throw new Error(`Test database name must contain "test" or "e2e": ${databaseName}`);
+  }
+
+  const baseUri = process.env.INTEGRATION_PG_URI;
+  if (!baseUri) {
+    throw new Error(
+      'INTEGRATION_PG_URI is not set; is test/support/integration-global-setup.ts wired as globalSetup?',
+    );
+  }
+
+  const client = new Client({ connectionString: baseUri });
+  await client.connect();
+  try {
+    await client.query(`CREATE DATABASE "${databaseName}"`);
+  } finally {
+    await client.end();
+  }
+
+  const uri = new URL(baseUri);
+  uri.pathname = `/${databaseName}`;
+  return uri.toString();
+}
+
 export async function assertDisposableTestDatabase(
   database: DatabaseInspector,
   expectedDatabaseName: string,
