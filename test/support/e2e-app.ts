@@ -41,6 +41,7 @@ export const E2E_ENVIRONMENT = {
   RAG_MIN_SIMILARITY: '0.5',
   RATE_LIMIT_CONVERSATIONS_PER_HOUR: '100',
   RATE_LIMIT_MESSAGES_PER_MINUTE: '100',
+  WHATSAPP_ENABLED: 'true',
   WHATSAPP_VERIFY_TOKEN: 'whatsapp-e2e-verify-token-32-chars',
   WHATSAPP_APP_SECRET: 'whatsapp-e2e-app-secret-32-chars',
   WHATSAPP_ACCESS_TOKEN: 'whatsapp-e2e-access-token-at-least-20-chars',
