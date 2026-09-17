@@ -90,7 +90,9 @@ describe('Web-only deployment (WHATSAPP_ENABLED=false)', () => {
   });
 
   it('boots with no Meta credential provided and serves health', async () => {
-    await request(server).get('/api/health').expect(200, { status: 'ok' });
+    await request(server)
+      .get('/api/health')
+      .expect(200, { status: 'ok', nest: { state: 'ready' } });
   });
 
   it('never constructs the Meta WhatsApp client or provider', () => {

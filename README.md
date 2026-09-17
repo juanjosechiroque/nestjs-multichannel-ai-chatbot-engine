@@ -216,8 +216,11 @@ curl http://localhost:3000/api/health
 ```
 
 ```json
-{ "status": "ok" }
+{ "status": "ok", "nest": { "state": "ready" } }
 ```
+
+`nest.state` is the NestJS application lifecycle state: `initializing`, `ready`, or
+`shutting_down` once graceful shutdown begins.
 
 ### Create a web conversation
 
