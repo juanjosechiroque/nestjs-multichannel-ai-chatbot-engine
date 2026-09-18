@@ -1,6 +1,94 @@
-import { ProductCategory } from '../src/generated/prisma/enums';
+import { CatalogAttributeType } from '../src/generated/prisma/enums';
 import type { BusinessSeed } from './contract';
 import { productMetadata } from './product-metadata';
+
+const categories = [
+  {
+    slug: 'hot-drinks',
+    label: 'bebidas calientes',
+    active: true,
+    searchTerms: ['bebidas calientes', 'café caliente', 'cafés calientes'],
+  },
+  {
+    slug: 'cold-drinks',
+    label: 'bebidas frías',
+    active: true,
+    searchTerms: ['bebidas frías', 'bebidas con hielo', 'café frío'],
+  },
+  {
+    slug: 'food',
+    label: 'comida',
+    active: true,
+    searchTerms: ['comida', 'platos', 'acompañamientos'],
+  },
+] as const;
+
+const attributes = [
+  {
+    key: 'allergens',
+    label: 'alérgenos declarados',
+    type: CatalogAttributeType.STRING_ARRAY,
+    allowedValues: ['GLUTEN', 'MILK', 'EGG', 'TREE_NUTS', 'SESAME'],
+    filterable: true,
+    active: true,
+  },
+  {
+    key: 'dietaryTags',
+    label: 'etiquetas dietéticas',
+    type: CatalogAttributeType.STRING_ARRAY,
+    allowedValues: ['VEGETARIAN', 'VEGAN'],
+    filterable: true,
+    active: true,
+  },
+  {
+    key: 'containsCoffee',
+    label: 'contiene café',
+    type: CatalogAttributeType.BOOLEAN,
+    allowedValues: [],
+    filterable: true,
+    active: true,
+  },
+  {
+    key: 'decaffeinated',
+    label: 'descafeinado',
+    type: CatalogAttributeType.BOOLEAN,
+    allowedValues: [],
+    filterable: true,
+    active: true,
+  },
+  {
+    key: 'caffeineFree',
+    label: 'libre de cafeína',
+    type: CatalogAttributeType.BOOLEAN,
+    allowedValues: [],
+    filterable: true,
+    active: true,
+  },
+  {
+    key: 'notes',
+    label: 'notas',
+    type: CatalogAttributeType.STRING_ARRAY,
+    allowedValues: [],
+    filterable: false,
+    active: true,
+  },
+  {
+    key: 'extractionHours',
+    label: 'horas de extracción',
+    type: CatalogAttributeType.NUMBER,
+    allowedValues: [],
+    filterable: false,
+    active: true,
+  },
+  {
+    key: 'availabilityNote',
+    label: 'nota de disponibilidad',
+    type: CatalogAttributeType.STRING,
+    allowedValues: [],
+    filterable: false,
+    active: true,
+  },
+] as const;
 
 const products = [
   {
@@ -10,7 +98,7 @@ const products = [
       'Shot de espresso preparado con café peruano de temporada. El origen puede variar según el lote disponible.',
     price: '8.00',
     currency: 'PEN',
-    category: ProductCategory.HOT_DRINK,
+    category: 'hot-drinks',
     active: true,
     metadata: productMetadata({
       allergens: [],
@@ -27,7 +115,7 @@ const products = [
     description: 'Espresso con agua caliente. Se puede pedir suave o intenso.',
     price: '10.00',
     currency: 'PEN',
-    category: ProductCategory.HOT_DRINK,
+    category: 'hot-drinks',
     active: true,
     metadata: productMetadata({
       allergens: [],
@@ -43,7 +131,7 @@ const products = [
     description: 'Espresso con leche vaporizada y espuma cremosa.',
     price: '12.00',
     currency: 'PEN',
-    category: ProductCategory.HOT_DRINK,
+    category: 'hot-drinks',
     active: true,
     metadata: productMetadata({
       allergens: ['MILK'],
@@ -59,7 +147,7 @@ const products = [
     description: 'Espresso con mayor proporción de leche vaporizada.',
     price: '13.00',
     currency: 'PEN',
-    category: ProductCategory.HOT_DRINK,
+    category: 'hot-drinks',
     active: true,
     metadata: productMetadata({
       allergens: ['MILK'],
@@ -75,7 +163,7 @@ const products = [
     description: 'Espresso, chocolate peruano y leche vaporizada.',
     price: '15.00',
     currency: 'PEN',
-    category: ProductCategory.HOT_DRINK,
+    category: 'hot-drinks',
     active: true,
     metadata: productMetadata({
       allergens: ['MILK'],
@@ -91,7 +179,7 @@ const products = [
     description: 'Chocolate preparado con cacao peruano, leche y un toque de panela.',
     price: '14.00',
     currency: 'PEN',
-    category: ProductCategory.HOT_DRINK,
+    category: 'hot-drinks',
     active: true,
     metadata: productMetadata({
       allergens: ['MILK'],
@@ -107,7 +195,7 @@ const products = [
     description: 'Café descafeinado preparado al momento con método filtrado.',
     price: '11.00',
     currency: 'PEN',
-    category: ProductCategory.HOT_DRINK,
+    category: 'hot-drinks',
     active: true,
     metadata: productMetadata({
       allergens: [],
@@ -124,7 +212,7 @@ const products = [
     description: 'Café extraído en frío durante 16 horas, servido con hielo y piel de naranja.',
     price: '17.00',
     currency: 'PEN',
-    category: ProductCategory.COLD_DRINK,
+    category: 'cold-drinks',
     active: true,
     metadata: productMetadata({
       allergens: [],
@@ -141,7 +229,7 @@ const products = [
     description: 'Café, leche y hielo licuados. Puede pedirse con o sin crema batida.',
     price: '16.00',
     currency: 'PEN',
-    category: ProductCategory.COLD_DRINK,
+    category: 'cold-drinks',
     active: true,
     metadata: productMetadata({
       allergens: ['MILK'],
@@ -157,7 +245,7 @@ const products = [
     description: 'Espresso con leche fría y hielo.',
     price: '15.00',
     currency: 'PEN',
-    category: ProductCategory.COLD_DRINK,
+    category: 'cold-drinks',
     active: true,
     metadata: productMetadata({
       allergens: ['MILK'],
@@ -173,7 +261,7 @@ const products = [
     description: 'Té negro frío con maracuyá y un toque de hierbaluisa.',
     price: '12.00',
     currency: 'PEN',
-    category: ProductCategory.COLD_DRINK,
+    category: 'cold-drinks',
     active: true,
     metadata: productMetadata({
       allergens: [],
@@ -189,7 +277,7 @@ const products = [
     description: 'Espresso servido con agua tónica, hielo y piel de limón.',
     price: '16.00',
     currency: 'PEN',
-    category: ProductCategory.COLD_DRINK,
+    category: 'cold-drinks',
     active: true,
     metadata: productMetadata({
       allergens: [],
@@ -205,7 +293,7 @@ const products = [
     description: 'Bebida fría preparada con maíz morado, piña, canela y clavo de olor.',
     price: '10.00',
     currency: 'PEN',
-    category: ProductCategory.COLD_DRINK,
+    category: 'cold-drinks',
     active: true,
     metadata: productMetadata({
       allergens: [],
@@ -221,7 +309,7 @@ const products = [
     description: 'Croissant horneado durante la mañana. Disponible hasta agotar stock.',
     price: '9.00',
     currency: 'PEN',
-    category: ProductCategory.FOOD,
+    category: 'food',
     active: true,
     metadata: productMetadata({
       allergens: ['GLUTEN', 'MILK', 'EGG'],
@@ -238,7 +326,7 @@ const products = [
     description: 'Pan de masa madre, hummus, palta, tomate confitado y semillas.',
     price: '22.00',
     currency: 'PEN',
-    category: ProductCategory.FOOD,
+    category: 'food',
     active: true,
     metadata: productMetadata({
       allergens: ['GLUTEN', 'SESAME'],
@@ -254,7 +342,7 @@ const products = [
     description: 'Queque de zanahoria con pecanas y cobertura de queso crema.',
     price: '15.00',
     currency: 'PEN',
-    category: ProductCategory.FOOD,
+    category: 'food',
     active: true,
     metadata: productMetadata({
       allergens: ['GLUTEN', 'MILK', 'EGG', 'TREE_NUTS'],
@@ -271,7 +359,7 @@ const products = [
     description: 'Pan ciabatta con mozzarella, tomate, albahaca y pesto.',
     price: '19.00',
     currency: 'PEN',
-    category: ProductCategory.FOOD,
+    category: 'food',
     active: true,
     metadata: productMetadata({
       allergens: ['GLUTEN', 'MILK', 'TREE_NUTS'],
@@ -287,7 +375,7 @@ const products = [
     description: 'Brownie húmedo preparado con cacao peruano y chocolate.',
     price: '11.00',
     currency: 'PEN',
-    category: ProductCategory.FOOD,
+    category: 'food',
     active: true,
     metadata: productMetadata({
       allergens: ['GLUTEN', 'MILK', 'EGG'],
@@ -303,7 +391,7 @@ const products = [
     description: 'Galleta de avena, cacao y plátano, preparada sin ingredientes de origen animal.',
     price: '9.00',
     currency: 'PEN',
-    category: ProductCategory.FOOD,
+    category: 'food',
     active: true,
     metadata: productMetadata({
       allergens: ['GLUTEN'],
@@ -319,7 +407,7 @@ const products = [
     description: 'Pan de masa madre con pollo, pesto, tomate y queso.',
     price: '21.00',
     currency: 'PEN',
-    category: ProductCategory.FOOD,
+    category: 'food',
     active: true,
     metadata: productMetadata({
       allergens: ['GLUTEN', 'MILK', 'TREE_NUTS'],
@@ -551,6 +639,8 @@ const obsoleteFaqSlugs = ['wifi-mascotas'] as const;
 
 /** The reproducible bootstrap catalog for this deployment's business. */
 export const businessSeed = {
+  categories,
+  attributes,
   products,
   promotions,
   faqs,

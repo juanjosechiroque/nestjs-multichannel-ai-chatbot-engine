@@ -1,4 +1,4 @@
-import type { Prisma } from '../src/generated/prisma/client';
+import type { CatalogAttributeType, Prisma } from '../src/generated/prisma/client';
 
 /**
  * Runtime identity of the business this deployment serves.
@@ -18,8 +18,24 @@ export interface BusinessProfile {
   menuTitle?: string;
 }
 
-/** A single product/promotion/FAQ record as accepted by Prisma's create input. */
-export type ProductSeed = Prisma.ProductCreateInput;
+export interface CategorySeed {
+  slug: string;
+  label: string;
+  active: boolean;
+  searchTerms: readonly string[];
+}
+
+export interface CatalogAttributeSeed {
+  key: string;
+  label: string;
+  type: CatalogAttributeType;
+  allowedValues: readonly string[];
+  filterable: boolean;
+  active: boolean;
+}
+
+/** Product input keeps its business-owned category slug separate from Prisma relations. */
+export type ProductSeed = Omit<Prisma.ProductCreateInput, 'category'> & { category: string };
 export type PromotionSeed = Prisma.PromotionCreateInput;
 export type FaqSeed = Prisma.FaqCreateInput;
 
@@ -32,6 +48,8 @@ export type FaqSeed = Prisma.FaqCreateInput;
  * of truth; this data is only the reproducible initial load.
  */
 export interface BusinessSeed {
+  categories: readonly CategorySeed[];
+  attributes: readonly CatalogAttributeSeed[];
   products: readonly ProductSeed[];
   promotions: readonly PromotionSeed[];
   faqs: readonly FaqSeed[];

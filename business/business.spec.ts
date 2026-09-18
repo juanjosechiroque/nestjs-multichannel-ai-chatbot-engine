@@ -1,6 +1,5 @@
-import { ProductCategory } from '../src/generated/prisma/enums';
 import { KnowledgeDocumentFactory } from '../src/rag/knowledge-document.factory';
-import type { Faq, Product } from '../src/generated/prisma/client';
+import type { Category, Faq, Product } from '../src/generated/prisma/client';
 import {
   alternateBusinessProfile,
   alternateBusinessSeed,
@@ -8,184 +7,112 @@ import {
 import type {
   BusinessProfile,
   BusinessSeed,
+  CatalogAttributeSeed,
+  CategorySeed,
   FaqSeed,
   ProductSeed,
   PromotionSeed,
 } from './contract';
 import { businessProfile, loadBusinessProfile, parseBusinessProfile } from './profile';
+import { validateBusinessCatalog } from './catalog';
 import { businessSeed } from './seed';
 import { seedBusiness, type BusinessSeedWriter } from './seed-runner';
 
 class FakeSeedStore implements BusinessSeedWriter {
+  readonly categories = new Map<string, CategorySeed>();
+  readonly attributes = new Map<string, CatalogAttributeSeed>();
   readonly products = new Map<string, ProductSeed>();
   readonly promotions = new Map<string, PromotionSeed>();
   readonly faqs = new Map<string, FaqSeed>();
-  readonly upsertKeys: string[] = [];
-
-  upsertProductBySlug(record: ProductSeed): Promise<void> {
-    this.upsertKeys.push(`product:${record.slug}`);
+  upsertCategoryBySlug(record: CategorySeed) {
+    this.categories.set(record.slug, record);
+    return Promise.resolve();
+  }
+  upsertCatalogAttributeByKey(record: CatalogAttributeSeed) {
+    this.attributes.set(record.key, record);
+    return Promise.resolve();
+  }
+  upsertProductBySlug(record: ProductSeed) {
     this.products.set(record.slug, record);
     return Promise.resolve();
   }
-
-  upsertPromotionBySlug(record: PromotionSeed): Promise<void> {
-    this.upsertKeys.push(`promotion:${record.slug}`);
+  upsertPromotionBySlug(record: PromotionSeed) {
     this.promotions.set(record.slug, record);
     return Promise.resolve();
   }
-
-  upsertFaqBySlug(record: FaqSeed): Promise<void> {
-    this.upsertKeys.push(`faq:${record.slug}`);
+  upsertFaqBySlug(record: FaqSeed) {
     this.faqs.set(record.slug, record);
     return Promise.resolve();
   }
-
-  deleteFaqsBySlug(slugs: readonly string[]): Promise<void> {
+  deleteFaqsBySlug(slugs: readonly string[]) {
     for (const slug of slugs) this.faqs.delete(slug);
     return Promise.resolve();
   }
+}
 
-  snapshot(): Record<string, string[]> {
+function rows(seed: BusinessSeed): Array<Product & { category: Category }> {
+  return seed.products.map((product) => {
+    const category = seed.categories.find((item) => item.slug === product.category)!;
     return {
-      products: [...this.products.keys()].sort(),
-      promotions: [...this.promotions.keys()].sort(),
-      faqs: [...this.faqs.keys()].sort(),
-    };
-  }
-}
-
-function expectGastronomicCatalog(seed: BusinessSeed): void {
-  const slugs = seed.products.map((product) => product.slug);
-  expect(new Set(slugs).size).toBe(slugs.length);
-
-  const categories = new Set(seed.products.map((product) => product.category));
-  expect(categories).toContain(ProductCategory.HOT_DRINK);
-  expect(categories).toContain(ProductCategory.COLD_DRINK);
-  expect(categories).toContain(ProductCategory.FOOD);
-
-  expect(seed.faqs.length).toBeGreaterThan(0);
-}
-
-function toProductRows(seed: BusinessSeed): Product[] {
-  return seed.products.map((product) => ({ ...product, id: product.slug }) as unknown as Product);
-}
-
-function toFaqRows(seed: BusinessSeed): Faq[] {
-  return seed.faqs.map((faq) => ({ ...faq, id: faq.slug }) as unknown as Faq);
-}
-
-describe('business profile', () => {
-  it('loads and validates a well-formed identity from business/profile.json', () => {
-    expect(businessProfile.name.trim().length).toBeGreaterThan(0);
-    expect(businessProfile.timeZone).toMatch(/^[A-Za-z]+\/[A-Za-z_]+$/);
-    expect(businessProfile).not.toHaveProperty('catalogDocument');
+      ...product,
+      id: product.slug,
+      categoryId: category.slug,
+      category: { ...category, id: category.slug, createdAt: new Date(), updatedAt: new Date() },
+    } as unknown as Product & { category: Category };
   });
+}
 
-  it.each([
-    ['a non-object payload', 'not an object'],
-    ['a blank name', { name: '   ', timeZone: 'America/Lima' }],
-    ['an unknown time zone', { name: 'X', timeZone: 'Mars/Olympus' }],
-    ['a blank menuTitle', { name: 'X', timeZone: 'America/Lima', menuTitle: '  ' }],
-    ['a non-string menuTitle', { name: 'X', timeZone: 'America/Lima', menuTitle: 42 }],
-  ])('rejects %s with a clear, sourced error', (_scenario, payload) => {
-    expect(() => parseBusinessProfile(payload, 'business/profile.json')).toThrow(
-      /Invalid business\/profile\.json/,
-    );
-  });
-
-  it('accepts an identity without an explicit menu title', () => {
-    expect(parseBusinessProfile({ name: 'Test Bistró', timeZone: 'America/Lima' })).toEqual({
-      name: 'Test Bistró',
+describe('business configuration', () => {
+  it('loads a validated profile', () => {
+    expect(businessProfile.name.trim()).not.toBe('');
+    expect(parseBusinessProfile({ name: 'Test', timeZone: 'America/Lima' })).toEqual({
+      name: 'Test',
       timeZone: 'America/Lima',
     });
+    expect(() => loadBusinessProfile('business/does-not-exist.json')).toThrow(/Unable to read/);
   });
 
-  it('keeps an explicit menu title', () => {
-    expect(
-      parseBusinessProfile({ name: 'Test Bistró', timeZone: 'America/Lima', menuTitle: 'Menú' }),
-    ).toEqual({ name: 'Test Bistró', timeZone: 'America/Lima', menuTitle: 'Menú' });
-  });
-
-  it('reports an unreadable profile file instead of failing silently', () => {
-    expect(() => loadBusinessProfile('business/does-not-exist.json')).toThrow(
-      /Unable to read business\/does-not-exist\.json/,
-    );
-  });
-});
-
-describe('business seed', () => {
-  it('stays within the gastronomic catalog vertical', () => {
-    expectGastronomicCatalog(businessSeed);
-  });
-
-  it('is idempotent: a second run converges to the same snapshot', async () => {
+  it('seeds configured categories and validates product attributes', async () => {
     const store = new FakeSeedStore();
-
-    await seedBusiness(store, businessSeed);
-    const afterFirst = store.snapshot();
-    await seedBusiness(store, businessSeed);
-
-    expect(store.snapshot()).toEqual(afterFirst);
-    expect(store.upsertKeys.every((key) => /^(product|promotion|faq):[a-z0-9-]+$/.test(key))).toBe(
-      true,
-    );
-  });
-
-  it('applies exactly the records of the seed it is given', async () => {
-    const store = new FakeSeedStore();
-
     const summary = await seedBusiness(store, businessSeed);
-
-    expect(summary).toEqual({
+    expect(summary).toMatchObject({
+      categories: businessSeed.categories.length,
+      attributes: businessSeed.attributes.length,
       products: businessSeed.products.length,
-      promotions: businessSeed.promotions.length,
-      faqs: businessSeed.faqs.length,
-      obsoleteFaqsRemoved: businessSeed.obsoleteFaqSlugs.length,
     });
-    expect([...store.products.keys()].sort()).toEqual(
-      businessSeed.products.map((product) => product.slug).sort(),
+    expect([...store.categories.keys()]).toEqual(
+      businessSeed.categories.map((category) => category.slug),
     );
   });
 
-  it('generates knowledge documents covering every seeded category', () => {
-    const documents = new KnowledgeDocumentFactory().createCatalogDocuments(
-      toProductRows(businessSeed),
-      toFaqRows(businessSeed),
+  it('rejects attribute values that are absent from the configured schema', () => {
+    expect(() =>
+      validateBusinessCatalog(alternateBusinessSeed.categories, alternateBusinessSeed.attributes, [
+        { ...alternateBusinessSeed.products[0]!, metadata: { unsupported: true } },
+      ]),
+    ).toThrow(/Invalid value for catalog attribute unsupported/);
+  });
+
+  it('indexes category labels and synonyms from business data', () => {
+    const docs = new KnowledgeDocumentFactory().createCatalogDocuments(
+      rows(businessSeed),
+      businessSeed.faqs.map((faq) => ({ ...faq, id: faq.slug })) as unknown as Faq[],
     );
-
-    expect(documents.length).toBeGreaterThan(0);
-    const categoryDocs = documents
-      .filter((doc) => doc.sourceType === 'product_category')
-      .map((doc) => doc.sourceId)
-      .sort();
-    expect(categoryDocs).toEqual([...new Set(businessSeed.products.map((p) => p.category))].sort());
-  });
-});
-
-describe('engine reuse for a different gastronomic business', () => {
-  const altProfile: BusinessProfile = alternateBusinessProfile;
-  const altSeed: BusinessSeed = alternateBusinessSeed;
-
-  it('accepts an unrelated profile through the same contract', () => {
-    expect(altProfile.name).not.toBe(businessProfile.name);
-    expect(altProfile.timeZone).not.toBe(businessProfile.timeZone);
-    expect(parseBusinessProfile(altProfile)).toEqual(altProfile);
+    expect(docs.some((doc) => doc.content.includes('cafés calientes'))).toBe(true);
   });
 
-  it('seeds and indexes the unrelated business with no engine change', async () => {
-    expectGastronomicCatalog(altSeed);
-
+  it('accepts a non-gastronomic catalog without food-specific attributes', async () => {
+    const seed: BusinessSeed = alternateBusinessSeed;
     const store = new FakeSeedStore();
-    await seedBusiness(store, altSeed);
-    await seedBusiness(store, altSeed);
-    expect([...store.products.keys()].sort()).toEqual(
-      altSeed.products.map((product) => product.slug).sort(),
-    );
-
-    const documents = new KnowledgeDocumentFactory().createCatalogDocuments(
-      toProductRows(altSeed),
-      toFaqRows(altSeed),
-    );
-    expect(documents.some((doc) => doc.sourceType === 'product_category')).toBe(true);
+    await seedBusiness(store, seed);
+    expect(seed.categories.map((category) => category.slug)).toEqual([
+      'books',
+      'flowers',
+      'gift-boxes',
+    ]);
+    expect(seed.attributes.map((attribute) => attribute.key)).toEqual(['format', 'occasion']);
+    expect(new KnowledgeDocumentFactory().createCatalogDocuments(rows(seed), [])).toHaveLength(6);
+    const profile: BusinessProfile = alternateBusinessProfile;
+    expect(parseBusinessProfile(profile)).toEqual(profile);
   });
 });

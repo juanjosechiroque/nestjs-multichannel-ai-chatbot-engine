@@ -1,4 +1,12 @@
-import type { BusinessSeed, FaqSeed, ProductSeed, PromotionSeed } from './contract';
+import { validateBusinessCatalog } from './catalog';
+import type {
+  BusinessSeed,
+  CatalogAttributeSeed,
+  CategorySeed,
+  FaqSeed,
+  ProductSeed,
+  PromotionSeed,
+} from './contract';
 
 /**
  * Storage-agnostic sink for the business seed.
@@ -9,6 +17,8 @@ import type { BusinessSeed, FaqSeed, ProductSeed, PromotionSeed } from './contra
  * therefore idempotent.
  */
 export interface BusinessSeedWriter {
+  upsertCategoryBySlug(record: CategorySeed): Promise<void>;
+  upsertCatalogAttributeByKey(record: CatalogAttributeSeed): Promise<void>;
   upsertProductBySlug(record: ProductSeed): Promise<void>;
   upsertPromotionBySlug(record: PromotionSeed): Promise<void>;
   upsertFaqBySlug(record: FaqSeed): Promise<void>;
@@ -16,6 +26,8 @@ export interface BusinessSeedWriter {
 }
 
 export interface BusinessSeedSummary {
+  categories: number;
+  attributes: number;
   products: number;
   promotions: number;
   faqs: number;
@@ -26,6 +38,13 @@ export async function seedBusiness(
   writer: BusinessSeedWriter,
   seed: BusinessSeed,
 ): Promise<BusinessSeedSummary> {
+  validateBusinessCatalog(seed.categories, seed.attributes, seed.products);
+  for (const category of seed.categories) {
+    await writer.upsertCategoryBySlug(category);
+  }
+  for (const attribute of seed.attributes) {
+    await writer.upsertCatalogAttributeByKey(attribute);
+  }
   for (const product of seed.products) {
     await writer.upsertProductBySlug(product);
   }
@@ -38,6 +57,8 @@ export async function seedBusiness(
   await writer.deleteFaqsBySlug(seed.obsoleteFaqSlugs);
 
   return {
+    categories: seed.categories.length,
+    attributes: seed.attributes.length,
     products: seed.products.length,
     promotions: seed.promotions.length,
     faqs: seed.faqs.length,

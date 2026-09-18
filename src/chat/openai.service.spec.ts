@@ -7,7 +7,6 @@ import {
   OpenAiIncompleteResponseException,
   OpenAiRequestFailedException,
 } from '../common/application-error';
-import { ProductCategory } from '../generated/prisma/enums';
 import { OrderAction } from '../order/order.types';
 import { routeToolChoice } from './chat-tool-router';
 import { OpenAiService, type GenerateResponseInput } from './openai.service';
@@ -80,6 +79,7 @@ function noOrderContextInput() {
 interface ToolCollaborators {
   getContext: jest.Mock;
   searchProducts: jest.Mock;
+  getCatalogConfiguration: jest.Mock;
   searchPromotions: jest.Mock;
   getDescriptor: jest.Mock;
   orderExecute: jest.Mock;
@@ -101,6 +101,12 @@ function createService(): {
   const collaborators: ToolCollaborators = {
     getContext: jest.fn(),
     searchProducts: jest.fn(),
+    getCatalogConfiguration: jest.fn().mockResolvedValue({
+      categories: [
+        { id: 'category-id', slug: 'books', label: 'Books', active: true, searchTerms: [] },
+      ],
+      attributes: [],
+    }),
     searchPromotions: jest.fn(),
     getDescriptor: jest.fn(),
     orderExecute: jest.fn(),
@@ -108,7 +114,10 @@ function createService(): {
   };
   const tools: ChatTool[] = [
     new KnowledgeSearchTool({ getContext: collaborators.getContext }),
-    new CatalogSearchTool({ searchProducts: collaborators.searchProducts }),
+    new CatalogSearchTool({
+      searchProducts: collaborators.searchProducts,
+      getCatalogConfiguration: collaborators.getCatalogConfiguration,
+    }),
     new PromotionSearchTool({ searchPromotions: collaborators.searchPromotions }, config),
     new MenuDocumentTool({ getDescriptor: collaborators.getDescriptor }),
     new ManageOrderTool({ execute: collaborators.orderExecute }),
@@ -429,7 +438,13 @@ describe('OpenAiService', () => {
         description: 'Espresso con leche vaporizada.',
         price: { toString: () => '13.00' },
         currency: 'PEN',
-        category: 'HOT_DRINK',
+        category: {
+          id: 'category-id',
+          slug: 'books',
+          label: 'Books',
+          active: true,
+          searchTerms: [],
+        },
         availableForOrdering: true,
         metadata: {},
       },
@@ -440,14 +455,10 @@ describe('OpenAiService', () => {
       name: 'search_catalog',
       arguments: JSON.stringify({
         productName: 'cappuccino',
-        category: 'HOT_DRINK',
+        category: 'books',
         maxPrice: 15,
         maxPriceExclusive: false,
-        dietaryTags: ['VEGETARIAN'],
-        excludedAllergens: ['TREE_NUTS'],
-        containsCoffee: true,
-        decaffeinated: false,
-        caffeineFree: false,
+        attributeFilters: [],
       }),
     };
     create
@@ -473,14 +484,9 @@ describe('OpenAiService', () => {
     expect(collaborators.searchProducts).toHaveBeenCalledWith(
       {
         productName: 'cappuccino',
-        category: ProductCategory.HOT_DRINK,
+        category: 'books',
         maxPrice: 15,
         maxPriceExclusive: false,
-        dietaryTags: ['VEGETARIAN'],
-        excludedAllergens: ['TREE_NUTS'],
-        containsCoffee: true,
-        decaffeinated: false,
-        caffeineFree: false,
         limit: 20,
       },
       requestContext('request-1'),

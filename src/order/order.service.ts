@@ -114,7 +114,12 @@ export class OrderService {
         const products: Product[] = [];
         for (const item of items) {
           const product = await transaction.product.findFirst({
-            where: { id: item.productId, active: true, availableForOrdering: true },
+            where: {
+              id: item.productId,
+              active: true,
+              availableForOrdering: true,
+              category: { active: true },
+            },
           });
           if (!product) {
             throw new OrderProductNotAvailableError(item.productId);
@@ -367,6 +372,7 @@ export class OrderService {
         id: { in: productIds },
         active: true,
         availableForOrdering: true,
+        category: { active: true },
       },
       select: { id: true },
     });

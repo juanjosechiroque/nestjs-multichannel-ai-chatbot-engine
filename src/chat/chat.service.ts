@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CatalogService } from '../catalog/catalog.service';
 import { getApplicationFailureCode } from '../common/application-error';
 import type { RequestContext } from '../common/request-context';
 import { MemoryService } from '../memory/memory.service';
@@ -22,6 +23,8 @@ export class ChatService {
     private readonly config: ConfigService,
     @Inject(OrderTool)
     private readonly orderTool: Pick<OrderTool, 'getContext' | 'setCustomerDetails'>,
+    @Inject(CatalogService)
+    private readonly catalog: Pick<CatalogService, 'getCatalogConfiguration'>,
     @Inject(MemoryService)
     private readonly memory: Pick<MemoryService, 'getRecentMessages'>,
     @Inject(ChatTurnService)
@@ -59,9 +62,10 @@ export class ChatService {
       }
       turnReserved = true;
 
-      const [history, initialOrderContext] = await Promise.all([
+      const [history, initialOrderContext, catalogConfiguration] = await Promise.all([
         this.memory.getRecentMessages(conversationId, context),
         this.orderTool.getContext(conversationId, context),
+        this.catalog.getCatalogConfiguration(),
       ]);
       const orderContext = await this.applyTrustedCustomerIdentity(
         initialOrderContext,
@@ -74,7 +78,14 @@ export class ChatService {
       const generation = await this.openAi.generate({
         context,
         message,
-        instructions: this.instructions,
+        instructions: `${this.instructions}\n<catalog_configuration>${JSON.stringify({
+          categories: catalogConfiguration.categories
+            .filter(({ active }) => active)
+            .map(({ slug, label, searchTerms }) => ({ slug, label, searchTerms })),
+          attributes: catalogConfiguration.attributes
+            .filter(({ filterable }) => filterable)
+            .map(({ key, type, allowedValues }) => ({ key, type, allowedValues })),
+        })}</catalog_configuration>`,
         history,
         orderContext,
         conversationId,

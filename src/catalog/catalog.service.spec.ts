@@ -1,6 +1,7 @@
 import type { PrismaService } from '../database/prisma.service';
 import { DatabaseUnavailableException } from '../common/application-error';
-import { ProductCategory } from '../generated/prisma/enums';
+import { CatalogAttributeType } from '../generated/prisma/enums';
+import { alternateBusinessSeed } from '../../test/fixtures/alternate-business';
 import { CatalogService } from './catalog.service';
 
 describe('CatalogService', () => {
@@ -12,7 +13,8 @@ describe('CatalogService', () => {
 
     await expect(service.getProducts()).resolves.toEqual([]);
     expect(findMany).toHaveBeenCalledWith({
-      where: { active: true },
+      where: { active: true, category: { active: true } },
+      include: { category: true },
       orderBy: { name: 'asc' },
     });
   });
@@ -97,14 +99,13 @@ describe('CatalogService', () => {
       service.searchProducts(
         {
           productName: 'cappuccino',
-          category: ProductCategory.HOT_DRINK,
+          category: 'books',
           maxPrice: 15,
           maxPriceExclusive: false,
-          dietaryTags: ['VEGAN'],
-          excludedAllergens: ['MILK', 'TREE_NUTS'],
-          containsCoffee: false,
-          decaffeinated: false,
-          caffeineFree: true,
+          attributeFilters: [
+            { key: 'format', operator: 'MATCHES', value: 'HARDCOVER' },
+            { key: 'signed', operator: 'MATCHES', value: true },
+          ],
           limit: 20,
         },
         context,
@@ -113,24 +114,17 @@ describe('CatalogService', () => {
     expect(findMany).toHaveBeenCalledWith({
       where: {
         active: true,
+        category: { active: true, slug: 'books' },
         name: { contains: 'cappuccino', mode: 'insensitive' },
-        category: ProductCategory.HOT_DRINK,
         price: { lte: 15 },
         AND: [
-          { metadata: { path: ['dietaryTags'], array_contains: ['VEGAN'] } },
-          { metadata: { path: ['containsCoffee'], equals: false } },
-          { metadata: { path: ['decaffeinated'], equals: false } },
-          { metadata: { path: ['caffeineFree'], equals: true } },
+          { metadata: { path: ['format'], equals: 'HARDCOVER' } },
+          { metadata: { path: ['signed'], equals: true } },
         ],
-        NOT: {
-          OR: [
-            { metadata: { path: ['allergens'], array_contains: ['MILK'] } },
-            { metadata: { path: ['allergens'], array_contains: ['TREE_NUTS'] } },
-          ],
-        },
       },
       orderBy: { name: 'asc' },
       take: 20,
+      include: { category: true },
     });
   });
 
@@ -143,10 +137,68 @@ describe('CatalogService', () => {
     await service.searchProducts({ maxPrice: 15, maxPriceExclusive: true, limit: 20 });
 
     expect(findMany).toHaveBeenCalledWith({
-      where: { active: true, price: { lt: 15 } },
+      where: { active: true, category: { active: true }, price: { lt: 15 } },
       orderBy: { name: 'asc' },
       take: 20,
+      include: { category: true },
     });
+  });
+
+  it('excludes products from inactive categories in a broad search', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new CatalogService({
+      product: { findMany },
+    } as unknown as PrismaService);
+
+    await service.searchProducts({ limit: 20 });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { active: true, category: { active: true } },
+      orderBy: { name: 'asc' },
+      take: 20,
+      include: { category: true },
+    });
+  });
+
+  it('searches the alternate business fixture by configurable category and attribute', async () => {
+    const category = alternateBusinessSeed.categories.find(({ slug }) => slug === 'books')!;
+    const attribute = alternateBusinessSeed.attributes.find(({ key }) => key === 'format')!;
+    const fixtureProduct = alternateBusinessSeed.products.find(
+      ({ slug }) => slug === 'the-cloud-atlas',
+    )!;
+    const findMany = jest.fn().mockImplementation((args: { where: unknown }) => {
+      expect(args.where).toEqual({
+        active: true,
+        category: { active: true, slug: category.slug },
+        AND: [{ metadata: { path: [attribute.key], equals: 'HARDCOVER' } }],
+      });
+      return [
+        {
+          ...fixtureProduct,
+          id: fixtureProduct.slug,
+          category: { id: category.slug, ...category },
+        },
+      ];
+    });
+    const service = new CatalogService({
+      product: { findMany },
+    } as unknown as PrismaService);
+
+    const results = await service.searchProducts({
+      category: category.slug,
+      attributeFilters: [
+        {
+          key: attribute.key,
+          operator: 'MATCHES',
+          value: 'HARDCOVER',
+        },
+      ],
+      limit: 20,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ slug: 'the-cloud-atlas', category: { slug: 'books' } });
+    expect(attribute.type).toBe(CatalogAttributeType.STRING);
   });
 
   it('returns only active FAQs ordered by question', async () => {

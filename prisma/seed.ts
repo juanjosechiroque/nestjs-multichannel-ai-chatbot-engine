@@ -15,11 +15,29 @@ const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 const writer: BusinessSeedWriter = {
+  upsertCategoryBySlug: async (record) => {
+    const data = { ...record, searchTerms: [...record.searchTerms] };
+    await prisma.category.upsert({
+      where: { slug: record.slug },
+      update: data,
+      create: data,
+    });
+  },
+  upsertCatalogAttributeByKey: async (record) => {
+    const data = { ...record, allowedValues: [...record.allowedValues] };
+    await prisma.catalogAttribute.upsert({
+      where: { key: record.key },
+      update: data,
+      create: data,
+    });
+  },
   upsertProductBySlug: async (record) => {
+    const { category, ...product } = record;
+    const data = { ...product, category: { connect: { slug: category } } };
     await prisma.product.upsert({
       where: { slug: record.slug },
-      update: record,
-      create: record,
+      update: data,
+      create: data,
     });
   },
   upsertPromotionBySlug: async (record) => {
@@ -45,7 +63,7 @@ const writer: BusinessSeedWriter = {
 seedBusiness(writer, businessSeed)
   .then((summary) => {
     console.log(
-      `Seed completed for "${businessProfile.name}": ${summary.products} products, ${summary.promotions} promotions and ${summary.faqs} FAQs.`,
+      `Seed completed for "${businessProfile.name}": ${summary.categories} categories, ${summary.attributes} attributes, ${summary.products} products, ${summary.promotions} promotions and ${summary.faqs} FAQs.`,
     );
   })
   .catch((error: unknown) => {

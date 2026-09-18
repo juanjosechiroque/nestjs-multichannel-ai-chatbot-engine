@@ -31,19 +31,11 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt({ businessName: 'Aurora Bistró' });
 
     expect(prompt).toContain(
-      'Use search_catalog for current product names, descriptions, categories, exact prices',
+      'Use search_catalog for current product names, descriptions, configured categories, exact prices',
     );
-    expect(prompt).toContain(
-      'declared allergens, dietary tags, and caffeine or coffee preferences',
-    );
-    expect(prompt).toContain(
-      'Put every product preference explicitly requested by the customer into the corresponding search_catalog filter',
-    );
+    expect(prompt).toContain('configured product attributes');
+    expect(prompt).toContain('into attributeFilters');
     expect(prompt).toContain('preserve whether the customer requested an exclusive limit');
-    expect(prompt).toContain(
-      'Treat allergens as declared ingredients, not as a guarantee against cross-contamination',
-    );
-    expect(prompt).toContain('only when its catalog fields explicitly support that claim');
     expect(prompt).toContain('at most six representative products');
     expect(prompt).toContain('Use get_menu_document when the customer explicitly asks');
     expect(prompt).toContain('Do not list the complete catalog in generated text');

@@ -1,266 +1,127 @@
-import type { CatalogService } from '../../catalog/catalog.service';
-import { ProductCategory } from '../../generated/prisma/enums';
+import { CatalogAttributeType } from '../../generated/prisma/enums';
 import { CatalogSearchTool, type CatalogSearchArguments } from './catalog-search.tool';
-import type { ToolInvocationContext } from './chat-tool';
 
-describe('CatalogSearchTool', () => {
-  const noPreferenceFilters: Pick<
-    CatalogSearchArguments,
-    | 'maxPriceExclusive'
-    | 'dietaryTags'
-    | 'excludedAllergens'
-    | 'containsCoffee'
-    | 'decaffeinated'
-    | 'caffeineFree'
-  > = {
-    maxPriceExclusive: false,
-    dietaryTags: [],
-    excludedAllergens: [],
-    containsCoffee: null,
-    decaffeinated: null,
-    caffeineFree: null,
-  };
-  const context = {
+const configuration = {
+  categories: [
+    { id: 'books-id', slug: 'books', label: 'Books', active: true, searchTerms: ['novels'] },
+  ],
+  attributes: [
+    {
+      id: 'format-id',
+      key: 'format',
+      label: 'Format',
+      type: CatalogAttributeType.STRING,
+      allowedValues: ['HARDCOVER'],
+      filterable: true,
+      active: true,
+    },
+  ],
+};
+const context = {
+  requestContext: {
     requestId: 'request-1',
     conversationId: 'conversation-1',
     channel: 'web' as const,
-  };
-  const invocation: ToolInvocationContext = {
-    requestContext: context,
-    conversationId: 'conversation-1',
-    orderContext: { activeOrder: null, confirmationReplayAvailable: false },
-    message: '¿Cuánto cuesta el cappuccino?',
-  };
-  const validArguments: CatalogSearchArguments = {
-    productName: null,
-    category: null,
-    maxPrice: null,
-    ...{
-      maxPriceExclusive: false,
-      dietaryTags: [],
-      excludedAllergens: [],
-      containsCoffee: null,
-      decaffeinated: null,
-      caffeineFree: null,
-    },
-  };
+  },
+  conversationId: 'conversation-1',
+  orderContext: { activeOrder: null, confirmationReplayAvailable: false },
+  message: 'books',
+};
+const validArguments: CatalogSearchArguments = {
+  productName: null,
+  category: null,
+  maxPrice: null,
+  maxPriceExclusive: false,
+  attributeFilters: [],
+};
 
-  it('returns active catalog products as structured tool output', async () => {
-    const searchProducts = jest.fn().mockResolvedValue([
+describe('CatalogSearchTool', () => {
+  function catalog(products: unknown[] = []) {
+    return {
+      getCatalogConfiguration: jest.fn().mockResolvedValue(configuration),
+      searchProducts: jest.fn().mockResolvedValue(products),
+    };
+  }
+
+  it('filters with configured category and attributes without fixed catalog enums', async () => {
+    const collaborator = catalog([
       {
         id: 'product-1',
-        slug: 'cappuccino-nube',
-        name: 'Cappuccino Nube',
-        description: 'Espresso con leche vaporizada.',
-        price: { toString: () => '13.00' },
-        currency: 'PEN',
-        category: ProductCategory.HOT_DRINK,
+        slug: 'night-library',
+        name: 'Night Library',
+        description: 'Novel.',
+        price: { toString: () => '18.00' },
+        currency: 'USD',
+        category: configuration.categories[0],
         availableForOrdering: true,
-        metadata: {
-          allergens: ['MILK'],
-          dietaryTags: ['VEGETARIAN'],
-          containsCoffee: true,
-          decaffeinated: false,
-          caffeineFree: false,
-        },
+        metadata: { format: 'HARDCOVER' },
       },
     ]);
-    const catalog: Pick<CatalogService, 'searchProducts'> = { searchProducts };
-    const tool = new CatalogSearchTool(catalog);
+    const output = JSON.parse(
+      await new CatalogSearchTool(collaborator).execute(
+        {
+          productName: null,
+          category: 'books',
+          maxPrice: 20,
+          maxPriceExclusive: false,
+          attributeFilters: [{ key: 'format', operator: 'MATCHES', value: 'HARDCOVER' }],
+        },
+        context,
+      ),
+    ) as { products: Array<Record<string, unknown>> };
 
-    const output = await tool.execute(
+    expect(collaborator.searchProducts).toHaveBeenCalledWith(
       {
-        productName: 'cappuccino',
-        category: ProductCategory.HOT_DRINK,
-        maxPrice: 15,
+        category: 'books',
+        maxPrice: 20,
         maxPriceExclusive: false,
-        dietaryTags: ['VEGETARIAN'],
-        excludedAllergens: ['TREE_NUTS'],
-        containsCoffee: true,
-        decaffeinated: false,
-        caffeineFree: false,
-      },
-      invocation,
-    );
-
-    expect(searchProducts).toHaveBeenCalledWith(
-      {
-        productName: 'cappuccino',
-        category: ProductCategory.HOT_DRINK,
-        maxPrice: 15,
-        maxPriceExclusive: false,
-        dietaryTags: ['VEGETARIAN'],
-        excludedAllergens: ['TREE_NUTS'],
-        containsCoffee: true,
-        decaffeinated: false,
-        caffeineFree: false,
+        attributeFilters: [{ key: 'format', operator: 'MATCHES', value: 'HARDCOVER' }],
         limit: 20,
       },
-      context,
+      context.requestContext,
     );
-    expect(JSON.parse(output)).toEqual({
-      catalogStatus: 'results_found',
-      products: [
-        {
-          sourceId: 'product-1',
-          sourceKey: 'cappuccino-nube',
-          type: 'product',
-          name: 'Cappuccino Nube',
-          description: 'Espresso con leche vaporizada.',
-          price: '13.00',
-          currency: 'PEN',
-          category: 'HOT_DRINK',
-          availableForOrdering: true,
-          allergens: ['MILK'],
-          dietaryTags: ['VEGETARIAN'],
-          containsCoffee: true,
-          decaffeinated: false,
-          caffeineFree: false,
-        },
-      ],
+    expect(output.products[0]).toMatchObject({
+      category: { slug: 'books', label: 'Books' },
+      attributes: { format: 'HARDCOVER' },
     });
   });
 
-  it('omits null filters and reports an empty catalog result', async () => {
-    const searchProducts = jest.fn().mockResolvedValue([]);
-    const tool = new CatalogSearchTool({ searchProducts });
-
-    await expect(
-      tool.execute(
-        { productName: null, category: null, maxPrice: null, ...noPreferenceFilters },
-        invocation,
-      ),
-    ).resolves.toBe('{"catalogStatus":"no_results","products":[]}');
-    expect(searchProducts).toHaveBeenCalledWith({ limit: 20 }, context);
-  });
-
-  it('retries a multi-word customer product name with its most specific term', async () => {
-    const product = {
-      id: 'product-1',
-      slug: 'cappuccino',
-      name: 'Cappuccino',
-      description: 'Espresso con leche vaporizada.',
-      price: { toString: () => '12.00' },
-      currency: 'PEN',
-      category: ProductCategory.HOT_DRINK,
-      availableForOrdering: true,
-      metadata: {},
-    };
-    const searchProducts = jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([product]);
-    const tool = new CatalogSearchTool({ searchProducts });
-
-    const output = await tool.execute(
-      { productName: 'Cappuccino Nube', category: null, maxPrice: null, ...noPreferenceFilters },
-      invocation,
-    );
-
-    expect(searchProducts).toHaveBeenNthCalledWith(
-      1,
-      { productName: 'Cappuccino Nube', limit: 20 },
-      context,
-    );
-    expect(searchProducts).toHaveBeenNthCalledWith(
-      2,
-      { productName: 'Cappuccino', limit: 20 },
-      context,
-    );
-    expect(JSON.parse(output)).toEqual(expect.objectContaining({ catalogStatus: 'results_found' }));
-  });
-
-  it('does not infer undeclared preferences from malformed metadata', async () => {
-    const searchProducts = jest.fn().mockResolvedValue([
-      {
-        id: 'product-1',
-        slug: 'mystery-drink',
-        name: 'Mystery drink',
-        description: 'Description.',
-        price: { toString: () => '10.00' },
-        currency: 'PEN',
-        category: ProductCategory.COLD_DRINK,
-        availableForOrdering: false,
-        metadata: {
-          allergens: 'MILK',
-          dietaryTags: [42],
-          containsCoffee: 'false',
-        },
-      },
-    ]);
-    const tool = new CatalogSearchTool({ searchProducts });
-
+  it('returns a controlled result for unknown categories and attributes', async () => {
+    const collaborator = catalog();
     const output = JSON.parse(
-      await tool.execute(
-        { productName: null, category: null, maxPrice: null, ...noPreferenceFilters },
-        invocation,
+      await new CatalogSearchTool(collaborator).execute(
+        {
+          ...validArguments,
+          category: 'unknown',
+          attributeFilters: [{ key: 'coffee', operator: 'MATCHES', value: true }],
+        },
+        context,
       ),
-    ) as { products: unknown[] };
-
-    expect(output.products).toEqual([
-      expect.objectContaining({
-        availableForOrdering: false,
-        allergens: [],
-        dietaryTags: [],
-        containsCoffee: null,
-        decaffeinated: null,
-        caffeineFree: null,
-      }),
-    ]);
+    ) as { catalogStatus: string; products: unknown[] };
+    expect(output).toMatchObject({ catalogStatus: 'invalid_filter', products: [] });
+    expect(collaborator.searchProducts).not.toHaveBeenCalled();
   });
 
-  describe('buildDefinition', () => {
-    it('describes a strict function tool with every filter required', () => {
-      const definition = new CatalogSearchTool({ searchProducts: jest.fn() }).buildDefinition();
-
-      expect(definition).toEqual(
-        expect.objectContaining({ type: 'function', name: 'search_catalog', strict: true }),
-      );
-      expect(definition.parameters).toEqual(
-        expect.objectContaining({
-          additionalProperties: false,
-          required: [
-            'productName',
-            'category',
-            'maxPrice',
-            'maxPriceExclusive',
-            'dietaryTags',
-            'excludedAllergens',
-            'containsCoffee',
-            'decaffeinated',
-            'caffeineFree',
-          ],
-        }),
-      );
+  it('validates generic arguments but defers configured-value validation to execution', () => {
+    const tool = new CatalogSearchTool(catalog());
+    expect(
+      tool.parseArguments(JSON.stringify({ ...validArguments, category: '  books  ' })),
+    ).toEqual({
+      ...validArguments,
+      category: 'books',
     });
+    expect(() =>
+      tool.parseArguments(
+        JSON.stringify({ ...validArguments, attributeFilters: [{ key: 'x', value: true }] }),
+      ),
+    ).toThrow();
   });
 
-  describe('parseArguments', () => {
-    const tool = new CatalogSearchTool({ searchProducts: jest.fn() });
-
-    it('accepts and trims a fully specified filter set', () => {
-      expect(
-        tool.parseArguments(
-          JSON.stringify({ ...validArguments, productName: '  latte  ', category: 'HOT_DRINK' }),
-        ),
-      ).toEqual({ ...validArguments, productName: 'latte', category: ProductCategory.HOT_DRINK });
-    });
-
-    it.each([
-      { name: 'a missing key', payload: { category: null } },
-      { name: 'an unknown category', payload: { ...validArguments, category: 'UNKNOWN_CATEGORY' } },
-      { name: 'a negative max price', payload: { ...validArguments, maxPrice: -1 } },
-      { name: 'an unknown dietary tag', payload: { ...validArguments, dietaryTags: ['KETO'] } },
-      {
-        name: 'a duplicated allergen',
-        payload: { ...validArguments, excludedAllergens: ['MILK', 'MILK'] },
-      },
-      {
-        name: 'a non-boolean coffee preference',
-        payload: { ...validArguments, containsCoffee: 'false' },
-      },
-      { name: 'an extra property', payload: { ...validArguments, total: 1 } },
-    ])('throws for $name', ({ payload }) => {
-      expect(() => tool.parseArguments(JSON.stringify(payload))).toThrow(
-        'OpenAI returned invalid search_catalog arguments',
-      );
+  it('keeps its function schema free of business category and attribute enums', () => {
+    const definition = new CatalogSearchTool(catalog()).buildDefinition();
+    expect(definition.parameters).toMatchObject({
+      required: ['productName', 'category', 'maxPrice', 'maxPriceExclusive', 'attributeFilters'],
+      additionalProperties: false,
     });
   });
 });

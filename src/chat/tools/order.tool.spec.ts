@@ -27,7 +27,7 @@ function product(id: string, name: string, slug: string) {
     description: `${name} description`,
     price: new Prisma.Decimal(13),
     currency: 'PEN',
-    category: 'HOT_DRINK' as const,
+    categoryId: 'category-id',
     active: true,
     availableForOrdering: true,
     metadata: null,

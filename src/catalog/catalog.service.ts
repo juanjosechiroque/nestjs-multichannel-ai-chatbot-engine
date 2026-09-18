@@ -3,7 +3,7 @@ import type { RequestContext } from '../common/request-context';
 import { executeDatabaseOperation } from '../database/database-operation';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
-import type { ProductSearchFilters } from './catalog.types';
+import type { CatalogAttributeFilter, ProductSearchFilters } from './catalog.types';
 import type { PromotionSearchFilters } from './promotion.types';
 
 @Injectable()
@@ -17,7 +17,8 @@ export class CatalogService {
       { logger: this.logger, operation: 'catalog.products.read' },
       () =>
         this.prisma.product.findMany({
-          where: { active: true },
+          where: { active: true, category: { active: true } },
+          include: { category: true },
           orderBy: { name: 'asc' },
         }),
     );
@@ -29,32 +30,12 @@ export class CatalogService {
       category,
       maxPrice,
       maxPriceExclusive,
-      dietaryTags,
-      excludedAllergens,
-      containsCoffee,
-      decaffeinated,
-      caffeineFree,
+      attributeFilters,
       limit,
     }: ProductSearchFilters,
     context?: RequestContext,
   ) {
-    const preferenceFilters: Prisma.ProductWhereInput[] = [
-      ...(dietaryTags && dietaryTags.length > 0
-        ? [{ metadata: { path: ['dietaryTags'], array_contains: dietaryTags } }]
-        : []),
-      ...(containsCoffee !== undefined
-        ? [{ metadata: { path: ['containsCoffee'], equals: containsCoffee } }]
-        : []),
-      ...(decaffeinated !== undefined
-        ? [{ metadata: { path: ['decaffeinated'], equals: decaffeinated } }]
-        : []),
-      ...(caffeineFree !== undefined
-        ? [{ metadata: { path: ['caffeineFree'], equals: caffeineFree } }]
-        : []),
-    ];
-    const excludedAllergenFilters: Prisma.ProductWhereInput[] = (excludedAllergens ?? []).map(
-      (allergen) => ({ metadata: { path: ['allergens'], array_contains: [allergen] } }),
-    );
+    const attributeWhere = this.attributeFiltersToWhere(attributeFilters ?? []);
 
     return executeDatabaseOperation(
       { logger: this.logger, operation: 'catalog.products.search', context },
@@ -62,20 +43,50 @@ export class CatalogService {
         this.prisma.product.findMany({
           where: {
             active: true,
+            category: {
+              active: true,
+              ...(category ? { slug: category } : {}),
+            },
             ...(productName
               ? { name: { contains: productName, mode: 'insensitive' as const } }
               : {}),
-            ...(category ? { category } : {}),
             ...(maxPrice !== undefined
               ? { price: maxPriceExclusive ? { lt: maxPrice } : { lte: maxPrice } }
               : {}),
-            ...(preferenceFilters.length > 0 ? { AND: preferenceFilters } : {}),
-            ...(excludedAllergenFilters.length > 0 ? { NOT: { OR: excludedAllergenFilters } } : {}),
+            ...(attributeWhere.length > 0 ? { AND: attributeWhere } : {}),
           },
           orderBy: { name: 'asc' },
           take: limit,
+          include: { category: true },
         }),
     );
+  }
+
+  getCatalogConfiguration() {
+    return executeDatabaseOperation(
+      { logger: this.logger, operation: 'catalog.configuration.read' },
+      () =>
+        Promise.all([
+          this.prisma.category.findMany({
+            where: { active: true },
+            orderBy: { slug: 'asc' },
+          }),
+          this.prisma.catalogAttribute.findMany({
+            where: { active: true },
+            orderBy: { key: 'asc' },
+          }),
+        ]),
+    ).then(([categories, attributes]) => ({ categories, attributes }));
+  }
+
+  private attributeFiltersToWhere(filters: CatalogAttributeFilter[]): Prisma.ProductWhereInput[] {
+    return filters.map((filter) => {
+      const metadata = {
+        path: [filter.key],
+        ...(filter.matchesArray ? { array_contains: [filter.value] } : { equals: filter.value }),
+      };
+      return filter.operator === 'EXCLUDES' ? { NOT: { metadata } } : { metadata };
+    });
   }
 
   getPromotions() {

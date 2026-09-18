@@ -1,11 +1,9 @@
-import { ProductCategory } from '../../src/generated/prisma/enums';
+import { CatalogAttributeType } from '../../src/generated/prisma/enums';
 import type { BusinessProfile, BusinessSeed } from '../../business/contract';
-import { productMetadata } from '../../business/product-metadata';
 
 /**
- * A second gastronomic business, used only by tests to prove the engine runs an
- * unrelated business through the same `BusinessProfile` / `BusinessSeed` pipeline
- * with no core change. It is not wired into any deployment.
+ * A non-gastronomic business proving that the engine does not require food
+ * categories or food-specific attributes.
  */
 export const alternateBusinessProfile: BusinessProfile = {
   name: 'Panadería Luna',
@@ -14,62 +12,67 @@ export const alternateBusinessProfile: BusinessProfile = {
 };
 
 export const alternateBusinessSeed = {
+  categories: [
+    { slug: 'books', label: 'Books', active: true, searchTerms: ['books', 'novels', 'reading'] },
+    { slug: 'flowers', label: 'Flowers', active: true, searchTerms: ['flowers', 'bouquets'] },
+    { slug: 'gift-boxes', label: 'Gift boxes', active: true, searchTerms: ['gifts', 'gift boxes'] },
+  ],
+  attributes: [
+    {
+      key: 'format',
+      label: 'Format',
+      type: CatalogAttributeType.STRING,
+      allowedValues: ['HARDCOVER', 'PAPERBACK'],
+      filterable: true,
+      active: true,
+    },
+    {
+      key: 'occasion',
+      label: 'Occasion',
+      type: CatalogAttributeType.STRING,
+      allowedValues: ['BIRTHDAY', 'THANK_YOU'],
+      filterable: true,
+      active: true,
+    },
+  ],
   products: [
     {
-      slug: 'cafe-de-olla',
-      name: 'Café de olla',
-      description: 'Café de olla preparado con piloncillo y canela, servido caliente.',
+      slug: 'the-cloud-atlas',
+      name: 'The Cloud Atlas',
+      description: 'A hardcover novel for readers who enjoy layered stories.',
       price: '38.00',
       currency: 'MXN',
-      category: ProductCategory.HOT_DRINK,
+      category: 'books',
       active: true,
-      metadata: productMetadata({
-        allergens: [],
-        dietaryTags: ['VEGAN', 'VEGETARIAN'],
-        containsCoffee: true,
-        decaffeinated: false,
-        caffeineFree: false,
-      }),
+      metadata: { format: 'HARDCOVER' },
     },
     {
-      slug: 'limonada-de-temporada',
-      name: 'Limonada de temporada',
-      description: 'Limonada natural con fruta de temporada, servida bien fría.',
+      slug: 'seasonal-bouquet',
+      name: 'Seasonal bouquet',
+      description: 'A fresh selection of seasonal flowers.',
       price: '42.00',
       currency: 'MXN',
-      category: ProductCategory.COLD_DRINK,
+      category: 'flowers',
       active: true,
-      metadata: productMetadata({
-        allergens: [],
-        dietaryTags: ['VEGAN', 'VEGETARIAN'],
-        containsCoffee: false,
-        decaffeinated: false,
-        caffeineFree: true,
-      }),
+      metadata: { occasion: 'THANK_YOU' },
     },
     {
-      slug: 'concha-vainilla',
-      name: 'Concha de vainilla',
-      description: 'Pan dulce tradicional con costra de vainilla, horneado por la mañana.',
+      slug: 'birthday-gift-box',
+      name: 'Birthday gift box',
+      description: 'A ready-to-give box with a novel and a small bouquet.',
       price: '22.00',
       currency: 'MXN',
-      category: ProductCategory.FOOD,
+      category: 'gift-boxes',
       active: true,
-      metadata: productMetadata({
-        allergens: ['GLUTEN', 'MILK', 'EGG'],
-        dietaryTags: ['VEGETARIAN'],
-        containsCoffee: false,
-        decaffeinated: false,
-        caffeineFree: true,
-      }),
+      metadata: { occasion: 'BIRTHDAY' },
     },
   ],
   promotions: [
     {
-      slug: 'merienda-luna',
-      name: 'Merienda Luna',
+      slug: 'birthday-box',
+      name: 'Birthday box',
       description:
-        'Un café de olla y una concha de vainilla por $52, de lunes a viernes entre las 5:00 p. m. y las 7:00 p. m.',
+        'A birthday gift box with a seasonal bouquet at a special price, Monday to Friday from 5:00 p.m. to 7:00 p.m.',
       startsAt: new Date('2026-01-01T06:00:00.000Z'),
       endsAt: null,
       active: true,
@@ -79,7 +82,7 @@ export const alternateBusinessSeed = {
         endTime: '19:00',
         promotionalPrice: '52.00',
         regularPrice: '60.00',
-        productSlugs: ['cafe-de-olla', 'concha-vainilla'],
+        productSlugs: ['birthday-gift-box'],
         stackable: false,
       },
     },

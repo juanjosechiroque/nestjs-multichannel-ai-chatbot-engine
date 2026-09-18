@@ -1,14 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import type { Faq, Product } from '../generated/prisma/client';
-import { ProductCategory } from '../generated/prisma/enums';
+import type { Category, Faq, Product } from '../generated/prisma/client';
 import type { KnowledgeDocument } from './rag.types';
 
 @Injectable()
 export class KnowledgeDocumentFactory {
-  createCatalogDocuments(products: Product[], faqs: Faq[]): KnowledgeDocument[] {
+  createCatalogDocuments(
+    products: Array<Product & { category: Category }>,
+    faqs: Faq[],
+  ): KnowledgeDocument[] {
     return [
       ...products.map((product) => this.createProductDocument(product)),
-      ...this.createProductCategoryDocuments(products),
+      ...this.createCategoryDocuments(products),
       ...this.createServiceSummaryDocuments(faqs),
       ...faqs.flatMap((faq) => this.createFaqDocuments(faq)),
     ];
@@ -43,16 +45,17 @@ export class KnowledgeDocumentFactory {
     ];
   }
 
-  private createProductCategoryDocuments(products: Product[]): KnowledgeDocument[] {
-    return Object.values(ProductCategory).flatMap((category) => {
-      const categoryProducts = products.filter((product) => product.category === category);
-
-      if (categoryProducts.length === 0) {
-        return [];
-      }
-
-      const categoryLabel = this.getProductCategoryLabel(category);
-      const searchPhrases = this.getProductCategorySearchPhrases(category);
+  private createCategoryDocuments(
+    products: Array<Product & { category: Category }>,
+  ): KnowledgeDocument[] {
+    const productsByCategory = new Map<string, Array<Product & { category: Category }>>();
+    for (const product of products) {
+      const group = productsByCategory.get(product.category.slug) ?? [];
+      group.push(product);
+      productsByCategory.set(product.category.slug, group);
+    }
+    return [...productsByCategory.values()].flatMap((categoryProducts) => {
+      const category = categoryProducts[0]!.category;
       const productList = categoryProducts
         .map((product) => `${product.name} — ${product.currency} ${product.price.toString()}`)
         .join('; ');
@@ -60,23 +63,21 @@ export class KnowledgeDocumentFactory {
       return [
         {
           sourceType: 'product_category' as const,
-          sourceId: category,
+          sourceId: category.slug,
           chunkIndex: 0,
           content: [
             'Tipo: menú o carta de productos.',
-            `Categoría: ${categoryLabel}.`,
-            `Consultas relacionadas: ${searchPhrases.join('; ')}.`,
+            `Categoría: ${category.label}.`,
+            `Consultas relacionadas: ${[category.label, ...category.searchTerms].join('; ')}.`,
             `Productos y precios disponibles: ${productList}.`,
           ].join(' '),
-          metadata: { category },
+          metadata: { category: category.slug },
         },
       ];
     });
   }
 
-  private createProductDocument(product: Product): KnowledgeDocument {
-    const category = this.getProductCategoryLabel(product.category);
-
+  private createProductDocument(product: Product & { category: Category }): KnowledgeDocument {
     return {
       sourceType: 'product',
       sourceId: product.id,
@@ -84,13 +85,13 @@ export class KnowledgeDocumentFactory {
       content: [
         'Tipo: producto.',
         `Nombre: ${product.name}.`,
-        `Categoría: ${category}.`,
+        `Categoría: ${product.category.label}.`,
         `Descripción: ${product.description}`,
         `Precio: ${product.currency} ${product.price.toString()}.`,
       ].join(' '),
       metadata: {
         slug: product.slug,
-        category: product.category,
+        category: product.category.slug,
       },
     };
   }
@@ -161,40 +162,5 @@ export class KnowledgeDocumentFactory {
 
     const value: unknown = (metadata as Record<string, unknown>)[key];
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
-  }
-
-  private getProductCategoryLabel(category: ProductCategory): string {
-    switch (category) {
-      case ProductCategory.HOT_DRINK:
-        return 'bebida caliente';
-      case ProductCategory.COLD_DRINK:
-        return 'bebida fría';
-      case ProductCategory.FOOD:
-        return 'comida';
-    }
-  }
-
-  private getProductCategorySearchPhrases(category: ProductCategory): string[] {
-    switch (category) {
-      case ProductCategory.HOT_DRINK:
-        return [
-          'qué bebidas calientes tienen',
-          'menú de bebidas calientes',
-          'opciones de café caliente',
-        ];
-      case ProductCategory.COLD_DRINK:
-        return [
-          'qué bebidas frías tienen',
-          'menú de bebidas frías',
-          'opciones de bebidas con hielo',
-        ];
-      case ProductCategory.FOOD:
-        return [
-          'qué opciones de comida tienen',
-          'carta de comida y platos disponibles',
-          'puedo ver la carta para comer',
-          'opciones para comer o acompañar el café',
-        ];
-    }
   }
 }
